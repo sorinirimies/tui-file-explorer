@@ -9,7 +9,16 @@ description  = "A self-contained, keyboard-driven file-browser widget for Ratatu
 categories   = ["command-line-utilities", "filesystem"]
 keywords     = ["tui", "ratatui", "file-explorer", "widget", "terminal"]
 readme       = "README.md"
-exclude      = ["target/", ".gitignore"]
+exclude      = [
+    "target/",
+    ".gitignore",
+    "rules.md",
+    "justfile",
+    "cliff.toml",
+    "scripts/",
+    ".gitea/",
+    "examples/vhs/generated/",
+]
 
 # ── Features ──────────────────────────────────────────────────────────────────
 #
