@@ -227,12 +227,56 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: &Theme) {
-    let hints =
-        " \u{2191}/k Up  \u{2193}/j Down  Enter Confirm  \u{2190} Ascend  . Hidden  Esc Dismiss";
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(0), Constraint::Length(46)])
+        .split(area);
 
+    // ── Left panel: hints or active search input ──────────────────────────────
+    if explorer.search_active {
+        // Show the live search query with a blinking-cursor marker.
+        let left_line = Line::from(vec![
+            Span::styled(
+                " / ",
+                Style::default()
+                    .fg(theme.brand)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                &explorer.search_query,
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("█", Style::default().fg(theme.accent)),
+            Span::styled(
+                "  Backspace delete  Esc cancel",
+                Style::default().fg(theme.dim),
+            ),
+        ]);
+        let search_para = Paragraph::new(left_line).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme.brand)),
+        );
+        frame.render_widget(search_para, chunks[0]);
+    } else {
+        let hints = " \u{2191}/k Up  \u{2193}/j Down  Enter Confirm  \u{2190} Ascend  \
+                     / Search  s Sort  . Hidden  Esc Dismiss";
+        let hints_para = Paragraph::new(Span::styled(hints, Style::default().fg(theme.dim))).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme.dim)),
+        );
+        frame.render_widget(hints_para, chunks[0]);
+    }
+
+    // ── Right panel: sort mode + filter info ──────────────────────────────────
     let status = if explorer.status.is_empty() {
         let filter = if explorer.extension_filter.is_empty() {
-            "all files".to_string()
+            "all".to_string()
         } else {
             explorer
                 .extension_filter
@@ -241,27 +285,16 @@ fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        let hidden_hint = if explorer.show_hidden {
-            " [+hidden]"
-        } else {
-            ""
-        };
-        format!("Filter: {filter}{hidden_hint}")
+        let hidden_hint = if explorer.show_hidden { " +hidden" } else { "" };
+        format!(
+            "sort:{} filter:{}{} ",
+            explorer.sort_mode.label(),
+            filter,
+            hidden_hint,
+        )
     } else {
-        explorer.status.clone()
+        format!(" {} ", explorer.status)
     };
-
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(0), Constraint::Length(30)])
-        .split(area);
-
-    let hints_para = Paragraph::new(Span::styled(hints, Style::default().fg(theme.dim))).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.dim)),
-    );
 
     let status_para = Paragraph::new(Span::styled(status, Style::default().fg(theme.success)))
         .alignment(Alignment::Right)
@@ -271,7 +304,5 @@ fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.dim)),
         );
-
-    frame.render_widget(hints_para, chunks[0]);
     frame.render_widget(status_para, chunks[1]);
 }

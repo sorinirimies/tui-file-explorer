@@ -13,21 +13,31 @@
 //!   relevant files are selectable (e.g. `["iso", "img"]`); directories are
 //!   always navigable.
 //! * **Keyboard-driven** — arrow keys / vim keys, `Enter` to descend or
-//!   confirm, `Backspace` / `h` to ascend, `Esc` / `q` to dismiss.
+//!   confirm, `Backspace` / `h` to ascend, `/` to search, `s` to cycle sort,
+//!   `Esc` / `q` to dismiss.
+//! * **Searchable** — press `/` to enter incremental search; entries are
+//!   filtered live as you type.  `Esc` clears the query; a second `Esc`
+//!   dismisses the explorer.
+//! * **Sortable** — press `s` to cycle through `Name`, `Size ↓`, and
+//!   `Extension` sort modes, or set one programmatically via
+//!   [`FileExplorer::set_sort_mode`].
 //! * **Themeable** — every colour is overridable via [`Theme`] and
 //!   [`render_themed`].
 //!
 //! ## Quick start
 //!
 //! ```no_run
-//! use tui_file_explorer::{FileExplorer, ExplorerOutcome, render};
+//! use tui_file_explorer::{FileExplorer, ExplorerOutcome, SortMode, render};
 //! use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+//! # use ratatui::{Terminal, backend::TestBackend};
+//! # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
 //!
 //! // 1. Create once (e.g. in your App::new).
-//! let mut explorer = FileExplorer::new(
-//!     std::env::current_dir().unwrap(),
-//!     vec!["iso".into(), "img".into()],
-//! );
+//! let mut explorer = FileExplorer::builder(std::env::current_dir().unwrap())
+//!     .allow_extension("iso")
+//!     .allow_extension("img")
+//!     .sort_mode(SortMode::SizeDesc)
+//!     .build();
 //!
 //! // 2. In your Terminal::draw closure:
 //! //    render(&mut explorer, frame, frame.area());
@@ -46,13 +56,46 @@
 //! Use [`FileExplorer::builder`] for a more ergonomic construction API:
 //!
 //! ```no_run
-//! use tui_file_explorer::FileExplorer;
+//! use tui_file_explorer::{FileExplorer, SortMode};
 //!
 //! let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
 //!     .allow_extension("rs")
 //!     .allow_extension("toml")
 //!     .show_hidden(true)
+//!     .sort_mode(SortMode::Extension)
 //!     .build();
+//! ```
+//!
+//! ## Incremental search
+//!
+//! Press `/` to activate search mode.  Subsequent keystrokes append to the
+//! query and the entry list is filtered live (case-insensitive substring
+//! match on the file name).  `Backspace` removes the last character; an
+//! extra `Backspace` on an empty query deactivates search.  `Esc` clears
+//! the query and deactivates search without dismissing the explorer; a
+//! second `Esc` (when search is already inactive) dismisses it.
+//!
+//! Search state is also accessible programmatically:
+//!
+//! ```no_run
+//! use tui_file_explorer::FileExplorer;
+//!
+//! let explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
+//! println!("searching: {}", explorer.is_searching());
+//! println!("query    : {}", explorer.search_query());
+//! ```
+//!
+//! ## Sort modes
+//!
+//! Press `s` to cycle through the three sort modes, or set one directly:
+//!
+//! ```no_run
+//! use tui_file_explorer::{FileExplorer, SortMode};
+//!
+//! let mut explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
+//! explorer.set_sort_mode(SortMode::SizeDesc); // largest files first
+//!
+//! println!("{}", explorer.sort_mode().label()); // "size ↓"
 //! ```
 //!
 //! ## Theming
@@ -102,14 +145,31 @@
 //! `Tokyo Night`, `Tokyo Night Storm`, `Tokyo Night Light`, `Kanagawa Wave`,
 //! `Kanagawa Dragon`, `Kanagawa Lotus`, `Moonfly`, `Nightfly`, `Oxocarbon`.
 //!
+//! ## Key bindings reference
+//!
+//! | Key | Action |
+//! |-----|--------|
+//! | `↑` / `k` | Move cursor up |
+//! | `↓` / `j` | Move cursor down |
+//! | `PgUp` / `PgDn` | Jump 10 entries |
+//! | `Home` / `g` | Jump to top |
+//! | `End` / `G` | Jump to bottom |
+//! | `Enter` / `→` / `l` | Descend into directory or confirm file |
+//! | `Backspace` / `←` / `h` | Ascend to parent directory |
+//! | `/` | Activate incremental search |
+//! | `s` | Cycle sort mode (`Name` → `Size ↓` → `Extension`) |
+//! | `.` | Toggle hidden (dot-file) entries |
+//! | `Esc` | Clear search (if active), then dismiss |
+//! | `q` | Dismiss (when search is not active) |
+//!
 //! ## Module layout
 //!
-//! | Module      | Contents                                                      |
-//! |-------------|---------------------------------------------------------------|
-//! | `types`     | [`FsEntry`], [`ExplorerOutcome`]                              |
-//! | `palette`   | Palette constants (all `pub`) + [`Theme`] + named presets     |
-//! | `explorer`  | [`FileExplorer`] + [`FileExplorerBuilder`]                    |
-//! | `render`    | [`render`], [`render_themed`]                                 |
+//! | Module      | Contents                                                                        |
+//! |-------------|---------------------------------------------------------------------------------|
+//! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                  |
+//! | `palette`   | Palette constants (all `pub`) + [`Theme`] + named presets                       |
+//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`]         |
+//! | `render`    | [`render`], [`render_themed`]                                                   |
 
 pub mod explorer;
 pub mod palette;
@@ -118,7 +178,7 @@ pub mod types;
 
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
-pub use explorer::{FileExplorer, FileExplorerBuilder};
+pub use explorer::{entry_icon, fmt_size, FileExplorer, FileExplorerBuilder};
 pub use palette::Theme;
 pub use render::{render, render_themed};
-pub use types::{ExplorerOutcome, FsEntry};
+pub use types::{ExplorerOutcome, FsEntry, SortMode};
