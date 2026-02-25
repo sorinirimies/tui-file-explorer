@@ -1,33 +1,19 @@
-# =============================================================================
-# basic.tape — VHS recording for the tui-file-explorer "basic" example
-#
-# Showcases: navigation, search (/), sort cycling (s), hidden-file toggle (.),
-# extension filtering, directory descent/ascent, and file selection.
-#
-# Prerequisites:
-#   cargo build --example basic
-#   vhs examples/vhs/basic.tape
-#
-# Output: examples/vhs/generated/basic.gif
-# =============================================================================
+# VHS tape for basic demo (navigation, search, sort, hidden-file toggle, selection)
 
 Output examples/vhs/generated/basic.gif
 
-Set Shell         "bash"
-Set FontSize      14
-Set FontFamily    "JetBrains Mono"
-Set Width         1200
-Set Height        700
-Set Theme         "Dracula"
-Set Padding       16
+Set Shell "bash"
+Set FontSize 14
+Set Width 1200
+Set Height 700
 Set PlaybackSpeed 1.0
+Set Theme "Catppuccin Mocha"
 
-# ── Launch ────────────────────────────────────────────────────────────────────
 Type "cargo run --example basic"
 Enter
 Sleep 3s
 
-# ── Basic navigation ──────────────────────────────────────────────────────────
+# Basic navigation
 Sleep 400ms
 Down
 Sleep 200ms
@@ -42,14 +28,14 @@ Sleep 200ms
 Up
 Sleep 200ms
 
-# ── Jump to bottom and back to top ───────────────────────────────────────────
+# Jump to bottom then back to top
 Sleep 300ms
 Type "G"
 Sleep 500ms
 Type "g"
 Sleep 400ms
 
-# ── Descend into src/ ────────────────────────────────────────────────────────
+# Descend into src/
 Down
 Sleep 200ms
 Down
@@ -64,12 +50,12 @@ Sleep 200ms
 Down
 Sleep 200ms
 
-# ── Ascend back ───────────────────────────────────────────────────────────────
+# Ascend back to root
 Sleep 400ms
 Backspace
 Sleep 600ms
 
-# ── Incremental search: type /  to activate, then filter live ────────────────
+# Incremental search — activate with /, filter live
 Sleep 500ms
 Type "/"
 Sleep 400ms
@@ -80,11 +66,11 @@ Sleep 300ms
 Type "c"
 Sleep 700ms
 
-# ── Descend into filtered result ──────────────────────────────────────────────
+# Descend into the filtered result
 Enter
 Sleep 700ms
 
-# ── Search inside src/ for .rs files ─────────────────────────────────────────
+# Search inside src/ for .rs files
 Sleep 300ms
 Type "/"
 Sleep 300ms
@@ -93,16 +79,16 @@ Sleep 300ms
 Type "s"
 Sleep 700ms
 
-# ── Clear search with Esc ─────────────────────────────────────────────────────
+# Clear search with Esc
 Sleep 400ms
 Escape
 Sleep 500ms
 
-# ── Ascend back to root ───────────────────────────────────────────────────────
+# Ascend back to root
 Backspace
 Sleep 600ms
 
-# ── Cycle sort modes: Name → Size ↓ → Extension → Name ───────────────────────
+# Cycle sort modes: Name → Size ↓ → Extension → Name
 Sleep 400ms
 Type "s"
 Sleep 700ms
@@ -111,14 +97,14 @@ Sleep 700ms
 Type "s"
 Sleep 600ms
 
-# ── Toggle hidden files ───────────────────────────────────────────────────────
+# Toggle hidden files on then off
 Sleep 300ms
 Type "."
 Sleep 600ms
 Type "."
 Sleep 500ms
 
-# ── Select a file ─────────────────────────────────────────────────────────────
+# Select a file
 Down
 Sleep 200ms
 Down
@@ -132,7 +118,6 @@ Sleep 200ms
 Enter
 Sleep 800ms
 
-# ── Done ──────────────────────────────────────────────────────────────────────
 Sleep 500ms
 Escape
 Sleep 1s

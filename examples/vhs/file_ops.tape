@@ -1,86 +1,56 @@
-# =============================================================================
-# file_ops.tape — VHS recording showcasing two-pane file operations
-#
-# Demonstrates:
-#   - Two-pane layout (left / right, Tab to switch focus)
-#   - Yank (y) — mark a file for copy
-#   - Cut  (x) — mark a file for move
-#   - Paste (p) — copy/move clipboard into the other pane's directory
-#   - Overwrite confirmation modal (paste onto an existing file)
-#   - Delete (d) — remove a file with confirmation
-#   - Status bar reflecting clipboard state throughout
-#
-# Prerequisites:
-#   cargo build --example basic
-#   vhs examples/vhs/file_ops.tape
-#
-# Output: examples/vhs/generated/file_ops.gif
-# =============================================================================
+# VHS tape for file_ops demo (copy, cut, paste, delete across two panes)
 
 Output examples/vhs/generated/file_ops.gif
 
-Set Shell         "bash"
-Set FontSize      14
-Set FontFamily    "JetBrains Mono"
-Set Width         1400
-Set Height        900
-Set Theme         "Dracula"
-Set Padding       16
+Set Shell "bash"
+Set FontSize 14
+Set Width 1400
+Set Height 900
 Set PlaybackSpeed 1.0
+Set Theme "Catppuccin Mocha"
 
-# ── Launch in two-pane mode (default) ────────────────────────────────────────
-Type "cargo run --example basic"
+Type "cargo run --bin tfe"
 Enter
 Sleep 3s
 
-# ── Orient: left pane is active, browse to src/ ──────────────────────────────
+# Left pane is active — navigate down to a file
 Sleep 500ms
 Down
 Sleep 200ms
 Down
 Sleep 200ms
-Enter
-Sleep 700ms
-
-# ── Navigate to a .rs file to yank ───────────────────────────────────────────
-Sleep 400ms
-Down
-Sleep 200ms
-Down
-Sleep 200ms
 Down
 Sleep 200ms
 
-# ── Yank (copy) the highlighted file ─────────────────────────────────────────
+# Yank (copy) the highlighted file
 Sleep 600ms
 Type "y"
 Sleep 800ms
 
-# ── Switch to right pane and navigate to examples/ ───────────────────────────
-Sleep 400ms
+# Switch to the right pane
 Tab
 Sleep 500ms
+
+# Navigate into a subdirectory as the paste destination
 Down
 Sleep 200ms
 Enter
 Sleep 700ms
 
-# ── Paste into examples/ ─────────────────────────────────────────────────────
+# Paste the copied file into this directory
 Sleep 500ms
 Type "p"
 Sleep 900ms
 
-# ── Switch back to left pane ──────────────────────────────────────────────────
-Sleep 400ms
+# Switch back to the left pane
 Tab
-Sleep 400ms
-
-# ── Ascend to root ────────────────────────────────────────────────────────────
-Backspace
 Sleep 500ms
 
-# ── Cut a file this time ──────────────────────────────────────────────────────
-Sleep 400ms
+# Navigate to a different file and cut it
+Type "g"
+Sleep 300ms
+Down
+Sleep 200ms
 Down
 Sleep 200ms
 Down
@@ -90,62 +60,54 @@ Sleep 200ms
 Type "x"
 Sleep 800ms
 
-# ── Switch to right pane (still in examples/) ────────────────────────────────
-Sleep 400ms
+# Switch to right pane and paste (move)
 Tab
-Sleep 400ms
-
-# ── Paste (move) — triggers overwrite confirmation since file already exists ──
 Sleep 400ms
 Type "p"
 Sleep 900ms
 
-# ── Confirm overwrite with y ──────────────────────────────────────────────────
-Sleep 600ms
+# Paste again on same destination — triggers overwrite confirmation
+Sleep 500ms
+Tab
+Sleep 300ms
 Type "y"
-Sleep 900ms
-
-# ── Switch back to left pane ──────────────────────────────────────────────────
 Sleep 400ms
 Tab
 Sleep 400ms
+Type "p"
+Sleep 900ms
 
-# ── Navigate to a file to delete ─────────────────────────────────────────────
-Sleep 400ms
-Down
-Sleep 200ms
-Down
-Sleep 200ms
-Down
-Sleep 200ms
-Down
-Sleep 200ms
+# Confirm overwrite with y
+Type "y"
+Sleep 900ms
 
-# ── Initiate delete — confirmation modal appears ──────────────────────────────
-Sleep 600ms
+# Switch back to left pane and delete a file
+Tab
+Sleep 500ms
+Type "g"
+Sleep 300ms
+Down
+Sleep 200ms
+Down
+Sleep 200ms
+Down
+Sleep 200ms
 Type "d"
 Sleep 900ms
 
-# ── Cancel delete with n ──────────────────────────────────────────────────────
-Sleep 500ms
+# Cancel the delete with n
 Type "n"
 Sleep 700ms
 
-# ── Delete again and confirm with y ──────────────────────────────────────────
-Sleep 400ms
+# Delete again and confirm
 Type "d"
 Sleep 800ms
 Type "y"
 Sleep 900ms
 
-# ── Toggle single-pane mode to review the result ─────────────────────────────
-Sleep 500ms
+# Toggle single-pane to review the result
 Type "w"
 Sleep 700ms
-
-# ── Scroll through the listing ───────────────────────────────────────────────
-Down
-Sleep 200ms
 Down
 Sleep 200ms
 Down
@@ -155,12 +117,10 @@ Sleep 200ms
 Type "g"
 Sleep 500ms
 
-# ── Restore two-pane mode ─────────────────────────────────────────────────────
-Sleep 400ms
+# Restore two-pane layout
 Type "w"
 Sleep 700ms
 
-# ── Dismiss ───────────────────────────────────────────────────────────────────
 Sleep 400ms
 Escape
 Sleep 1s
