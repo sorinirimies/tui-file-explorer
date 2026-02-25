@@ -1,0 +1,41 @@
+[package]
+name         = "tui-file-explorer"
+version      = "0.1.0"
+edition      = "2021"
+authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
+license      = "MIT"
+repository   = "https://github.com/sorinirimies/tui-file-explorer"
+description  = "A self-contained, keyboard-driven file-browser widget for Ratatui"
+categories   = ["command-line-utilities", "filesystem"]
+keywords     = ["tui", "ratatui", "file-explorer", "widget", "terminal"]
+readme       = "README.md"
+exclude      = ["target/", ".gitignore"]
+
+# ── Features ──────────────────────────────────────────────────────────────────
+#
+# The `cli` feature (on by default) pulls in `clap` and enables the `tfe`
+# binary. Library users who only want the widget can opt out:
+#
+#   [dependencies]
+#   tui-file-explorer = { version = "0.1", default-features = false }
+#
+[features]
+default = ["cli"]
+cli     = ["dep:clap"]
+
+# ── Dependencies ──────────────────────────────────────────────────────────────
+
+[dependencies]
+ratatui   = "0.30"
+crossterm = "0.29"
+clap      = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+# ── Binaries ──────────────────────────────────────────────────────────────────
+
+[[bin]]
+name              = "tfe"
+path              = "src/main.rs"
+required-features = ["cli"]
