@@ -240,7 +240,7 @@ fn run() -> io::Result<()> {
     if cli.list_themes {
         let presets = Theme::all_presets();
         let max_name = presets.iter().map(|(n, _, _)| n.len()).max().unwrap_or(0);
-        println!("{:<width$}  {}", "THEME", "DESCRIPTION", width = max_name);
+        println!("{:<width$}  DESCRIPTION", "THEME", width = max_name);
         println!("{}", "─".repeat(max_name + 2 + 50));
         for (name, desc, _) in presets {
             println!("{name:<width$}  {desc}", width = max_name);
