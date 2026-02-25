@@ -6,7 +6,8 @@
 # IDE
 .idea/
 .vscode/
-.zed/
+.zed/*
+!.zed/rules.md
 *.swp
 *.swo
 *~
