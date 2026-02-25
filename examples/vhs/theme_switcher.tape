@@ -123,7 +123,7 @@ Sleep 700ms
 
 # ── Navigate into src/ directory in the Forest theme ─────────────────────────
 Sleep 400ms
-Home
+Type "g"
 Sleep 300ms
 Down
 Sleep 200ms

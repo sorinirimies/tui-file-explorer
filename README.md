@@ -1,16 +1,41 @@
 # tui-file-explorer
 
-A self-contained, keyboard-driven file-browser widget for [Ratatui](https://ratatui.rs).
+[![Crates.io](https://img.shields.io/crates/v/tui-file-explorer)](https://crates.io/crates/tui-file-explorer)
+[![Documentation](https://docs.rs/tui-file-explorer/badge.svg)](https://docs.rs/tui-file-explorer)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Release](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/release.yml/badge.svg)](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/release.yml)
+[![CI](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/ci.yml)
+[![Downloads](https://img.shields.io/crates/d/tui-file-explorer)](https://crates.io/crates/tui-file-explorer)
 
-## Demo
+A self-contained, keyboard-driven file-browser widget for [Ratatui](https://ratatui.rs).  
+Works both as an **embeddable library widget** and as a **standalone CLI tool** (`tfe`).
 
-| Basic navigation | Extension filter | Theme switcher |
-|:---:|:---:|:---:|
-| ![basic demo](examples/vhs/generated/basic.gif) | ![filter demo](examples/vhs/generated/filter.gif) | ![theme switcher demo](examples/vhs/generated/theme_switcher.gif) |
+---
 
-> **Generating the GIFs** — install [VHS](https://github.com/charmbracelet/vhs) and run:
-> ```text
+## Preview
+
+### Navigation & Search
+![Basic navigation and incremental search](examples/vhs/generated/basic.gif)
+
+### Incremental Search (`/`)
+![Live incremental search](examples/vhs/generated/search.gif)
+
+### Sort Modes (`s`)
+![Sort mode cycling](examples/vhs/generated/sort.gif)
+
+### Extension Filter
+![Extension filter](examples/vhs/generated/filter.gif)
+
+### Theme Switcher
+![Live theme switching](examples/vhs/generated/theme_switcher.gif)
+
+> **Generating the GIFs** — install [VHS](https://github.com/charmbracelet/vhs) then run:
+> ```bash
+> just vhs-all
+> # or individually:
 > vhs examples/vhs/basic.tape
+> vhs examples/vhs/search.tape
+> vhs examples/vhs/sort.tape
 > vhs examples/vhs/filter.tape
 > vhs examples/vhs/theme_switcher.tape
 > ```
@@ -20,13 +45,29 @@ A self-contained, keyboard-driven file-browser widget for [Ratatui](https://rata
 ## Features
 
 - 📁 Directories-first listing with case-insensitive alphabetical sorting
-- 🔍 Optional extension filter — only matching files are selectable
+- 🔍 **Incremental search** — press `/` to filter entries live as you type
+- 🔃 **Sort modes** — cycle `Name → Size ↓ → Extension` with `s`
+- 🎛️ **Extension filter** — only matching files are selectable; dirs always navigable
 - 👁 Toggle hidden (dot-file) visibility with `.`
-- ⌨️ Full keyboard navigation: arrow keys, vim keys (`h/j/k/l`), `PgUp/PgDn`, `Home/End`
-- 🎨 Fully themeable palette via the `Theme` builder — 27 named presets included
-- 🔧 Builder API for ergonomic configuration
-- 🖥️ Works as both a **library widget** and a **standalone CLI** (`tfe`)
-- ✅ Lean library — only `ratatui` + `crossterm` (CLI binary adds `clap`, opt-out supported)
+- ⌨️ Full keyboard navigation: arrow keys, vim keys (`h/j/k/l`), `PgUp/PgDn`, `g/G`
+- 🎨 Fully themeable palette — 27 named presets + custom `Theme` builder
+- 🔧 Fluent builder API for ergonomic configuration
+- 🖥️ Standalone CLI binary (`tfe`) with shell integration
+- ✅ Lean library — only `ratatui` + `crossterm` required (`clap` is opt-out)
+
+---
+
+## Stats
+
+| Metric | Value |
+|--------|-------|
+| Dependencies (library) | 2 (`ratatui`, `crossterm`) |
+| Named colour themes | 27 |
+| Sort modes | 3 (`Name`, `Size ↓`, `Extension`) |
+| Key bindings | 15+ |
+| File-type icons | 50+ extensions mapped |
+| Public API surface | 5 types, 2 free functions |
+| Test coverage | 32 unit tests + 28 doc-tests |
 
 ---
 
@@ -39,8 +80,7 @@ A self-contained, keyboard-driven file-browser widget for [Ratatui](https://rata
 tui-file-explorer = "0.1"
 ```
 
-If you only want the widget and don't want to pull in `clap`, opt out of the
-default `cli` feature:
+Library-only (without the `clap`-powered CLI binary):
 
 ```toml
 [dependencies]
@@ -49,26 +89,354 @@ tui-file-explorer = { version = "0.1", default-features = false }
 
 ### As a CLI tool
 
-```text
+```bash
 cargo install tui-file-explorer
 ```
 
-This installs the `tfe` binary onto your `PATH`.
+Installs the `tfe` binary onto your `PATH`.
 
 ---
 
-## CLI usage
+## Quick Start
 
-```text
+```rust
+use tui_file_explorer::{FileExplorer, ExplorerOutcome, SortMode, render};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+// 1. Create once — e.g. in your App::new
+let mut explorer = FileExplorer::builder(std::env::current_dir().unwrap())
+    .allow_extension("iso")
+    .allow_extension("img")
+    .sort_mode(SortMode::SizeDesc)   // largest files first
+    .show_hidden(false)
+    .build();
+
+// 2. Inside Terminal::draw:
+// render(&mut explorer, frame, frame.area());
+
+// 3. Inside your key-handler:
+let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+match explorer.handle_key(key) {
+    ExplorerOutcome::Selected(path) => println!("chosen: {}", path.display()),
+    ExplorerOutcome::Dismissed      => { /* close the overlay */ }
+    _                               => {}
+}
+```
+
+---
+
+## Key Bindings
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move cursor up |
+| `↓` / `j` | Move cursor down |
+| `PgUp` | Jump up 10 rows |
+| `PgDn` | Jump down 10 rows |
+| `g` / `Home` | Jump to top |
+| `G` / `End` | Jump to bottom |
+| `Enter` / `→` / `l` | Descend into directory or confirm file |
+| `Backspace` / `←` / `h` | Ascend to parent directory |
+| `/` | **Activate incremental search** |
+| `s` | **Cycle sort mode** (`Name → Size ↓ → Extension`) |
+| `.` | Toggle hidden (dot-file) entries |
+| `Esc` | Clear search (if active), then dismiss |
+| `q` | Dismiss (when search is not active) |
+
+### Search mode (`/` activated)
+
+| Key | Action |
+|-----|--------|
+| Any character | Append to search query (live filter) |
+| `Backspace` | Remove last character; empty query → exit search |
+| `Esc` | Clear query and exit search (returns `Pending`, not `Dismissed`) |
+| `↑` / `↓` / `Enter` | Navigate the filtered results as normal |
+
+---
+
+## Incremental Search
+
+Press `/` to activate search mode. The footer transforms into a live input bar
+showing your query. Entries are filtered in real-time using a case-insensitive
+substring match on the file name.
+
+```rust
+// Inspect search state programmatically:
+println!("searching: {}", explorer.is_searching());
+println!("query    : {}", explorer.search_query());
+```
+
+**Behaviour details:**
+- `Backspace` on a non-empty query pops the last character.
+- `Backspace` on an empty query deactivates search without dismissing.
+- `Esc` clears the query and deactivates search — a second `Esc` (when search is already inactive) dismisses the explorer entirely.
+- Search is automatically cleared when descending into a subdirectory or ascending to a parent, keeping the filter scoped to one directory at a time.
+
+---
+
+## Sort Modes
+
+Press `s` to cycle through three sort modes, or set one directly:
+
+```rust
+use tui_file_explorer::{FileExplorer, SortMode};
+
+let mut explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
+
+explorer.set_sort_mode(SortMode::SizeDesc);   // largest files first
+println!("{}", explorer.sort_mode().label()); // "size ↓"
+```
+
+| Mode | Key | Description |
+|------|-----|-------------|
+| `SortMode::Name` | `s` (1st) | Alphabetical A → Z — the default |
+| `SortMode::SizeDesc` | `s` (2nd) | Largest files first |
+| `SortMode::Extension` | `s` (3rd) | Grouped by extension, then name |
+
+Directories always sort alphabetically among themselves regardless of the active mode.
+
+The current sort mode is shown in the footer status panel at all times.
+
+---
+
+## Extension Filtering
+
+Only files whose extension matches the filter are selectable.  
+Directories are always shown and always navigable, regardless of the filter.
+
+```rust
+use tui_file_explorer::FileExplorer;
+
+// Builder API (preferred)
+let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
+    .allow_extension("iso")
+    .allow_extension("img")
+    .build();
+
+// Or replace the filter at runtime — reloads the listing immediately
+explorer.set_extension_filter(["rs", "toml"]);
+
+// Pass an empty filter to allow all files
+explorer.set_extension_filter([] as [&str; 0]);
+```
+
+Non-matching files are shown dimmed in the list so the directory structure
+remains visible. Attempting to confirm a non-matching file shows a status
+message in the footer.
+
+---
+
+## Builder API
+
+`FileExplorer::builder` gives a fluent, chainable construction API:
+
+```rust
+use tui_file_explorer::{FileExplorer, SortMode};
+
+let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
+    .allow_extension("rs")          // add one extension at a time
+    .allow_extension("toml")
+    .show_hidden(true)              // show dot-files on startup
+    .sort_mode(SortMode::Extension) // initial sort order
+    .build();
+```
+
+Or pass the full filter list at once:
+
+```rust
+let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
+    .extension_filter(vec!["iso".into(), "img".into()])
+    .build();
+```
+
+The classic `FileExplorer::new(dir, filter)` constructor is still available
+and fully backwards-compatible.
+
+---
+
+## Theming
+
+Every colour used by the widget is overridable through the `Theme` struct.
+Pass a `Theme` to `render_themed` instead of `render`:
+
+```rust
+use tui_file_explorer::{FileExplorer, Theme, render_themed};
+use ratatui::style::Color;
+
+let theme = Theme::default()
+    .brand(Color::Magenta)               // widget title
+    .accent(Color::Cyan)                 // borders & current path
+    .dir(Color::LightYellow)             // directory names & icons
+    .sel_bg(Color::Rgb(50, 40, 80))      // highlighted-row background
+    .success(Color::Rgb(100, 230, 140))  // status bar & selectable files
+    .match_file(Color::Rgb(100, 230, 140));
+
+terminal.draw(|frame| {
+    render_themed(&mut explorer, frame, frame.area(), &theme);
+})?;
+```
+
+### Named presets (27 included)
+
+All presets are available as associated constructors on `Theme`:
+
+```rust
+use tui_file_explorer::Theme;
+
+let t = Theme::dracula();
+let t = Theme::nord();
+let t = Theme::catppuccin_mocha();
+let t = Theme::tokyo_night();
+let t = Theme::gruvbox_dark();
+let t = Theme::kanagawa_wave();
+let t = Theme::oxocarbon();
+let t = Theme::grape();
+let t = Theme::ocean();
+let t = Theme::neon();
+
+// Iterate the full catalogue (name, description, theme):
+for (name, desc, _theme) in Theme::all_presets() {
+    println!("{name} — {desc}");
+}
+```
+
+### Palette constants
+
+The default colours are exported as `pub const` values in `palette` for use
+alongside complementary widgets:
+
+| Constant | Default | Used for |
+|----------|---------|----------|
+| `C_BRAND` | `Rgb(255, 100, 30)` | Widget title |
+| `C_ACCENT` | `Rgb(80, 200, 255)` | Borders, current-path text |
+| `C_SUCCESS` | `Rgb(80, 220, 120)` | Selectable files, status bar |
+| `C_DIM` | `Rgb(120, 120, 130)` | Hints, non-matching files |
+| `C_FG` | `White` | Default foreground |
+| `C_SEL_BG` | `Rgb(40, 60, 80)` | Selected-row background |
+| `C_DIR` | `Rgb(255, 210, 80)` | Directory names & icons |
+| `C_MATCH` | `Rgb(80, 220, 120)` | Extension-matched file names |
+
+---
+
+## Examples
+
+### `basic`
+
+[`examples/basic.rs`](examples/basic.rs) — a fully self-contained Ratatui app demonstrating:
+
+- Builder API
+- Full event loop (raw mode, alternate screen)
+- All `ExplorerOutcome` variants
+- Custom `Theme`
+- Optional CLI extension-filter arguments
+
+```bash
+# Browse everything
+cargo run --example basic
+
+# Only .rs and .toml files are selectable
+cargo run --example basic -- rs toml md
+```
+
+---
+
+### `theme_switcher`
+
+[`examples/theme_switcher.rs`](examples/theme_switcher.rs) — **live theme switching** without restarting.  
+Press `Tab` / `Shift+Tab` to cycle through eight built-in named themes.
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Next theme |
+| `Shift+Tab` | Previous theme |
+| `↑/↓/j/k` | Navigate file list |
+| `Enter` | Descend / select |
+| `Backspace` | Ascend |
+| `.` | Toggle hidden files |
+| `/` | Search |
+| `s` | Cycle sort mode |
+| `Esc` / `q` | Quit |
+
+```bash
+cargo run --example theme_switcher
+```
+
+---
+
+## Example Demos
+
+### Navigation & Search
+
+**Run:** `cargo run --example basic`
+
+![Basic navigation](examples/vhs/generated/basic.gif)
+
+Demonstrates directory navigation, incremental search (`/`), sort mode cycling (`s`), hidden-file toggle, and file selection.
+
+---
+
+### Incremental Search
+
+**Run:** `cargo run --example basic` then press `/`
+
+![Incremental search](examples/vhs/generated/search.gif)
+
+Shows the full search lifecycle: activate with `/`, type to filter live, use `Backspace` to narrow/clear, and `Esc` to cancel without dismissing.
+
+---
+
+### Sort Modes
+
+**Run:** `cargo run --example basic` then press `s`
+
+![Sort modes](examples/vhs/generated/sort.gif)
+
+Demonstrates `Name → Size ↓ → Extension → Name` cycling, combined with search, and sort persistence across directory navigation.
+
+---
+
+### Extension Filter
+
+**Run:** `cargo run --example basic -- rs toml`
+
+![Extension filter](examples/vhs/generated/filter.gif)
+
+Shows only `.rs` and `.toml` files as selectable; all other files appear dimmed. The footer reflects the active filter at all times.
+
+---
+
+### Theme Switcher
+
+**Run:** `cargo run --example theme_switcher`
+
+![Theme switcher](examples/vhs/generated/theme_switcher.gif)
+
+Live theme cycling through eight named palettes — Default, Grape, Ocean, Sunset, Forest, Rose, Mono, and Neon.
+
+---
+
+## Demo Quick Reference
+
+| Demo | Command | Features |
+|------|---------|----------|
+| Navigation + Search | `cargo run --example basic` | All key bindings, search, sort |
+| Extension filter | `cargo run --example basic -- rs toml` | Dimmed non-matching files |
+| Theme switcher | `cargo run --example theme_switcher` | 8 live themes, `Tab` to cycle |
+
+---
+
+## CLI Usage
+
+```bash
 tfe [OPTIONS] [PATH]
 ```
 
 | Flag | Description |
 |------|-------------|
 | `[PATH]` | Starting directory (default: current directory) |
-| `-e, --ext <EXT>` | Only select files with this extension — repeatable |
+| `-e, --ext <EXT>` | Only select files with this extension (repeatable) |
 | `-H, --hidden` | Show hidden dot-files on startup |
-| `-t, --theme <THEME>` | Colour theme (see `--list-themes`) |
+| `-t, --theme <THEME>` | Colour theme — see `--list-themes` |
 | `--list-themes` | Print all 27 available themes and exit |
 | `--print-dir` | Print the selected file's **parent directory** instead of the full path |
 | `-0, --null` | Terminate output with a NUL byte (for `xargs -0`) |
@@ -79,8 +447,8 @@ tfe [OPTIONS] [PATH]
 
 | Code | Meaning |
 |------|---------|
-| `0` | A file was selected — path printed to stdout |
-| `1` | Dismissed (Esc / q) without selecting anything |
+| `0` | File selected — path printed to stdout |
+| `1` | Dismissed (Esc / q) without selecting |
 | `2` | Bad arguments or I/O error |
 
 ### Shell integration
@@ -98,223 +466,117 @@ tfe -e rs | xargs -r nvim
 # Use the Catppuccin Mocha theme
 tfe --theme catppuccin-mocha
 
-# Show all available themes
+# List all available themes
 tfe --list-themes
 
-# NUL-delimited output (safe for filenames with spaces)
+# NUL-delimited output (safe for filenames with spaces or newlines)
 tfe -0 | xargs -0 wc -l
 ```
 
-> Theme names are case-insensitive and hyphens/spaces are interchangeable:
-> `catppuccin-mocha`, `Catppuccin Mocha`, and `catppuccin mocha` all work.
+> Theme names are case-insensitive and hyphens/spaces are interchangeable:  
+> `catppuccin-mocha`, `Catppuccin Mocha`, and `catppuccin mocha` all resolve to the same theme.
 
 ---
 
-## Quick start
+## Public API
 
-```rust
-use tui_file_explorer::{FileExplorer, ExplorerOutcome, render};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+The public surface is intentionally narrow for stability:
 
-// Create once (e.g. in App::new)
-let mut explorer = FileExplorer::new(
-    std::env::current_dir().unwrap(),
-    vec!["iso".into(), "img".into()],   // pass vec![] to allow all files
-);
-
-// Inside Terminal::draw:
-// render(&mut explorer, frame, frame.area());
-
-// Inside your key-handler:
-let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-match explorer.handle_key(key) {
-    ExplorerOutcome::Selected(path) => println!("chosen: {}", path.display()),
-    ExplorerOutcome::Dismissed      => { /* close the overlay */ }
-    _                               => {}
-}
-```
+| Item | Kind | Description |
+|------|------|-------------|
+| `FileExplorer` | `struct` | Core state machine — holds cursor, entries, search, sort state |
+| `FileExplorerBuilder` | `struct` | Fluent builder for `FileExplorer` |
+| `ExplorerOutcome` | `enum` | Result of `handle_key` — `Selected`, `Dismissed`, `Pending`, `Unhandled` |
+| `FsEntry` | `struct` | A single directory entry (name, path, size, extension, is_dir) |
+| `SortMode` | `enum` | `Name` \| `SizeDesc` \| `Extension` |
+| `Theme` | `struct` | Colour palette with builder methods and 27 named presets |
+| `render` | `fn` | Render using the default theme |
+| `render_themed` | `fn` | Render with a custom `Theme` |
+| `entry_icon` | `fn` | Map an `FsEntry` to its Unicode icon |
+| `fmt_size` | `fn` | Format a byte count as a human-readable string (`1.5 KB`) |
 
 ---
 
-## Example
+## Module Layout
 
-### `basic`
+| Module | Contents |
+|--------|----------|
+| `types` | `FsEntry`, `ExplorerOutcome`, `SortMode` — data types only, no I/O |
+| `palette` | Palette constants + `Theme` builder + 27 named presets |
+| `explorer` | `FileExplorer`, `FileExplorerBuilder`, `entry_icon`, `fmt_size` |
+| `render` | `render`, `render_themed` — pure rendering, no state |
 
-[`examples/basic.rs`](examples/basic.rs) — a fully self-contained Ratatui app. It shows:
-
-- Building the explorer with the **builder API**
-- Embedding it in a real Ratatui event loop (raw mode, alternate screen)
-- Handling all `ExplorerOutcome` variants
-- Applying a custom **`Theme`**
-- Accepting optional extension-filter arguments from the CLI
-
-```text
-# browse everything
-cargo run --example basic
-
-# only .rs and .toml files are selectable
-cargo run --example basic -- rs toml md
-```
-
-### `theme_switcher`
-
-[`examples/theme_switcher.rs`](examples/theme_switcher.rs) — demonstrates **live theme switching**. Eight named colour presets are bundled; press `Tab` / `Shift+Tab` to cycle through them without restarting the app. A sidebar shows the theme list and highlights the active one.
-
-| Theme | Character |
-|-------|-----------|
-| **Default** | Orange title, cyan borders, yellow dirs |
-| **Grape** | Deep violet & soft blue |
-| **Ocean** | Teal & aquamarine |
-| **Sunset** | Warm amber & rose |
-| **Forest** | Earthy greens & bark browns |
-| **Rose** | Pinks & corals |
-| **Mono** | Greyscale only |
-| **Neon** | Electric brights — synthwave / retro |
-
-```text
-cargo run --example theme_switcher
-```
-
-| Key | Action |
-|-----|--------|
-| `Tab` | Next theme |
-| `Shift+Tab` | Previous theme |
-| `↑/↓/j/k` | Navigate file list |
-| `Enter` | Descend / select |
-| `Backspace` | Ascend |
-| `.` | Toggle hidden files |
-| `Esc` / `q` | Quit |
+Because rendering is fully decoupled from state, you can slot the explorer into
+any Ratatui layout, render it conditionally as an overlay, or build a completely
+custom renderer by reading `FileExplorer`'s public fields directly.
 
 ---
 
-## Configuration
+## Generating Demo GIFs
 
-### Builder API
+Install [VHS](https://github.com/charmbracelet/vhs) then run:
 
-`FileExplorer::builder` gives you a fluent, chainable construction API:
+```bash
+# Generate all GIFs at once (requires just)
+just vhs-all
 
-```rust
-use tui_file_explorer::FileExplorer;
-
-let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
-    // restrict selectable files to Rust sources and manifests
-    .allow_extension("rs")
-    .allow_extension("toml")
-    // start with hidden dot-files visible
-    .show_hidden(true)
-    .build();
+# Or individually
+vhs examples/vhs/basic.tape
+vhs examples/vhs/search.tape
+vhs examples/vhs/sort.tape
+vhs examples/vhs/filter.tape
+vhs examples/vhs/theme_switcher.tape
 ```
 
-Alternatively, pass the full filter list at once:
-
-```rust
-let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
-    .extension_filter(vec!["iso".into(), "img".into()])
-    .build();
-```
-
-The classic `FileExplorer::new(dir, filter)` constructor is still available and
-forwards to the same internal logic.
-
-### Public fields
-
-After construction every configuration field is publicly accessible, so you can
-mutate the explorer at any time:
-
-```rust
-explorer.show_hidden = true;
-explorer.extension_filter.push("log".into());
-explorer.reload(); // re-scan the current directory
-```
+GIFs are stored under `examples/vhs/generated/` and tracked with **Git LFS**.
 
 ---
 
-## Theming
+## Development
 
-Every colour used by the widget is exposed through the `Theme` struct.
-Pass a `Theme` to `render_themed` instead of `render` to override any or all
-colours:
+### Prerequisites
 
-```rust
-use tui_file_explorer::{FileExplorer, Theme, render_themed};
-use ratatui::style::Color;
+- Rust 1.74.0 or later
+- [`just`](https://github.com/casey/just) — task runner
+- [`git-cliff`](https://github.com/orhun/git-cliff) — changelog generator
+- [`vhs`](https://github.com/charmbracelet/vhs) — GIF recorder (optional, for demos)
 
-// Start from the defaults and tweak what you need.
-let theme = Theme::default()
-    .brand(Color::Magenta)               // widget title
-    .accent(Color::Cyan)                 // borders & path
-    .dir(Color::LightYellow)             // directory names
-    .sel_bg(Color::Rgb(50, 40, 80))      // highlighted row background
-    .success(Color::Rgb(100, 230, 140))  // status bar & selectable files
-    .match_file(Color::Rgb(100, 230, 140));
-
-terminal.draw(|frame| {
-    render_themed(&mut explorer, frame, frame.area(), &theme);
-})?;
+```bash
+just install-tools
 ```
 
-`Theme` also implements `Default`, so you can construct one field-by-field:
+### Common tasks
 
-```rust
-let mut theme = Theme::default();
-theme.brand  = Color::Rgb(255, 80, 120);
-theme.accent = Color::Rgb(80, 180, 255);
+```bash
+just fmt          # format code
+just clippy       # run linter (zero warnings enforced)
+just test         # run tests
+just check-all    # fmt + clippy + test in one shot
+just doc          # build and open docs
+
+just bump 0.2.0   # interactive version bump + tag
+just release 0.2.0 # non-interactive: bump + commit + tag + push (triggers CI release)
 ```
 
-### Palette constants
-
-The eight default colours are also exported as plain `pub const` values in the
-`palette` module, in case you want to reference them when building complementary
-widgets:
-
-| Constant     | Default value          | Used for                          |
-|--------------|------------------------|-----------------------------------|
-| `C_BRAND`    | `Rgb(255, 100, 30)`    | Widget title                      |
-| `C_ACCENT`   | `Rgb(80, 200, 255)`    | Borders, current-path text        |
-| `C_SUCCESS`  | `Rgb(80, 220, 120)`    | Selectable files, status bar      |
-| `C_DIM`      | `Rgb(120, 120, 130)`   | Hints, non-matching files         |
-| `C_FG`       | `White`                | Default foreground                |
-| `C_SEL_BG`   | `Rgb(40, 60, 80)`      | Selected-row background           |
-| `C_DIR`      | `Rgb(255, 210, 80)`    | Directory names & icons           |
-| `C_MATCH`    | `Rgb(80, 220, 120)`    | Extension-matched file names      |
-
----
-
-## Keyboard bindings
-
-| Key | Action |
-|---|---|
-| `↑` / `k` | Move up |
-| `↓` / `j` | Move down |
-| `PgUp` | Jump up 10 rows |
-| `PgDn` | Jump down 10 rows |
-| `Home` / `g` | Jump to top |
-| `End` / `G` | Jump to bottom |
-| `Enter` / `→` / `l` | Descend into directory / confirm file |
-| `Backspace` / `←` / `h` | Ascend to parent directory |
-| `.` | Toggle hidden files |
-| `Esc` / `q` | Dismiss explorer |
-
----
-
-## Modularity
-
-The crate is split into four focused modules that you can use independently:
-
-| Module    | Contents                                                   |
-|-----------|------------------------------------------------------------|
-| `types`   | `FsEntry`, `ExplorerOutcome` — data types only, no I/O     |
-| `palette` | Palette constants + `Theme` builder — no widget logic      |
-| `explorer`| `FileExplorer` state machine + `FileExplorerBuilder`       |
-| `render`  | `render` and `render_themed` — pure rendering, no state    |
-
-Because the render functions are decoupled from state, you can slot the explorer
-into any Ratatui layout, render it conditionally as an overlay, or replace the
-renderer entirely by reading `FileExplorer`'s public fields and painting your
-own widget.
+```bash
+just --list       # see all available commands
+```
 
 ---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+## Acknowledgments
+
+Built for the [Ratatui](https://github.com/ratatui/ratatui) ecosystem.  
+Special thanks to the Ratatui team for an outstanding TUI framework.

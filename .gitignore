@@ -22,7 +22,7 @@
 /doc/
 
 # VHS tapes output
-examples/vhs/generated/
+# examples/vhs/generated/ — tracked via Git LFS (see .gitattributes)
 
 # Build artifacts
 *.exe

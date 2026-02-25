@@ -104,6 +104,27 @@ changelog-update: check-git-cliff
 
 # ── Versioning & Release ──────────────────────────────────────────────────────
 
+# ── VHS / Demo GIFs ──────────────────────────────────────────────────────────
+
+# Generate a single demo GIF (usage: just vhs basic)
+vhs name:
+    @echo "Recording {{name}}.tape..."
+    vhs examples/vhs/{{name}}.tape
+    @echo "✅ examples/vhs/generated/{{name}}.gif created"
+
+# Generate all demo GIFs (requires VHS: https://github.com/charmbracelet/vhs)
+vhs-all:
+    @command -v vhs >/dev/null 2>&1 || { echo "❌ vhs not found. Install: brew install vhs"; exit 1; }
+    @echo "Building examples..."
+    cargo build --example basic --example theme_switcher
+    @echo "Recording all tapes..."
+    vhs examples/vhs/basic.tape
+    vhs examples/vhs/search.tape
+    vhs examples/vhs/sort.tape
+    vhs examples/vhs/filter.tape
+    vhs examples/vhs/theme_switcher.tape
+    @echo "✅ All GIFs generated in examples/vhs/generated/"
+
 # Show current version
 version:
     @grep '^version[[:space:]]*=' Cargo.toml | head -1 | sed 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/'

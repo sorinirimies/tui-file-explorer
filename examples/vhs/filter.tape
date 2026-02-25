@@ -44,7 +44,7 @@ Sleep 250ms
 
 # ── Attempt to select a non-matching file (should show status message) ────────
 # Navigate to a directory first and descend into src/
-Home
+Type "g"
 Sleep 300ms
 Down
 Sleep 200ms
@@ -69,7 +69,7 @@ Backspace
 Sleep 500ms
 
 # Navigate to Cargo.toml
-Home
+Type "g"
 Sleep 300ms
 Down
 Sleep 200ms
