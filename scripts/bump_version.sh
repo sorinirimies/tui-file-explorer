@@ -42,10 +42,37 @@ echo -e "${CYAN}  tui-file-explorer Version Bump${NC}"
 echo -e "${CYAN}════════════════════════════════════════${NC}"
 echo ""
 
-CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+# Extract current version robustly — handles any amount of whitespace around '='
+CURRENT_VERSION=$(grep '^version[[:space:]]*=' Cargo.toml | head -1 | sed 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/')
+
+if [ -z "$CURRENT_VERSION" ]; then
+    echo -e "${RED}Error: Could not read current version from Cargo.toml${NC}"
+    exit 1
+fi
+
 echo -e "Current version: ${YELLOW}${CURRENT_VERSION}${NC}"
 echo -e "New version:     ${GREEN}${NEW_VERSION}${NC}"
 echo ""
+
+# Guard: abort early if the version is already at the requested value.
+# Re-running the script for the same version produces duplicate commits and a
+# tag that is already at origin, which means GitHub never sees a new tag push
+# and the release workflow never fires.
+if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+    echo -e "${RED}Error: Cargo.toml is already at version ${NEW_VERSION}.${NC}"
+    echo -e "${YELLOW}  • If you need to re-release, delete the tag first:${NC}"
+    echo -e "      git tag -d v${NEW_VERSION} && git push origin :refs/tags/v${NEW_VERSION}"
+    echo -e "${YELLOW}  • Or bump to the next version instead.${NC}"
+    exit 1
+fi
+
+# Guard: abort if a tag for this version already exists locally.
+if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
+    echo -e "${RED}Error: Tag v${NEW_VERSION} already exists locally.${NC}"
+    echo -e "${YELLOW}  Delete it first if you really want to recreate it:${NC}"
+    echo -e "      git tag -d v${NEW_VERSION}"
+    exit 1
+fi
 
 read -p "Continue with version bump? (y/n) " -n 1 -r
 echo
@@ -56,8 +83,18 @@ fi
 
 echo ""
 echo -e "${CYAN}Step 1/8: Updating Cargo.toml...${NC}"
-sed_inplace "s/^version = \".*\"/version = \"${NEW_VERSION}\"/" Cargo.toml
-echo -e "${GREEN}✓ Cargo.toml updated${NC}"
+# Use a POSIX character class so the pattern matches regardless of how many
+# spaces surround '=' in the version line (e.g. "version      = \"0.1.0\"").
+sed_inplace 's/^version[[:space:]]*=[[:space:]]*"[^"]*"/version      = "'"${NEW_VERSION}"'"/' Cargo.toml
+
+# Verify the substitution actually took effect.
+UPDATED_VERSION=$(grep '^version[[:space:]]*=' Cargo.toml | head -1 | sed 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/')
+if [ "$UPDATED_VERSION" != "$NEW_VERSION" ]; then
+    echo -e "${RED}✗ Failed to update version in Cargo.toml (got \"${UPDATED_VERSION}\").${NC}"
+    echo -e "${YELLOW}  Check the version line format in Cargo.toml and update manually.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Cargo.toml updated (${CURRENT_VERSION} → ${NEW_VERSION})${NC}"
 
 echo ""
 echo -e "${CYAN}Step 2/8: Updating README.md badges...${NC}"
@@ -114,21 +151,17 @@ else
 
     git commit -m "chore: bump version to ${NEW_VERSION}
 
-- Update version in Cargo.toml
+- Update version in Cargo.toml to ${NEW_VERSION}
 - Update Cargo.lock
 - Generate updated CHANGELOG.md"
 
     echo -e "${GREEN}✓ Changes committed${NC}"
 fi
 
-if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
-    echo -e "${YELLOW}⚠ Tag v${NEW_VERSION} already exists${NC}"
-else
-    git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}
+git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}
 
 Includes all changes documented in CHANGELOG.md for version ${NEW_VERSION}."
-    echo -e "${GREEN}✓ Tag v${NEW_VERSION} created${NC}"
-fi
+echo -e "${GREEN}✓ Tag v${NEW_VERSION} created${NC}"
 
 echo ""
 echo -e "${CYAN}════════════════════════════════════════${NC}"
@@ -139,7 +172,7 @@ echo -e "${YELLOW}Next steps:${NC}"
 echo -e "  1. Review the changes:"
 echo -e "     ${CYAN}git show${NC}"
 echo -e ""
-echo -e "  2. Push to GitHub:"
+echo -e "  2. Push to GitHub (triggers the release workflow):"
 echo -e "     ${CYAN}git push origin main${NC}"
 echo -e "     ${CYAN}git push origin v${NEW_VERSION}${NC}"
 echo -e ""

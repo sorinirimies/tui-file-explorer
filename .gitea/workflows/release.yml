@@ -58,8 +58,18 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           echo "Updating version to: $VERSION"
 
-          # Update Cargo.toml version
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          # Update Cargo.toml version — use POSIX character classes so the
+          # pattern matches regardless of how many spaces surround '=' in the
+          # version line (e.g. 'version      = "0.1.0"').
+          sed -i 's/^version[[:space:]]*=[[:space:]]*"[^"]*"/version      = "'"$VERSION"'"/' Cargo.toml
+
+          # Verify the substitution took effect.
+          UPDATED=$(grep '^version[[:space:]]*=' Cargo.toml | head -1 | sed 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/')
+          if [ "$UPDATED" != "$VERSION" ]; then
+            echo "ERROR: Failed to update version in Cargo.toml (got '$UPDATED', expected '$VERSION')"
+            exit 1
+          fi
+          echo "Cargo.toml version updated to $VERSION"
 
           # Regenerate full changelog
           git-cliff --config cliff.toml --latest --output CHANGELOG.md
