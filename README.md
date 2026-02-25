@@ -195,7 +195,7 @@ match explorer.handle_key(key) {
 The `tfe` binary opens a **split-screen file manager** with a left and right pane.
 
 ```
-┌─── Left Pane (active) ──────────┬─── Right Pane ──────────────────┐
+┌─── Left Pane (active) ──────────┬─── Right Pane ───────────────────┐
 │ 📁 ~/projects/tui-file-explorer │ 📁 ~/projects/tui-file-explorer  │
 ├─────────────────────────────────┤──────────────────────────────────┤
 │ ▶ 📁 src/                       │   📁 src/                        │
