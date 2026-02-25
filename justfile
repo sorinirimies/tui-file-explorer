@@ -106,11 +106,11 @@ changelog-update: check-git-cliff
 
 # Show current version
 version:
-    @grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/'
+    @grep '^version[[:space:]]*=' Cargo.toml | head -1 | sed 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/'
 
-# Bump version, run checks, commit and tag (usage: just bump 0.2.0)
+# Bump version interactively — runs checks, prompts for confirmation, commits and tags.
+# Use `just release <version>` for a fully automated, non-interactive release.
 bump version: check-all check-git-cliff
-    @echo "Bumping version to {{version}}..."
     @./scripts/bump_version.sh {{version}}
 
 # Run pre-publish readiness checks
@@ -127,28 +127,33 @@ publish: release-check
 
 # ── Full release workflows ─────────────────────────────────────────────────────
 
-# Bump, push branch + tag to GitHub (triggers Actions release workflow)
-release version: (bump version)
-    @echo "Pushing to GitHub..."
+# Full automated release to GitHub — bumps version, commits, tags, and pushes.
+# This is the single command you run to cut a release:
+#   just release 0.2.0
+release version: check-all check-git-cliff
+    @./scripts/bump_version.sh --yes {{version}}
+    @echo "Pushing branch and tag to GitHub..."
     git push origin main
     git push origin v{{version}}
-    @echo "✅ Release v{{version}} kicked off on GitHub!"
+    @echo "✅ Release v{{version}} pushed — GitHub Actions will handle the rest."
 
-# Bump, push branch + tag to Gitea
-release-gitea version: (bump version)
-    @echo "Pushing to Gitea..."
+# Full automated release to Gitea only.
+release-gitea version: check-all check-git-cliff
+    @./scripts/bump_version.sh --yes {{version}}
+    @echo "Pushing branch and tag to Gitea..."
     git push gitea main
     git push gitea v{{version}}
-    @echo "✅ Release v{{version}} kicked off on Gitea!"
+    @echo "✅ Release v{{version}} pushed to Gitea."
 
-# Bump, push branch + tag to both GitHub and Gitea
-release-all version: (bump version)
-    @echo "Pushing to both GitHub and Gitea..."
+# Full automated release to both GitHub and Gitea.
+release-all version: check-all check-git-cliff
+    @./scripts/bump_version.sh --yes {{version}}
+    @echo "Pushing branch and tag to GitHub and Gitea..."
     git push origin main
     git push gitea main
     git push origin v{{version}}
     git push gitea v{{version}}
-    @echo "✅ Release v{{version}} complete on both remotes!"
+    @echo "✅ Release v{{version}} pushed to both remotes."
 
 # ── Git helpers ───────────────────────────────────────────────────────────────
 

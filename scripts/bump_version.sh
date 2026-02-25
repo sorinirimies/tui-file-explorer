@@ -1,7 +1,8 @@
 #!/bin/bash
 # Automated version bump script for tui-file-explorer
-# Usage: ./scripts/bump_version.sh <new_version>
+# Usage: ./scripts/bump_version.sh [--yes] <new_version>
 # Example: ./scripts/bump_version.sh 0.2.0
+#          ./scripts/bump_version.sh --yes 0.2.0   # skip confirmation (used by `just release`)
 
 set -e
 
@@ -22,14 +23,26 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-if [ -z "$1" ]; then
+# ── Argument parsing ──────────────────────────────────────────────────────────
+
+AUTO_YES=false
+NEW_VERSION=""
+
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) AUTO_YES=true ;;
+        -*) echo -e "${RED}Error: Unknown flag: $arg${NC}"; exit 1 ;;
+        *)  NEW_VERSION="$arg" ;;
+    esac
+done
+
+if [ -z "$NEW_VERSION" ]; then
     echo -e "${RED}Error: Version number required${NC}"
-    echo "Usage: $0 <version>"
+    echo "Usage: $0 [--yes] <version>"
     echo "Example: $0 0.2.0"
+    echo "         $0 --yes 0.2.0   # non-interactive"
     exit 1
 fi
-
-NEW_VERSION=$1
 
 if ! [[ $NEW_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
     echo -e "${RED}Error: Invalid version format${NC}"
@@ -74,11 +87,15 @@ if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
     exit 1
 fi
 
-read -p "Continue with version bump? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Aborted${NC}"
-    exit 0
+if $AUTO_YES; then
+    echo -e "${CYAN}Running non-interactively (--yes passed).${NC}"
+else
+    read -p "Continue with version bump? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Aborted${NC}"
+        exit 0
+    fi
 fi
 
 echo ""
