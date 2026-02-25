@@ -7,52 +7,59 @@
 [![CI](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/ci.yml)
 [![Downloads](https://img.shields.io/crates/d/tui-file-explorer)](https://crates.io/crates/tui-file-explorer)
 
-A self-contained, keyboard-driven file-browser widget for [Ratatui](https://ratatui.rs).  
-Works both as an **embeddable library widget** and as a **standalone CLI tool** (`tfe`).
+A keyboard-driven, two-pane file manager widget for [Ratatui](https://ratatui.rs).  
+Use it as an **embeddable library widget** or run it as the **standalone `tfe` CLI tool**.
 
 ---
 
 ## Preview
 
-### Navigation & Search
-![Basic navigation and incremental search](examples/vhs/generated/basic.gif)
-
-### Incremental Search (`/`)
-![Live incremental search](examples/vhs/generated/search.gif)
-
-### Sort Modes (`s`)
-![Sort mode cycling](examples/vhs/generated/sort.gif)
-
-### Extension Filter
-![Extension filter](examples/vhs/generated/filter.gif)
-
-### Theme Switcher
-![Live theme switching](examples/vhs/generated/theme_switcher.gif)
-
-> **Generating the GIFs** — install [VHS](https://github.com/charmbracelet/vhs) then run:
-> ```bash
-> just vhs-all
-> # or individually:
-> vhs examples/vhs/basic.tape
-> vhs examples/vhs/search.tape
-> vhs examples/vhs/sort.tape
-> vhs examples/vhs/filter.tape
-> vhs examples/vhs/theme_switcher.tape
-> ```
+<table>
+  <tr>
+    <td align="center">
+      <img src="examples/vhs/generated/basic.gif" alt="Navigation, search and sort"/>
+      <br/><sub><b>Navigation &middot; Search &middot; Sort</b></sub>
+    </td>
+    <td align="center">
+      <img src="examples/vhs/generated/search.gif" alt="Incremental search"/>
+      <br/><sub><b>Incremental Search</b></sub>
+    </td>
+    <td align="center">
+      <img src="examples/vhs/generated/sort.gif" alt="Sort modes"/>
+      <br/><sub><b>Sort Modes</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="examples/vhs/generated/filter.gif" alt="Extension filter"/>
+      <br/><sub><b>Extension Filter</b></sub>
+    </td>
+    <td align="center">
+      <img src="examples/vhs/generated/file_ops.gif" alt="Copy, Cut, Paste, Delete"/>
+      <br/><sub><b>File Operations</b></sub>
+    </td>
+    <td align="center">
+      <img src="examples/vhs/generated/theme_switcher.gif" alt="27 live themes"/>
+      <br/><sub><b>27 Live Themes</b></sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
 ## Features
 
-- 📁 Directories-first listing with case-insensitive alphabetical sorting
+- 🗂️ **Two-pane layout** — independent left and right explorer panes, `Tab` to switch focus
+- 📋 **File operations** — copy (`y`), cut (`x`), paste (`p`), and delete (`d`) between panes
 - 🔍 **Incremental search** — press `/` to filter entries live as you type
 - 🔃 **Sort modes** — cycle `Name → Size ↓ → Extension` with `s`
-- 🎛️ **Extension filter** — only matching files are selectable; dirs always navigable
-- 👁 Toggle hidden (dot-file) visibility with `.`
+- 🎛️ **Extension filter** — only matching files are selectable; dirs are always navigable
+- 👁️ Toggle hidden dot-file visibility with `.`
 - ⌨️ Full keyboard navigation: arrow keys, vim keys (`h/j/k/l`), `PgUp/PgDn`, `g/G`
-- 🎨 Fully themeable palette — 27 named presets + custom `Theme` builder
-- 🔧 Fluent builder API for ergonomic configuration
-- 🖥️ Standalone CLI binary (`tfe`) with shell integration
+- 🎨 **27 named themes** — Catppuccin, Dracula, Nord, Tokyo Night, Kanagawa, Gruvbox, and more
+- 🎛️ **Live theme panel** — press `t` to open a side panel, `[`/`]` to cycle themes
+- 🔧 Fluent builder API for ergonomic embedding
+- 🖥️ Standalone `tfe` binary with full shell-pipeline integration
 - ✅ Lean library — only `ratatui` + `crossterm` required (`clap` is opt-out)
 
 ---
@@ -61,13 +68,14 @@ Works both as an **embeddable library widget** and as a **standalone CLI tool** 
 
 | Metric | Value |
 |--------|-------|
-| Dependencies (library) | 2 (`ratatui`, `crossterm`) |
+| Library dependencies | 2 (`ratatui`, `crossterm`) |
 | Named colour themes | 27 |
 | Sort modes | 3 (`Name`, `Size ↓`, `Extension`) |
-| Key bindings | 15+ |
+| File operations | 4 (copy, cut, paste, delete) |
+| Key bindings | 20+ |
 | File-type icons | 50+ extensions mapped |
-| Public API surface | 5 types, 2 free functions |
-| Test coverage | 32 unit tests + 28 doc-tests |
+| Public API surface | 6 types, 4 free functions |
+| Unit tests | 93 |
 
 ---
 
@@ -78,9 +86,10 @@ Works both as an **embeddable library widget** and as a **standalone CLI tool** 
 ```toml
 [dependencies]
 tui-file-explorer = "0.1"
+ratatui = "0.30"
 ```
 
-Library-only (without the `clap`-powered CLI binary):
+Library-only (no `clap`-powered CLI binary):
 
 ```toml
 [dependencies]
@@ -127,6 +136,8 @@ match explorer.handle_key(key) {
 
 ## Key Bindings
 
+### Navigation
+
 | Key | Action |
 |-----|--------|
 | `↑` / `k` | Move cursor up |
@@ -137,28 +148,94 @@ match explorer.handle_key(key) {
 | `G` / `End` | Jump to bottom |
 | `Enter` / `→` / `l` | Descend into directory or confirm file |
 | `Backspace` / `←` / `h` | Ascend to parent directory |
-| `/` | **Activate incremental search** |
-| `s` | **Cycle sort mode** (`Name → Size ↓ → Extension`) |
-| `.` | Toggle hidden (dot-file) entries |
-| `Esc` | Clear search (if active), then dismiss |
-| `q` | Dismiss (when search is not active) |
+| `Tab` | **Switch active pane** (left ↔ right) |
+| `w` | **Toggle two-pane ↔ single-pane** layout |
 
-### Search mode (`/` activated)
+### Explorer actions
 
 | Key | Action |
 |-----|--------|
-| Any character | Append to search query (live filter) |
-| `Backspace` | Remove last character; empty query → exit search |
-| `Esc` | Clear query and exit search (returns `Pending`, not `Dismissed`) |
-| `↑` / `↓` / `Enter` | Navigate the filtered results as normal |
+| `/` | Activate incremental search |
+| `s` | Cycle sort mode (`Name → Size ↓ → Extension`) |
+| `.` | Toggle hidden (dot-file) entries |
+| `Esc` | Clear search (if active), then dismiss |
+| `q` | Dismiss when search is not active |
+
+### File operations
+
+| Key | Action |
+|-----|--------|
+| `y` | **Yank** — mark highlighted entry for copy |
+| `x` | **Cut** — mark highlighted entry for move |
+| `p` | **Paste** — copy/move clipboard into the *other* pane's directory |
+| `d` | **Delete** — remove highlighted entry (asks for confirmation) |
+
+### Layout & theme controls
+
+| Key | Action |
+|-----|--------|
+| `w` | Toggle two-pane ↔ single-pane layout |
+| `t` | Next theme |
+| `T` | Toggle theme panel (right sidebar) |
+| `[` | Previous theme |
+
+### Search mode (after pressing `/`)
+
+| Key | Action |
+|-----|--------|
+| Any character | Append to query — list filters live |
+| `Backspace` | Remove last character; empty query exits search |
+| `Esc` | Clear query and exit search |
+| `↑` / `↓` / `Enter` | Navigate the filtered results normally |
+
+---
+
+## Two-Pane File Manager
+
+The `tfe` binary opens a **split-screen file manager** with a left and right pane.
+
+```
+┌─── Left Pane (active) ──────────┬─── Right Pane ──────────────────┐
+│ 📁 ~/projects/tui-file-explorer │ 📁 ~/projects/tui-file-explorer  │
+├─────────────────────────────────┤──────────────────────────────────┤
+│ ▶ 📁 src/                       │   📁 src/                        │
+│   📁 examples/                  │   📁 examples/                   │
+│   📄 Cargo.toml                 │   📄 Cargo.toml                  │
+│   📄 README.md                  │   📄 README.md                   │
+├─────────────────────────────────┴──────────────────────────────────┤
+│ 📋 Copy: main.rs          Tab pane  y copy  x cut  p paste  d del  │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- The **active pane** renders with your full theme accent; the **inactive pane** dims its borders so focus is always clear at a glance
+- Press `Tab` to switch which pane has keyboard focus
+- Press `w` to **collapse to a single pane** — the hidden pane keeps its state and reappears when you press `w` again
+- Press `t` / `[` to cycle themes forward / backward; press `T` to open the theme panel
+- Each pane navigates independently — scroll to different directories and use one as source, one as destination
+
+### File Operations (Copy / Cut / Paste / Delete)
+
+The classic **Midnight Commander** source-to-destination workflow:
+
+1. **Navigate** to the file you want in the active pane
+2. **`y`** to yank (copy) or **`x`** to cut it — the status bar confirms what is in the clipboard
+3. **`Tab`** to switch to the other pane and navigate to the destination directory
+4. **`p`** to paste — the file is copied (or moved for cut) into that pane's directory
+
+```
+Active pane: ~/projects/src/     Other pane: ~/backup/
+  ▶ main.rs   ← press y                      ← press p here → main.rs appears
+```
+
+If the destination file already exists a **confirmation modal** appears asking whether to overwrite. Delete (`d`) also shows a modal before any data is removed.
+
+All file operations support **directories** — copy and delete both recurse automatically.
 
 ---
 
 ## Incremental Search
 
-Press `/` to activate search mode. The footer transforms into a live input bar
-showing your query. Entries are filtered in real-time using a case-insensitive
-substring match on the file name.
+Press `/` to activate search mode. The footer transforms into a live input bar showing your query. Entries are filtered in real-time using a case-insensitive substring match on the file name.
 
 ```rust
 // Inspect search state programmatically:
@@ -167,10 +244,10 @@ println!("query    : {}", explorer.search_query());
 ```
 
 **Behaviour details:**
-- `Backspace` on a non-empty query pops the last character.
-- `Backspace` on an empty query deactivates search without dismissing.
-- `Esc` clears the query and deactivates search — a second `Esc` (when search is already inactive) dismisses the explorer entirely.
-- Search is automatically cleared when descending into a subdirectory or ascending to a parent, keeping the filter scoped to one directory at a time.
+- `Backspace` on a non-empty query pops the last character
+- `Backspace` on an empty query deactivates search without dismissing
+- `Esc` clears the query and deactivates search — a second `Esc` (when search is already inactive) dismisses the explorer entirely
+- Search is automatically cleared when navigating into a subdirectory or ascending to a parent
 
 ---
 
@@ -187,22 +264,19 @@ explorer.set_sort_mode(SortMode::SizeDesc);   // largest files first
 println!("{}", explorer.sort_mode().label()); // "size ↓"
 ```
 
-| Mode | Key | Description |
-|------|-----|-------------|
-| `SortMode::Name` | `s` (1st) | Alphabetical A → Z — the default |
-| `SortMode::SizeDesc` | `s` (2nd) | Largest files first |
-| `SortMode::Extension` | `s` (3rd) | Grouped by extension, then name |
+| Mode | Trigger | Description |
+|------|---------|-------------|
+| `SortMode::Name` | `s` (1st press) | Alphabetical A → Z — the default |
+| `SortMode::SizeDesc` | `s` (2nd press) | Largest files first |
+| `SortMode::Extension` | `s` (3rd press) | Grouped by extension, then by name |
 
-Directories always sort alphabetically among themselves regardless of the active mode.
-
-The current sort mode is shown in the footer status panel at all times.
+Directories always sort alphabetically among themselves regardless of the active mode. The current sort mode is shown in the footer status panel at all times.
 
 ---
 
 ## Extension Filtering
 
-Only files whose extension matches the filter are selectable.  
-Directories are always shown and always navigable, regardless of the filter.
+Only files whose extension matches the filter are selectable. Directories are always shown and always navigable, regardless of the filter.
 
 ```rust
 use tui_file_explorer::FileExplorer;
@@ -220,9 +294,7 @@ explorer.set_extension_filter(["rs", "toml"]);
 explorer.set_extension_filter([] as [&str; 0]);
 ```
 
-Non-matching files are shown dimmed in the list so the directory structure
-remains visible. Attempting to confirm a non-matching file shows a status
-message in the footer.
+Non-matching files are shown dimmed so the directory structure remains visible. Attempting to confirm a non-matching file shows a status message in the footer.
 
 ---
 
@@ -249,15 +321,13 @@ let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
     .build();
 ```
 
-The classic `FileExplorer::new(dir, filter)` constructor is still available
-and fully backwards-compatible.
+The classic `FileExplorer::new(dir, filter)` constructor is still available and fully backwards-compatible.
 
 ---
 
 ## Theming
 
-Every colour used by the widget is overridable through the `Theme` struct.
-Pass a `Theme` to `render_themed` instead of `render`:
+Every colour used by the widget is overridable through the `Theme` struct. Pass a `Theme` to `render_themed` instead of `render`:
 
 ```rust
 use tui_file_explorer::{FileExplorer, Theme, render_themed};
@@ -286,9 +356,13 @@ use tui_file_explorer::Theme;
 let t = Theme::dracula();
 let t = Theme::nord();
 let t = Theme::catppuccin_mocha();
+let t = Theme::catppuccin_latte();
 let t = Theme::tokyo_night();
+let t = Theme::tokyo_night_storm();
 let t = Theme::gruvbox_dark();
 let t = Theme::kanagawa_wave();
+let t = Theme::kanagawa_dragon();
+let t = Theme::moonfly();
 let t = Theme::oxocarbon();
 let t = Theme::grape();
 let t = Theme::ocean();
@@ -300,10 +374,12 @@ for (name, desc, _theme) in Theme::all_presets() {
 }
 ```
 
+**Full preset list:**  
+`Default` · `Dracula` · `Nord` · `Solarized Dark` · `Solarized Light` · `Gruvbox Dark` · `Gruvbox Light` · `Catppuccin Latte` · `Catppuccin Frappé` · `Catppuccin Macchiato` · `Catppuccin Mocha` · `Tokyo Night` · `Tokyo Night Storm` · `Tokyo Night Light` · `Kanagawa Wave` · `Kanagawa Dragon` · `Kanagawa Lotus` · `Moonfly` · `Nightfly` · `Oxocarbon` · `Grape` · `Ocean` · `Sunset` · `Forest` · `Rose` · `Mono` · `Neon`
+
 ### Palette constants
 
-The default colours are exported as `pub const` values in `palette` for use
-alongside complementary widgets:
+The default colours are exported as `pub const` values for use alongside complementary widgets:
 
 | Constant | Default | Used for |
 |----------|---------|----------|
@@ -324,8 +400,7 @@ alongside complementary widgets:
 
 [`examples/basic.rs`](examples/basic.rs) — a fully self-contained Ratatui app demonstrating:
 
-- Builder API
-- Full event loop (raw mode, alternate screen)
+- Builder API and full event loop
 - All `ExplorerOutcome` variants
 - Custom `Theme`
 - Optional CLI extension-filter arguments
@@ -342,8 +417,7 @@ cargo run --example basic -- rs toml md
 
 ### `theme_switcher`
 
-[`examples/theme_switcher.rs`](examples/theme_switcher.rs) — **live theme switching** without restarting.  
-Press `Tab` / `Shift+Tab` to cycle through eight built-in named themes.
+[`examples/theme_switcher.rs`](examples/theme_switcher.rs) — live theme switching without restarting, with a sidebar showing the full theme catalogue.
 
 | Key | Action |
 |-----|--------|
@@ -369,9 +443,9 @@ cargo run --example theme_switcher
 
 **Run:** `cargo run --example basic`
 
-![Basic navigation](examples/vhs/generated/basic.gif)
+![Navigation and search](examples/vhs/generated/basic.gif)
 
-Demonstrates directory navigation, incremental search (`/`), sort mode cycling (`s`), hidden-file toggle, and file selection.
+Demonstrates directory navigation, incremental search (`/`), sort mode cycling (`s`), hidden-file toggle (`.`), directory descent and ascent, and file selection.
 
 ---
 
@@ -381,7 +455,7 @@ Demonstrates directory navigation, incremental search (`/`), sort mode cycling (
 
 ![Incremental search](examples/vhs/generated/search.gif)
 
-Shows the full search lifecycle: activate with `/`, type to filter live, use `Backspace` to narrow/clear, and `Esc` to cancel without dismissing.
+Shows the full search lifecycle: activate with `/`, type to filter live, use `Backspace` to narrow or clear, and `Esc` to cancel without dismissing the explorer.
 
 ---
 
@@ -401,7 +475,17 @@ Demonstrates `Name → Size ↓ → Extension → Name` cycling, combined with s
 
 ![Extension filter](examples/vhs/generated/filter.gif)
 
-Shows only `.rs` and `.toml` files as selectable; all other files appear dimmed. The footer reflects the active filter at all times.
+Only `.rs` and `.toml` files are selectable; all other files appear dimmed. The footer reflects the active filter at all times.
+
+---
+
+### File Operations
+
+**Run:** `cargo run --bin tfe`
+
+![Copy, Cut, Paste, Delete](examples/vhs/generated/file_ops.gif)
+
+Demonstrates the full **copy then paste** and **cut (move) then paste** workflows across both panes, followed by a **delete with confirmation modal**. The clipboard status bar updates live after each `y` / `x` / `p` keystroke, and an overwrite-prompt appears when the destination file already exists.
 
 ---
 
@@ -411,17 +495,20 @@ Shows only `.rs` and `.toml` files as selectable; all other files appear dimmed.
 
 ![Theme switcher](examples/vhs/generated/theme_switcher.gif)
 
-Live theme cycling through eight named palettes — Default, Grape, Ocean, Sunset, Forest, Rose, Mono, and Neon.
+Live theme cycling through all 27 named palettes with a real-time sidebar showing the catalogue and the active theme's description.
 
 ---
 
 ## Demo Quick Reference
 
-| Demo | Command | Features |
-|------|---------|----------|
-| Navigation + Search | `cargo run --example basic` | All key bindings, search, sort |
-| Extension filter | `cargo run --example basic -- rs toml` | Dimmed non-matching files |
-| Theme switcher | `cargo run --example theme_switcher` | 8 live themes, `Tab` to cycle |
+| Demo | Command | Highlights |
+|------|---------|------------|
+| Navigation + Search | `cargo run --example basic` | All key bindings, search, sort, selection |
+| Extension filter | `cargo run --example basic -- rs toml` | Dimmed non-matching files, footer status |
+| Incremental search | `cargo run --example basic` → `/` | Live filtering, backspace, Esc behaviour |
+| Sort modes | `cargo run --example basic` → `s` | Three modes, combined with search |
+| File operations | `cargo run --bin tfe` | Copy, cut, paste, delete, overwrite modal |
+| Theme switcher | `cargo run --example theme_switcher` | 27 live themes, sidebar catalogue |
 
 ---
 
@@ -438,6 +525,8 @@ tfe [OPTIONS] [PATH]
 | `-H, --hidden` | Show hidden dot-files on startup |
 | `-t, --theme <THEME>` | Colour theme — see `--list-themes` |
 | `--list-themes` | Print all 27 available themes and exit |
+| `--show-themes` | Open the theme panel on startup (`T` toggles it at runtime) |
+| `--single-pane` | Start in single-pane mode (default is two-pane; toggle at runtime with `w`) |
 | `--print-dir` | Print the selected file's **parent directory** instead of the full path |
 | `-0, --null` | Terminate output with a NUL byte (for `xargs -0`) |
 | `-h, --help` | Show help |
@@ -448,7 +537,7 @@ tfe [OPTIONS] [PATH]
 | Code | Meaning |
 |------|---------|
 | `0` | File selected — path printed to stdout |
-| `1` | Dismissed (Esc / q) without selecting |
+| `1` | Dismissed (`Esc` / `q`) without selecting |
 | `2` | Bad arguments or I/O error |
 
 ### Shell integration
@@ -460,11 +549,14 @@ tfe | xargs -r $EDITOR
 # cd into the directory containing the selected file
 cd "$(tfe --print-dir)"
 
-# Select a Rust source file, then edit it
+# Select a Rust source file and edit it
 tfe -e rs | xargs -r nvim
 
-# Use the Catppuccin Mocha theme
-tfe --theme catppuccin-mocha
+# Start with the Catppuccin Mocha theme and the theme panel open
+tfe --theme catppuccin-mocha --show-themes
+
+# Start in single-pane mode (useful for narrow terminals or shell pipelines)
+tfe --single-pane
 
 # List all available themes
 tfe --list-themes
@@ -473,8 +565,8 @@ tfe --list-themes
 tfe -0 | xargs -0 wc -l
 ```
 
-> Theme names are case-insensitive and hyphens/spaces are interchangeable:  
-> `catppuccin-mocha`, `Catppuccin Mocha`, and `catppuccin mocha` all resolve to the same theme.
+> **Theme names** are case-insensitive and hyphens/spaces are interchangeable:  
+> `catppuccin-mocha`, `Catppuccin Mocha`, and `catppuccin mocha` all resolve to the same preset.
 
 ---
 
@@ -484,7 +576,7 @@ The public surface is intentionally narrow for stability:
 
 | Item | Kind | Description |
 |------|------|-------------|
-| `FileExplorer` | `struct` | Core state machine — holds cursor, entries, search, sort state |
+| `FileExplorer` | `struct` | Core state machine — cursor, entries, search, sort state |
 | `FileExplorerBuilder` | `struct` | Fluent builder for `FileExplorer` |
 | `ExplorerOutcome` | `enum` | Result of `handle_key` — `Selected`, `Dismissed`, `Pending`, `Unhandled` |
 | `FsEntry` | `struct` | A single directory entry (name, path, size, extension, is_dir) |
@@ -506,9 +598,7 @@ The public surface is intentionally narrow for stability:
 | `explorer` | `FileExplorer`, `FileExplorerBuilder`, `entry_icon`, `fmt_size` |
 | `render` | `render`, `render_themed` — pure rendering, no state |
 
-Because rendering is fully decoupled from state, you can slot the explorer into
-any Ratatui layout, render it conditionally as an overlay, or build a completely
-custom renderer by reading `FileExplorer`'s public fields directly.
+Because rendering is fully decoupled from state, you can slot the explorer into any Ratatui layout, render it conditionally as an overlay, or build a completely custom renderer by reading `FileExplorer`'s public fields directly.
 
 ---
 
@@ -525,10 +615,11 @@ vhs examples/vhs/basic.tape
 vhs examples/vhs/search.tape
 vhs examples/vhs/sort.tape
 vhs examples/vhs/filter.tape
+vhs examples/vhs/file_ops.tape
 vhs examples/vhs/theme_switcher.tape
 ```
 
-GIFs are stored under `examples/vhs/generated/` and tracked with **Git LFS**.
+GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
 
 ---
 
@@ -556,9 +647,7 @@ just doc          # build and open docs
 
 just bump 0.2.0   # interactive version bump + tag
 just release 0.2.0 # non-interactive: bump + commit + tag + push (triggers CI release)
-```
 
-```bash
 just --list       # see all available commands
 ```
 
