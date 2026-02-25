@@ -471,42 +471,10 @@ impl FileExplorer {
             self.search_query.clear();
             self.navigate_to(path);
             ExplorerOutcome::Pending
-        } else if self.is_selectable(entry) {
+        } else {
+            // All visible files already passed the extension filter in load_entries,
+            // so every non-directory entry is unconditionally selectable here.
             ExplorerOutcome::Selected(entry.path.clone())
-        } else {
-            self.status = format!("Not a supported file type. Allowed: {}", self.filter_hint());
-            ExplorerOutcome::Pending
-        }
-    }
-
-    // ── Helpers exposed to sibling modules ───────────────────────────────────
-
-    /// Returns `true` when `entry` may be confirmed by the user.
-    ///
-    /// Directories are never "selectable" (they are navigated into instead).
-    /// Files pass when the extension filter is empty, or when the file's
-    /// extension matches one of the allowed extensions.
-    pub(crate) fn is_selectable(&self, entry: &FsEntry) -> bool {
-        if entry.is_dir {
-            return false;
-        }
-        if self.extension_filter.is_empty() {
-            return true;
-        }
-        self.extension_filter
-            .iter()
-            .any(|ext| ext.eq_ignore_ascii_case(&entry.extension))
-    }
-
-    fn filter_hint(&self) -> String {
-        if self.extension_filter.is_empty() {
-            "*".to_string()
-        } else {
-            self.extension_filter
-                .iter()
-                .map(|e| format!(".{e}"))
-                .collect::<Vec<_>>()
-                .join(", ")
         }
     }
 
@@ -1016,43 +984,35 @@ mod tests {
     }
 
     #[test]
-    fn is_selectable_respects_filter() {
+    fn extension_filter_only_shows_matching_files() {
+        // The real selectability contract lives in load_entries: only files
+        // whose extension matches the filter appear in entries at all.
         let tmp = temp_dir_with_files();
         let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec!["iso".into()]);
 
-        let iso_entry = FsEntry {
-            name: "ubuntu.iso".into(),
-            path: tmp.path().join("ubuntu.iso"),
-            is_dir: false,
-            size: Some(16),
-            extension: "iso".into(),
-        };
-        let img_entry = FsEntry {
-            name: "debian.img".into(),
-            path: tmp.path().join("debian.img"),
-            is_dir: false,
-            size: Some(16),
-            extension: "img".into(),
-        };
-        let dir_entry = FsEntry {
-            name: "subdir".into(),
-            path: tmp.path().join("subdir"),
-            is_dir: true,
-            size: None,
-            extension: String::new(),
-        };
-
+        // Matching file is present.
         assert!(
-            explorer.is_selectable(&iso_entry),
-            "iso should be selectable"
+            explorer.entries.iter().any(|e| e.name == "ubuntu.iso"),
+            "iso file should appear in entries"
         );
+        // Non-matching file is absent.
         assert!(
-            !explorer.is_selectable(&img_entry),
-            "img should not be selectable"
+            !explorer.entries.iter().any(|e| e.name == "debian.img"),
+            "img file should be excluded by filter"
         );
+        // Directories are always present regardless of the filter.
         assert!(
-            !explorer.is_selectable(&dir_entry),
-            "dirs are never selectable"
+            explorer.entries.iter().any(|e| e.is_dir),
+            "directories should always be visible"
+        );
+        // Every visible non-directory entry has the expected extension.
+        assert!(
+            explorer
+                .entries
+                .iter()
+                .filter(|e| !e.is_dir)
+                .all(|e| e.extension == "iso"),
+            "all visible files must match the active filter"
         );
     }
 
@@ -1302,5 +1262,310 @@ mod tests {
         assert_eq!(explorer.sort_mode(), SortMode::Extension);
         // Entries should still be present after the reload triggered by set_sort_mode.
         assert!(!explorer.entries.is_empty());
+    }
+
+    // ── Vim key tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn j_key_moves_cursor_down() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let before = explorer.cursor;
+        explorer.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(explorer.cursor, before + 1);
+    }
+
+    #[test]
+    fn k_key_moves_cursor_up() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.cursor = 2;
+        explorer.handle_key(key(KeyCode::Char('k')));
+        assert_eq!(explorer.cursor, 1);
+    }
+
+    #[test]
+    fn h_key_ascends_to_parent() {
+        let tmp = temp_dir_with_files();
+        let subdir = tmp.path().join("subdir");
+        let mut explorer = FileExplorer::new(subdir, vec![]);
+        explorer.handle_key(key(KeyCode::Char('h')));
+        assert_eq!(explorer.current_dir, tmp.path());
+    }
+
+    #[test]
+    fn l_key_descends_into_dir() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let dir_idx = explorer.entries.iter().position(|e| e.is_dir).unwrap();
+        explorer.cursor = dir_idx;
+        let expected = explorer.entries[dir_idx].path.clone();
+        let outcome = explorer.handle_key(key(KeyCode::Char('l')));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert_eq!(explorer.current_dir, expected);
+    }
+
+    #[test]
+    fn right_arrow_confirms_file() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let file_idx = explorer.entries.iter().position(|e| !e.is_dir).unwrap();
+        explorer.cursor = file_idx;
+        let expected = explorer.entries[file_idx].path.clone();
+        let outcome = explorer.handle_key(key(KeyCode::Right));
+        assert_eq!(outcome, ExplorerOutcome::Selected(expected));
+    }
+
+    #[test]
+    fn q_key_dismisses() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert_eq!(
+            explorer.handle_key(key(KeyCode::Char('q'))),
+            ExplorerOutcome::Dismissed
+        );
+    }
+
+    // ── Page / jump key tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn page_down_advances_cursor_by_ten() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..15 {
+            fs::write(tmp.path().join(format!("file{i:02}.txt")), b"").unwrap();
+        }
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.cursor = 0;
+        explorer.handle_key(key(KeyCode::PageDown));
+        assert_eq!(explorer.cursor, 10);
+    }
+
+    #[test]
+    fn page_up_retreats_cursor_by_ten() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..15 {
+            fs::write(tmp.path().join(format!("file{i:02}.txt")), b"").unwrap();
+        }
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.cursor = 12;
+        explorer.handle_key(key(KeyCode::PageUp));
+        assert_eq!(explorer.cursor, 2);
+    }
+
+    #[test]
+    fn home_key_jumps_to_top() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.cursor = explorer.entries.len() - 1;
+        explorer.handle_key(key(KeyCode::Home));
+        assert_eq!(explorer.cursor, 0);
+        assert_eq!(explorer.scroll_offset, 0);
+    }
+
+    #[test]
+    fn g_key_jumps_to_top() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.cursor = explorer.entries.len() - 1;
+        explorer.handle_key(key(KeyCode::Char('g')));
+        assert_eq!(explorer.cursor, 0);
+        assert_eq!(explorer.scroll_offset, 0);
+    }
+
+    #[test]
+    fn end_key_jumps_to_bottom() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.cursor = 0;
+        explorer.handle_key(key(KeyCode::End));
+        assert_eq!(explorer.cursor, explorer.entries.len() - 1);
+    }
+
+    #[test]
+    fn capital_g_key_jumps_to_bottom() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.cursor = 0;
+        let key_g = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE);
+        explorer.handle_key(key_g);
+        assert_eq!(explorer.cursor, explorer.entries.len() - 1);
+    }
+
+    // ── Root / status tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn ascend_at_root_sets_status() {
+        // Use "/" as a reliable filesystem root on macOS/Linux.
+        let root = std::path::PathBuf::from("/");
+        let mut explorer = FileExplorer::new(root.clone(), vec![]);
+        assert!(explorer.is_at_root());
+        // Still at root after attempted ascend.
+        explorer.handle_key(key(KeyCode::Backspace));
+        assert_eq!(explorer.current_dir, root);
+        assert!(
+            !explorer.status().is_empty(),
+            "status should report already at root"
+        );
+    }
+
+    #[test]
+    fn is_at_root_false_for_subdir() {
+        let tmp = temp_dir_with_files();
+        let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert!(!explorer.is_at_root());
+    }
+
+    // ── Accessor tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_empty_reflects_visible_entries() {
+        let empty_dir = tempfile::tempdir().unwrap();
+        let explorer = FileExplorer::new(empty_dir.path().to_path_buf(), vec![]);
+        assert!(explorer.is_empty());
+
+        let tmp = temp_dir_with_files();
+        let explorer2 = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert!(!explorer2.is_empty());
+    }
+
+    #[test]
+    fn entry_count_matches_entries_len() {
+        let tmp = temp_dir_with_files();
+        let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert_eq!(explorer.entry_count(), explorer.entries.len());
+        assert!(explorer.entry_count() > 0);
+    }
+
+    #[test]
+    fn search_query_empty_when_not_searching() {
+        let tmp = temp_dir_with_files();
+        let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert!(!explorer.is_searching());
+        assert_eq!(explorer.search_query(), "");
+    }
+
+    // ── Case-insensitivity tests ──────────────────────────────────────────────
+
+    #[test]
+    fn search_is_case_insensitive() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        // Type "UBU" in uppercase — should still match "ubuntu.iso".
+        explorer.handle_key(key(KeyCode::Char('/')));
+        for c in "UBU".chars() {
+            explorer.handle_key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(explorer.entries.len(), 1);
+        assert_eq!(explorer.entries[0].name, "ubuntu.iso");
+    }
+
+    #[test]
+    fn extension_filter_is_case_insensitive() {
+        let tmp = tempfile::tempdir().unwrap();
+        // File whose on-disk extension is upper-case.
+        fs::write(tmp.path().join("disk.ISO"), b"data").unwrap();
+        fs::write(tmp.path().join("other.txt"), b"text").unwrap();
+
+        // Filter expressed in lower-case should still match the upper-case ext.
+        let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec!["iso".into()]);
+        assert!(
+            explorer.entries.iter().any(|e| e.name == "disk.ISO"),
+            "upper-case extension should be matched by lower-case filter"
+        );
+        assert!(
+            !explorer.entries.iter().any(|e| e.name == "other.txt"),
+            "non-matching extension should be excluded"
+        );
+    }
+
+    // ── Builder tests ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn builder_allow_extension_filters_entries() {
+        let tmp = temp_dir_with_files();
+        let explorer = FileExplorer::builder(tmp.path().to_path_buf())
+            .allow_extension("iso")
+            .build();
+        assert!(explorer.entries.iter().any(|e| e.name == "ubuntu.iso"));
+        assert!(!explorer.entries.iter().any(|e| e.name == "debian.img"));
+        assert!(!explorer.entries.iter().any(|e| e.name == "readme.txt"));
+    }
+
+    #[test]
+    fn builder_show_hidden_shows_dotfiles() {
+        let tmp = temp_dir_with_files();
+        fs::write(tmp.path().join(".dotfile"), b"").unwrap();
+
+        let hidden_explorer = FileExplorer::builder(tmp.path().to_path_buf())
+            .show_hidden(true)
+            .build();
+        assert!(hidden_explorer.entries.iter().any(|e| e.name == ".dotfile"));
+
+        let normal_explorer = FileExplorer::builder(tmp.path().to_path_buf())
+            .show_hidden(false)
+            .build();
+        assert!(!normal_explorer.entries.iter().any(|e| e.name == ".dotfile"));
+    }
+
+    #[test]
+    fn set_extension_filter_updates_entries() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        // All files visible with no filter.
+        assert!(explorer.entries.iter().any(|e| e.name == "readme.txt"));
+
+        explorer.set_extension_filter(["iso"]);
+        assert!(explorer.entries.iter().any(|e| e.name == "ubuntu.iso"));
+        assert!(!explorer.entries.iter().any(|e| e.name == "readme.txt"));
+    }
+
+    // ── entry_icon tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn entry_icon_directory() {
+        let entry = FsEntry {
+            name: "mydir".into(),
+            path: std::path::PathBuf::from("/mydir"),
+            is_dir: true,
+            size: None,
+            extension: String::new(),
+        };
+        assert_eq!(entry_icon(&entry), "📁");
+    }
+
+    #[test]
+    fn entry_icon_recognises_known_extensions() {
+        let make = |name: &str, ext: &str| FsEntry {
+            name: name.into(),
+            path: std::path::PathBuf::from(name),
+            is_dir: false,
+            size: Some(0),
+            extension: ext.into(),
+        };
+
+        assert_eq!(entry_icon(&make("archive.zip", "zip")), "📦");
+        assert_eq!(entry_icon(&make("doc.pdf", "pdf")), "📕");
+        assert_eq!(entry_icon(&make("notes.md", "md")), "📝");
+        assert_eq!(entry_icon(&make("config.toml", "toml")), "⚙ ");
+        assert_eq!(entry_icon(&make("main.rs", "rs")), "🦀");
+        assert_eq!(entry_icon(&make("script.py", "py")), "🐍");
+        assert_eq!(entry_icon(&make("page.html", "html")), "🌐");
+        assert_eq!(entry_icon(&make("image.png", "png")), "🖼 ");
+        assert_eq!(entry_icon(&make("video.mp4", "mp4")), "🎬");
+        assert_eq!(entry_icon(&make("song.mp3", "mp3")), "🎵");
+        assert_eq!(entry_icon(&make("unknown.xyz", "xyz")), "📄");
+    }
+
+    // ── fmt_size boundary tests ───────────────────────────────────────────────
+
+    #[test]
+    fn fmt_size_exact_boundaries() {
+        // Exact powers of 1024.
+        assert_eq!(fmt_size(1_024), "1.0 KB");
+        assert_eq!(fmt_size(1_048_576), "1.0 MB");
+        assert_eq!(fmt_size(1_073_741_824), "1.0 GB");
+        // Just below each boundary stays in the lower unit.
+        assert_eq!(fmt_size(1_023), "1023 B");
+        assert_eq!(fmt_size(1_047_552), "1023.0 KB"); // 1023 * 1024
     }
 }

@@ -147,18 +147,17 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
         .map(|(visible_idx, entry)| {
             let abs_idx = visible_idx + explorer.scroll_offset;
             let is_selected = abs_idx == explorer.cursor;
-            let is_selectable = explorer.is_selectable(entry);
 
             let icon = entry_icon(entry);
 
+            // All visible entries already passed the extension filter in
+            // load_entries, so files are always styled as selectable.
             let name_style = if entry.is_dir {
                 Style::default().fg(theme.dir).add_modifier(Modifier::BOLD)
-            } else if is_selectable {
+            } else {
                 Style::default()
                     .fg(theme.match_file)
                     .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(theme.dim)
             };
 
             let size_str = match entry.size {
