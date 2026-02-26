@@ -14,36 +14,17 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 
 ## Preview
 
-<table>
-  <tr>
-    <td align="center">
-      <img src="examples/vhs/generated/basic.gif" alt="Navigation, search and sort"/>
-      <br/><sub><b>Navigation &middot; Search &middot; Sort</b></sub>
-    </td>
-    <td align="center">
-      <img src="examples/vhs/generated/search.gif" alt="Incremental search"/>
-      <br/><sub><b>Incremental Search</b></sub>
-    </td>
-    <td align="center">
-      <img src="examples/vhs/generated/sort.gif" alt="Sort modes"/>
-      <br/><sub><b>Sort Modes</b></sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <img src="examples/vhs/generated/filter.gif" alt="Extension filter"/>
-      <br/><sub><b>Extension Filter</b></sub>
-    </td>
-    <td align="center">
-      <img src="examples/vhs/generated/file_ops.gif" alt="Copy, Cut, Paste, Delete"/>
-      <br/><sub><b>File Operations</b></sub>
-    </td>
-    <td align="center">
-      <img src="examples/vhs/generated/theme_switcher.gif" alt="27 live themes"/>
-      <br/><sub><b>27 Live Themes</b></sub>
-    </td>
-  </tr>
-</table>
+**Navigation · Search · Sort** — `cargo run --example basic`
+
+![Navigation, search and sort](examples/vhs/generated/basic.gif)
+
+**File Operations** — copy, cut, paste, delete across two panes · `cargo run --bin tfe`
+
+![Copy, Cut, Paste, Delete](examples/vhs/generated/file_ops.gif)
+
+**27 Live Themes** — `cargo run --example theme_switcher`
+
+![27 live themes](examples/vhs/generated/theme_switcher.gif)
 
 ---
 
