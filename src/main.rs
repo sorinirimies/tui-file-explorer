@@ -19,6 +19,8 @@
 //!   1 — explorer was dismissed without a selection
 //!   2 — bad arguments / I/O error
 
+mod persistence;
+
 use std::{
     fs,
     io::{self, stdout, Write},
@@ -40,7 +42,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
-use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, Theme};
+use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, SortMode, Theme};
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -68,9 +70,9 @@ struct Cli {
     #[arg(short = 'H', long)]
     hidden: bool,
 
-    /// Colour theme [default: default]. Use --list-themes to see options.
-    #[arg(short, long, value_name = "THEME", default_value = "default")]
-    theme: String,
+    /// Colour theme [default: persisted selection, or "default"]. Use --list-themes to see options.
+    #[arg(short, long, value_name = "THEME")]
+    theme: Option<String>,
 
     /// List all available themes and exit
     #[arg(long)]
@@ -173,14 +175,17 @@ impl App {
         theme_idx: usize,
         show_theme_panel: bool,
         single_pane: bool,
+        sort_mode: SortMode,
     ) -> Self {
         let left = FileExplorer::builder(start_dir.clone())
             .extension_filter(extensions.clone())
             .show_hidden(show_hidden)
+            .sort_mode(sort_mode)
             .build();
         let right = FileExplorer::builder(start_dir)
             .extension_filter(extensions)
             .show_hidden(show_hidden)
+            .sort_mode(sort_mode)
             .build();
         Self {
             left,
@@ -809,23 +814,6 @@ fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
     Ok(())
 }
 
-// ── Theme resolution ──────────────────────────────────────────────────────────
-
-fn resolve_theme_idx(name: &str, themes: &[(&str, &str, Theme)]) -> usize {
-    let key = name.to_lowercase().replace('-', " ");
-    for (i, (n, _, _)) in themes.iter().enumerate() {
-        if n.to_lowercase().replace('-', " ") == key {
-            return i;
-        }
-    }
-    eprintln!(
-        "tfe: unknown theme {:?} — falling back to default. \
-         Run `tfe --list-themes` to see options.",
-        name
-    );
-    0
-}
-
 // ── Output ────────────────────────────────────────────────────────────────────
 
 fn emit_path(path: &Path, null: bool) -> io::Result<()> {
@@ -860,8 +848,17 @@ fn run() -> io::Result<()> {
         return Ok(());
     }
 
-    let theme_idx = resolve_theme_idx(&cli.theme, &themes);
+    // Load all persisted state once at startup.
+    let saved = persistence::load_state();
 
+    // Priority: explicit --theme flag > persisted selection > built-in default
+    let theme_name = cli
+        .theme
+        .or_else(|| saved.theme.clone())
+        .unwrap_or_else(|| "default".to_string());
+    let theme_idx = persistence::resolve_theme_idx(&theme_name, &themes);
+
+    // Priority: explicit --path arg > persisted last directory > cwd
     let start_dir = match cli.path {
         Some(ref p) => {
             let c = p.canonicalize().unwrap_or_else(|_| p.clone());
@@ -872,8 +869,26 @@ fn run() -> io::Result<()> {
                 process::exit(2);
             }
         }
-        None => std::env::current_dir()?,
+        None => saved
+            .last_dir
+            .clone()
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))),
     };
+
+    // CLI flags win when explicitly set (true); otherwise fall back to
+    // persisted values.  Simple bool flags can't distinguish "not passed" from
+    // "passed as false", so the convention is: CLI `true` always wins.
+    let show_hidden = if cli.hidden {
+        true
+    } else {
+        saved.show_hidden.unwrap_or(false)
+    };
+    let single_pane = if cli.single_pane {
+        true
+    } else {
+        saved.single_pane.unwrap_or(false)
+    };
+    let sort_mode = saved.sort_mode.unwrap_or_default();
 
     // Terminal setup
     enable_raw_mode()?;
@@ -885,10 +900,11 @@ fn run() -> io::Result<()> {
     let mut app = App::new(
         start_dir,
         cli.extensions,
-        cli.hidden,
+        show_hidden,
         theme_idx,
         cli.show_themes,
-        cli.single_pane,
+        single_pane,
+        sort_mode,
     );
 
     let result = run_loop(&mut terminal, &mut app);
@@ -903,6 +919,15 @@ fn run() -> io::Result<()> {
     let _ = terminal.show_cursor();
 
     result?;
+
+    // Persist full application state on clean exit.
+    persistence::save_state(&persistence::AppState {
+        theme: Some(app.theme_name().to_string()),
+        last_dir: Some(app.left.current_dir.clone()),
+        sort_mode: Some(app.left.sort_mode),
+        show_hidden: Some(app.left.show_hidden),
+        single_pane: Some(app.single_pane),
+    });
 
     match app.selected {
         Some(path) => {
