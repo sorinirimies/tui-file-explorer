@@ -10,6 +10,9 @@ All notable changes to this project will be documented in this file.
 - Incremental search, sort modes, and expanded icon set
 - Add file_ops demo GIF, tape, and README wiring
 
+### Miscellaneous
+- Bump version to 0.1.4
+
 ### Style
 - Rewrite all VHS tapes to minimal single-line comment style with Catppuccin Mocha theme
 
