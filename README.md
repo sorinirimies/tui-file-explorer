@@ -499,6 +499,20 @@ Live theme cycling through all 27 named palettes with a real-time sidebar showin
 
 ---
 
+### Pane Toggle
+
+**Run:** `cargo run --bin tfe`
+
+![Pane toggle](examples/vhs/generated/pane_toggle.gif)
+
+Demonstrates the three layout controls in sequence:
+
+- **`Tab`** — switch keyboard focus between the left and right pane; each pane navigates independently so you can be in different directories at the same time
+- **`w`** — collapse to single-pane (the active pane expands to full width) and back to two-pane (the hidden pane reappears with its cursor position preserved)
+- **`T`** — open and close the theme-picker sidebar; use `t` / `[` to cycle themes while the panel is open; both panes remain fully navigable with the panel visible
+
+---
+
 ## Demo Quick Reference
 
 | Demo | Command | Highlights |
@@ -509,6 +523,7 @@ Live theme cycling through all 27 named palettes with a real-time sidebar showin
 | Sort modes | `cargo run --example basic` → `s` | Three modes, combined with search |
 | File operations | `cargo run --bin tfe` | Copy, cut, paste, delete, overwrite modal |
 | Theme switcher | `cargo run --example theme_switcher` | 27 live themes, sidebar catalogue |
+| Pane toggle | `cargo run --bin tfe` | Tab focus-switch, `w` single/two-pane, `T` theme panel |
 
 ---
 
@@ -591,6 +606,8 @@ The public surface is intentionally narrow for stability:
 
 ## Module Layout
 
+### Library (`src/lib.rs` re-exports)
+
 | Module | Contents |
 |--------|----------|
 | `types` | `FsEntry`, `ExplorerOutcome`, `SortMode` — data types only, no I/O |
@@ -599,6 +616,16 @@ The public surface is intentionally narrow for stability:
 | `render` | `render`, `render_themed` — pure rendering, no state |
 
 Because rendering is fully decoupled from state, you can slot the explorer into any Ratatui layout, render it conditionally as an overlay, or build a completely custom renderer by reading `FileExplorer`'s public fields directly.
+
+### Binary (`tfe` CLI, not part of the public library API)
+
+| Module | Contents |
+|--------|----------|
+| `main` | `Cli` struct (argument parsing), `run()`, `run_loop()` — thin entry-point only |
+| `app` | `App` state, `Pane`, `ClipOp`, `ClipboardItem`, `Modal`, `handle_event` |
+| `ui` | `draw()`, `render_theme_panel()`, `render_action_bar()`, `render_modal()` |
+| `fs` | `copy_dir_all()`, `emit_path()`, `resolve_output_path()` |
+| `persistence` | `AppState`, `load_state()`, `save_state()`, `resolve_theme_idx()` |
 
 ---
 

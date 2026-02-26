@@ -122,7 +122,9 @@ vhs-all:
     vhs examples/vhs/search.tape
     vhs examples/vhs/sort.tape
     vhs examples/vhs/filter.tape
+    vhs examples/vhs/file_ops.tape
     vhs examples/vhs/theme_switcher.tape
+    vhs examples/vhs/pane_toggle.tape
     @echo "✅ All GIFs generated in examples/vhs/generated/"
 
 # Show current version

@@ -48,3 +48,13 @@ tempfile = "3"
 name              = "tfe"
 path              = "src/main.rs"
 required-features = ["cli"]
+
+# ── Examples ──────────────────────────────────────────────────────────────────
+
+[[example]]
+name = "basic"
+path = "examples/basic.rs"
+
+[[example]]
+name = "theme_switcher"
+path = "examples/theme_switcher.rs"

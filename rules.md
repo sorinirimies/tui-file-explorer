@@ -16,7 +16,10 @@ tui-file-explorer/
 │   ├── palette.rs    # Colour constants + Theme struct + all named presets
 │   ├── explorer.rs   # FileExplorer state machine + filesystem helpers + unit tests
 │   ├── render.rs     # All ratatui Frame rendering (render / render_themed)
-│   └── main.rs       # tfe binary: App state, event loop, persistence, CLI
+│   ├── main.rs       # tfe binary: CLI (Cli struct), run(), run_loop() entry-point only
+│   ├── app.rs        # tfe binary: App state, Pane, ClipOp, ClipboardItem, Modal, handle_event
+│   ├── ui.rs         # tfe binary: draw(), render_theme_panel(), render_action_bar(), render_modal()
+│   └── fs.rs         # tfe binary: copy_dir_all(), emit_path(), resolve_output_path()
 ├── scripts/
 │   ├── bump_version.sh   # Interactive version bump — runs checks before tagging
 │   └── check_publish.sh  # Pre-publish gate — fmt, clippy, tests, doc, dry-run
@@ -35,7 +38,9 @@ tui-file-explorer/
 - Each module has one clear responsibility. If a module starts doing two
   things, split it.
 - New public types go in `types.rs`; new colour tokens go in `palette.rs`.
-- Binary-only code (CLI, App state, persistence) lives in `main.rs`.
+- Binary-only code is split across four modules: `main.rs` (CLI + entry-point),
+  `app.rs` (App state + event handling), `ui.rs` (TUI rendering), `fs.rs`
+  (filesystem helpers). `persistence.rs` owns state serialisation.
 
 ---
 
@@ -109,30 +114,39 @@ merged. A PR that fixes a bug without a regression test will not be merged.
 | Code under test | Where tests live |
 |---|---|
 | `FileExplorer`, `load_entries`, `entry_icon`, `fmt_size` | `mod tests` at the bottom of `explorer.rs` |
-| `save_theme_to`, `load_theme_from`, `resolve_theme_idx` | `mod tests` at the bottom of `main.rs` |
+| `save_state_to`, `load_state_from`, `resolve_theme_idx` | `mod tests` at the bottom of `persistence.rs` |
+| `App`, `Pane`, `ClipboardItem`, `Modal`, file operations | `mod tests` at the bottom of `app.rs` |
+| `render_action_bar_spans` | `mod tests` at the bottom of `ui.rs` |
+| `copy_dir_all`, `resolve_output_path` | `mod tests` at the bottom of `fs.rs` |
 | New module added in future | `mod tests` at the bottom of that module |
 
 Tests always live in a `#[cfg(test)] mod tests { ... }` block at the
 **bottom** of the file that owns the code under test.
 
-### Binary (`main.rs`) testing conventions
+### Binary testing conventions
 - Do **not** test `run()`, `run_loop()`, or `draw()` — these require a real
   terminal and are integration-level concerns covered by VHS recordings.
 - Do **not** manipulate environment variables (`$HOME`, `$XDG_CONFIG_HOME`)
   inside tests — this is not thread-safe. Instead, pass explicit `&Path`
-  arguments to the functions under test (`save_theme_to`, `load_theme_from`).
+  arguments to the functions under test (`save_state_to`, `load_state_from`).
 - `App::handle_event` is not directly testable without an event queue.
-  Trust that it is covered by: (a) testing the functions it delegates to,
-  and (b) VHS smoke tests for the full binary.
+  Trust that it is covered by: (a) testing the functions it delegates to
+  (`yank`, `paste`, `do_paste`, `confirm_delete`, etc.), and (b) VHS smoke
+  tests for the full binary.
 - `resolve_theme_idx` is a pure function — test it exhaustively: known names,
   unknown names, case variants, hyphen normalisation.
+- `render_action_bar_spans` returns a plain `Vec<Span>` and is fully testable
+  without a real terminal — test it for content, colour, and modifier correctness.
 
 ### Fixtures and helpers
 - Use `tempfile::tempdir()` for all filesystem tests.
 - A canonical fixture helper `fn temp_dir_with_files() -> TempDir` lives in
   `explorer.rs`. Add to it rather than duplicating setup.
-- A canonical fixture helper `fn tmp_theme_path() -> (TempDir, PathBuf)` lives
-  in `main.rs` tests. Use it for all persistence tests.
+- Canonical fixture helpers `fn tmp_state_path()` and `fn tmp_theme_path()`
+  live in `persistence.rs` tests. Use them for all persistence tests.
+- A `fn make_app(dir: PathBuf) -> App` helper in `app.rs` tests constructs a
+  minimal `App` with sensible defaults. Use it rather than calling `App::new`
+  directly in each test.
 - Never rely on the real filesystem layout in tests.
 
 ### Test naming
@@ -224,13 +238,14 @@ The `tfe` binary persists the selected theme across sessions.
   1. Explicit `--theme <name>` flag
   2. Saved `~/.config/tfe/theme`
   3. Built-in default (`"default"`)
-- Theme is saved **immediately** when the user changes it (`t` / `[` keys),
-  not only on exit. This means the last-used theme is always current even if
-  the process is killed.
-- Functions that interact with the filesystem (`save_theme_to`,
-  `load_theme_from`) accept an explicit `&Path` argument so they can be
+- State is saved once on clean exit (when the user confirms a selection or
+  dismisses the explorer). The full `AppState` — theme, last directory, sort
+  mode, hidden-file flag, single-pane flag — is written atomically in a single
+  `fs::write` call.
+- Functions that interact with the filesystem (`save_state_to`,
+  `load_state_from`) accept an explicit `&Path` argument so they can be
   tested without touching the real config directory.
-- The two higher-level wrappers (`save_theme`, `load_saved_theme`) resolve the
+- The two higher-level wrappers (`save_state`, `load_state`) resolve the
   config path at call time and are used by production code only.
 
 ---
@@ -391,10 +406,6 @@ This section is a living list of known gaps and planned improvements. Move
 items to `CHANGELOG.md` when they are completed.
 
 ### High priority
-- [ ] **Config file for full preferences** — persist not just theme but also
-      `single_pane`, `show_hidden`, `sort_mode`, and `show_theme_panel` across
-      sessions. Use a minimal TOML-like format or environment variables rather
-      than adding a `toml` dependency.
 - [ ] **Mouse support** — click to focus a pane, scroll wheel to move cursor,
       click a theme in the theme panel to select it. `EnableMouseCapture` is
       already set; the event loop just needs to handle `Event::Mouse`.
