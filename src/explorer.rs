@@ -30,6 +30,7 @@
 //! ```
 
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -88,6 +89,8 @@ pub struct FileExplorer {
     pub search_query: String,
     /// Whether the explorer is currently capturing keystrokes for search input.
     pub search_active: bool,
+    /// Paths that have been space-marked for a multi-item operation.
+    pub marked: HashSet<PathBuf>,
 }
 
 impl FileExplorer {
@@ -112,6 +115,7 @@ impl FileExplorer {
             sort_mode: SortMode::default(),
             search_query: String::new(),
             search_active: false,
+            marked: HashSet::new(),
         };
         explorer.reload();
         explorer
@@ -160,6 +164,30 @@ impl FileExplorer {
     ///
     /// Call this from your application's key-handling function and act on
     /// [`ExplorerOutcome::Selected`] / [`ExplorerOutcome::Dismissed`].
+    /// Return the set of currently marked paths (for multi-item operations).
+    pub fn marked_paths(&self) -> &HashSet<PathBuf> {
+        &self.marked
+    }
+
+    /// Toggle the space-mark on the currently highlighted entry and move
+    /// the cursor down by one.
+    pub fn toggle_mark(&mut self) {
+        if let Some(entry) = self.entries.get(self.cursor) {
+            let path = entry.path.clone();
+            if self.marked.contains(&path) {
+                self.marked.remove(&path);
+            } else {
+                self.marked.insert(path);
+            }
+        }
+        self.move_down();
+    }
+
+    /// Clear all space-marks (called after a multi-delete or on navigation).
+    pub fn clear_marks(&mut self) {
+        self.marked.clear();
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
         // ── Search-mode interception ──────────────────────────────────────────
         // When search is active, printable characters feed the query rather than
@@ -281,6 +309,12 @@ impl FileExplorer {
                 let was = self.cursor;
                 self.reload();
                 self.cursor = was.min(self.entries.len().saturating_sub(1));
+                ExplorerOutcome::Pending
+            }
+
+            // ── Toggle space-mark on current entry ────────────────────────────
+            KeyCode::Char(' ') => {
+                self.toggle_mark();
                 ExplorerOutcome::Pending
             }
 
@@ -446,9 +480,10 @@ impl FileExplorer {
             self.current_dir = parent;
             self.cursor = 0;
             self.scroll_offset = 0;
-            // Clear search when navigating to a different directory.
+            // Clear search and marks when navigating to a different directory.
             self.search_active = false;
             self.search_query.clear();
+            self.marked.clear();
             self.reload();
             // Try to land the cursor on the directory we just came from.
             if let Some(idx) = self.entries.iter().position(|e| e.path == prev) {
@@ -466,9 +501,10 @@ impl FileExplorer {
 
         if entry.is_dir {
             let path = entry.path.clone();
-            // Clear search when descending into a subdirectory.
+            // Clear search and marks when descending into a subdirectory.
             self.search_active = false;
             self.search_query.clear();
+            self.marked.clear();
             self.navigate_to(path);
             ExplorerOutcome::Pending
         } else {
@@ -607,6 +643,7 @@ impl FileExplorerBuilder {
             sort_mode: self.sort_mode,
             search_query: String::new(),
             search_active: false,
+            marked: HashSet::new(),
         };
         explorer.reload();
         explorer
@@ -1567,5 +1604,210 @@ mod tests {
         // Just below each boundary stays in the lower unit.
         assert_eq!(fmt_size(1_023), "1023 B");
         assert_eq!(fmt_size(1_047_552), "1023.0 KB"); // 1023 * 1024
+    }
+
+    // ── toggle_mark / clear_marks / Space key ─────────────────────────────────
+
+    #[test]
+    fn toggle_mark_adds_entry_to_marked_set() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        assert!(!explorer.entries.is_empty(), "need at least one entry");
+
+        explorer.toggle_mark();
+
+        assert_eq!(explorer.marked.len(), 1, "one entry should be marked");
+    }
+
+    #[test]
+    fn toggle_mark_removes_already_marked_entry() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+
+        explorer.toggle_mark(); // mark
+        let cursor_after_first = explorer.cursor;
+        explorer.cursor = 0; // reset to the same entry
+        explorer.toggle_mark(); // unmark
+
+        assert!(
+            explorer.marked.is_empty(),
+            "second toggle on same entry should unmark it"
+        );
+        let _ = cursor_after_first; // suppress unused warning
+    }
+
+    #[test]
+    fn toggle_mark_advances_cursor_down() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        // Ensure there are at least two entries so the cursor can advance.
+        assert!(
+            explorer.entries.len() >= 2,
+            "fixture must have at least 2 entries"
+        );
+
+        let before = explorer.cursor;
+        explorer.toggle_mark();
+
+        assert_eq!(
+            explorer.cursor,
+            before + 1,
+            "cursor should advance by one after toggle_mark"
+        );
+    }
+
+    #[test]
+    fn toggle_mark_at_last_entry_does_not_overflow() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.cursor = explorer.entries.len() - 1;
+
+        explorer.toggle_mark();
+
+        assert_eq!(
+            explorer.cursor,
+            explorer.entries.len() - 1,
+            "cursor should stay at the last entry, not overflow"
+        );
+    }
+
+    #[test]
+    fn clear_marks_empties_marked_set() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+
+        explorer.toggle_mark();
+        assert!(
+            !explorer.marked.is_empty(),
+            "should have a mark before clear"
+        );
+
+        explorer.clear_marks();
+
+        assert!(
+            explorer.marked.is_empty(),
+            "marked set should be empty after clear_marks"
+        );
+    }
+
+    #[test]
+    fn space_key_marks_current_entry() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        assert!(!explorer.entries.is_empty(), "need at least one entry");
+
+        let outcome = explorer.handle_key(key(KeyCode::Char(' ')));
+
+        assert_eq!(
+            outcome,
+            ExplorerOutcome::Pending,
+            "Space should return Pending"
+        );
+        assert_eq!(
+            explorer.marked.len(),
+            1,
+            "Space should mark the current entry"
+        );
+    }
+
+    #[test]
+    fn space_key_toggles_mark_off() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+
+        explorer.handle_key(key(KeyCode::Char(' '))); // mark → cursor moves down
+        explorer.cursor = 0; // reset to entry 0
+        explorer.handle_key(key(KeyCode::Char(' '))); // unmark
+
+        assert!(
+            explorer.marked.is_empty(),
+            "second Space on same entry should unmark it"
+        );
+    }
+
+    #[test]
+    fn marks_cleared_when_ascending_to_parent() {
+        let dir = temp_dir_with_files();
+        // Start inside the subdir so we can ascend.
+        let sub = dir.path().join("subdir");
+        fs::write(sub.join("inner.txt"), b"inner").unwrap();
+        let mut explorer = FileExplorer::new(sub.clone(), vec![]);
+
+        explorer.toggle_mark();
+        assert!(
+            !explorer.marked.is_empty(),
+            "should have a mark before ascend"
+        );
+
+        // Ascend via Backspace.
+        explorer.handle_key(key(KeyCode::Backspace));
+
+        assert!(
+            explorer.marked.is_empty(),
+            "marks should be cleared after ascending to parent"
+        );
+    }
+
+    #[test]
+    fn marks_cleared_when_descending_into_directory() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+
+        // Mark the subdirectory entry.
+        let sub_idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.is_dir)
+            .expect("fixture has a subdir");
+        explorer.cursor = sub_idx;
+        explorer.toggle_mark();
+        assert!(
+            !explorer.marked.is_empty(),
+            "should have a mark before descend"
+        );
+
+        // Reset cursor back to the directory entry (toggle_mark advanced it).
+        explorer.cursor = explorer
+            .entries
+            .iter()
+            .position(|e| e.is_dir)
+            .expect("fixture has a subdir");
+
+        // Descend into the subdirectory — confirm() clears marks.
+        explorer.handle_key(key(KeyCode::Enter));
+
+        assert!(
+            explorer.marked.is_empty(),
+            "marks should be cleared after descending into a directory"
+        );
+    }
+
+    #[test]
+    fn can_mark_multiple_entries() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        let total = explorer.entries.len();
+        assert!(total >= 2, "fixture must have at least 2 entries");
+
+        // Mark every entry.
+        for _ in 0..total {
+            explorer.toggle_mark();
+        }
+
+        assert_eq!(explorer.marked.len(), total, "all entries should be marked");
+    }
+
+    #[test]
+    fn marked_paths_returns_reference_to_marked_set() {
+        let dir = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+
+        explorer.toggle_mark();
+
+        assert_eq!(
+            explorer.marked_paths().len(),
+            explorer.marked.len(),
+            "marked_paths() should reflect the same set as the field"
+        );
     }
 }

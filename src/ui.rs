@@ -287,6 +287,8 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
     vec![
         k("Tab"),
         d(" pane  "),
+        k("Spc"),
+        d(" mark  "),
         k("y"),
         d(" copy  "),
         k("x"),
@@ -296,11 +298,9 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
         k("d"),
         d(" del  "),
         k("["),
-        d(" prev  "),
+        d("/"),
         k("t"),
-        d(" next  "),
-        k("T"),
-        d(" pane  "),
+        d(" theme  "),
         k("w"),
         d(" split"),
     ]
@@ -313,14 +313,115 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
 /// The modal clears whatever is behind it, draws a double-border box with a
 /// title, a body message, and a key-hint footer.
 pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme) {
-    let (title, body, _hint) = match modal {
+    // ── MultiDeleteConfirm — taller modal with a scrollable name list ─────────
+    if let Modal::MultiDeleteConfirm { paths } = modal {
+        let count = paths.len();
+        // Show up to 6 file names inside the box, then a "+ N more" note.
+        const MAX_SHOWN: usize = 6;
+        let shown: Vec<&std::path::PathBuf> = paths.iter().take(MAX_SHOWN).collect();
+        let remainder = count.saturating_sub(MAX_SHOWN);
+
+        // Width: wide enough for the longest shown name + padding.
+        let max_name_len = shown
+            .iter()
+            .map(|p| p.file_name().unwrap_or_default().to_string_lossy().len())
+            .max()
+            .unwrap_or(0);
+        let w = (max_name_len as u16 + 8)
+            .max(44)
+            .min(area.width.saturating_sub(4));
+        // Height: header line + one row per shown entry + optional overflow line
+        //         + blank gap + hint line + 2 border rows.
+        let list_rows = shown.len() + if remainder > 0 { 1 } else { 0 };
+        let h = (list_rows as u16 + 5).min(area.height.saturating_sub(2));
+        let x = area.x + (area.width.saturating_sub(w)) / 2;
+        let y = area.y + (area.height.saturating_sub(h)) / 2;
+        let modal_area = Rect::new(x, y, w, h);
+
+        frame.render_widget(Clear, modal_area);
+
+        let outer = Block::default()
+            .title(Span::styled(
+                " Confirm Multi-Delete ",
+                Style::default()
+                    .fg(theme.brand)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_type(BorderType::Double)
+            .border_style(Style::default().fg(theme.brand));
+        frame.render_widget(outer, modal_area);
+
+        // Inner layout: summary | file list | hint.
+        let v = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
+            .margin(1)
+            .split(modal_area);
+
+        // Summary line.
+        let summary = Paragraph::new(Span::styled(
+            format!("Delete {count} item(s)?"),
+            Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center);
+        frame.render_widget(summary, v[0]);
+
+        // File name list.
+        let mut name_lines: Vec<Line> = shown
+            .iter()
+            .map(|p| {
+                let name = p.file_name().unwrap_or_default().to_string_lossy();
+                Line::from(vec![
+                    Span::styled("  ◆ ", Style::default().fg(theme.brand)),
+                    Span::styled(name.to_string(), Style::default().fg(theme.accent)),
+                ])
+            })
+            .collect();
+        if remainder > 0 {
+            name_lines.push(Line::from(Span::styled(
+                format!("  … and {remainder} more"),
+                Style::default().fg(theme.dim),
+            )));
+        }
+        let list_para = Paragraph::new(name_lines);
+        frame.render_widget(list_para, v[1]);
+
+        // Hint line.
+        let hint_para = Paragraph::new(Line::from(vec![
+            Span::styled(
+                "  y",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  confirm    ", Style::default().fg(theme.dim)),
+            Span::styled(
+                "any key",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  cancel  ", Style::default().fg(theme.dim)),
+        ]))
+        .alignment(Alignment::Center);
+        frame.render_widget(hint_para, v[2]);
+
+        return;
+    }
+
+    // ── Single-item modals (DeleteConfirm / OverwriteConfirm) ─────────────────
+    let (title, body) = match modal {
         Modal::DeleteConfirm { path } => (
             " Confirm Delete ",
             format!(
                 "Delete '{}' ?",
                 path.file_name().unwrap_or_default().to_string_lossy()
             ),
-            "  y  yes    any key  cancel  ",
         ),
         Modal::OverwriteConfirm { dst, .. } => (
             " Confirm Overwrite ",
@@ -328,8 +429,9 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
                 "'{}' already exists. Overwrite?",
                 dst.file_name().unwrap_or_default().to_string_lossy()
             ),
-            "  y  yes    any key  cancel  ",
         ),
+        // Already handled above.
+        Modal::MultiDeleteConfirm { .. } => unreachable!(),
     };
 
     let w = (body.len() as u16 + 6).max(40).min(area.width - 4);
@@ -410,7 +512,7 @@ mod tests {
         assert!(text.contains('d'), "missing d hint");
         assert!(text.contains('['), "missing [ hint");
         assert!(text.contains('t'), "missing t hint");
-        assert!(text.contains('T'), "missing T hint");
+        assert!(text.contains("Spc"), "missing Spc hint");
         assert!(text.contains('w'), "missing w hint");
     }
 
@@ -419,7 +521,11 @@ mod tests {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
         // 9 key spans + 9 description spans = 18 total.
-        assert_eq!(spans.len(), 18);
+        assert_eq!(
+            spans.len(),
+            18,
+            "span count changed — update this test if the action bar was intentionally modified"
+        );
     }
 
     #[test]
@@ -427,7 +533,7 @@ mod tests {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
         // Key spans are the ones whose content matches a known key label.
-        let key_labels = ["Tab", "y", "x", "p", "d", "[", "t", "T", "w"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -444,7 +550,7 @@ mod tests {
     fn action_bar_spans_description_spans_are_not_bold() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "y", "x", "p", "d", "[", "t", "T", "w"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w"];
         // Every span that is NOT a key label should not carry BOLD.
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
@@ -461,7 +567,7 @@ mod tests {
     fn action_bar_spans_key_spans_use_accent_colour() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "y", "x", "p", "d", "[", "t", "T", "w"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -479,7 +585,7 @@ mod tests {
     fn action_bar_spans_description_spans_use_dim_colour() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "y", "x", "p", "d", "[", "t", "T", "w"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w"];
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
                 assert_eq!(

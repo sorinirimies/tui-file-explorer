@@ -147,12 +147,17 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
         .map(|(visible_idx, entry)| {
             let abs_idx = visible_idx + explorer.scroll_offset;
             let is_selected = abs_idx == explorer.cursor;
+            let is_marked = explorer.marked.contains(&entry.path);
 
             let icon = entry_icon(entry);
 
             // All visible entries already passed the extension filter in
             // load_entries, so files are always styled as selectable.
-            let name_style = if entry.is_dir {
+            let name_style = if is_marked {
+                Style::default()
+                    .fg(theme.brand)
+                    .add_modifier(Modifier::BOLD)
+            } else if entry.is_dir {
                 Style::default().fg(theme.dir).add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -165,8 +170,20 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
                 None => String::new(),
             };
 
+            // Leading marker: ◆ for marked entries, space otherwise.
+            let marker = if is_marked {
+                Span::styled(
+                    "◆",
+                    Style::default()
+                        .fg(theme.brand)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Span::styled(" ", Style::default())
+            };
+
             let mut spans = vec![
-                Span::styled(" ", Style::default()),
+                marker,
                 Span::styled(
                     format!("{icon} "),
                     Style::default().fg(if entry.is_dir { theme.dir } else { theme.fg }),
@@ -192,6 +209,8 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
                         .bg(theme.sel_bg)
                         .add_modifier(Modifier::BOLD),
                 )
+            } else if is_marked {
+                ListItem::new(line).style(Style::default().add_modifier(Modifier::BOLD))
             } else {
                 ListItem::new(line)
             }
@@ -199,17 +218,20 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
         .collect();
 
     let count = explorer.entries.len();
+    let marked_count = explorer.marked.len();
     let pos = if count == 0 {
         "empty".to_string()
     } else {
         format!("{}/{count}", explorer.cursor + 1)
     };
+    let title = if marked_count > 0 {
+        format!(" Files {pos}  ◆ {marked_count} marked ")
+    } else {
+        format!(" Files {pos} ")
+    };
 
     let block = Block::default()
-        .title(Span::styled(
-            format!(" Files {pos} "),
-            Style::default().fg(theme.dim),
-        ))
+        .title(Span::styled(title, Style::default().fg(theme.dim)))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme.accent));
