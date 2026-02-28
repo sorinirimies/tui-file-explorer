@@ -84,17 +84,17 @@ impl ClipboardItem {
 #[derive(Debug)]
 pub enum Modal {
     /// Asks the user to confirm deletion of a file or directory.
-    DeleteConfirm {
+    Delete {
         /// Absolute path of the entry to delete.
         path: PathBuf,
     },
     /// Asks the user to confirm deletion of multiple marked entries.
-    MultiDeleteConfirm {
+    MultiDelete {
         /// Absolute paths of all entries to delete.
         paths: Vec<PathBuf>,
     },
     /// Asks the user whether to overwrite an existing destination during paste.
-    OverwriteConfirm {
+    Overwrite {
         /// Absolute path of the source being pasted.
         src: PathBuf,
         /// Absolute path of the destination that already exists.
@@ -240,7 +240,7 @@ impl App {
 
     /// Paste the clipboard item into the active pane's current directory.
     ///
-    /// If the destination already exists, a [`Modal::OverwriteConfirm`] is
+    /// If the destination already exists, a [`Modal::Overwrite`] is
     /// raised instead of overwriting silently.
     pub fn paste(&mut self) {
         let Some(clip) = self.clipboard.clone() else {
@@ -265,7 +265,7 @@ impl App {
         }
 
         if dst.exists() {
-            self.modal = Some(Modal::OverwriteConfirm {
+            self.modal = Some(Modal::Overwrite {
                 src: clip.path,
                 dst,
                 is_cut: clip.op == ClipOp::Cut,
@@ -310,17 +310,17 @@ impl App {
         }
     }
 
-    /// Raise a [`Modal::DeleteConfirm`] for the currently highlighted entry,
-    /// or a [`Modal::MultiDeleteConfirm`] when there are space-marked entries
+    /// Raise a [`Modal::Delete`] for the currently highlighted entry,
+    /// or a [`Modal::MultiDelete`] when there are space-marked entries
     /// in the active pane.
     pub fn prompt_delete(&mut self) {
         let marked: Vec<PathBuf> = self.active_pane().marked.iter().cloned().collect();
         if !marked.is_empty() {
             let mut sorted = marked;
             sorted.sort();
-            self.modal = Some(Modal::MultiDeleteConfirm { paths: sorted });
+            self.modal = Some(Modal::MultiDelete { paths: sorted });
         } else if let Some(entry) = self.active_pane().current_entry() {
-            self.modal = Some(Modal::DeleteConfirm {
+            self.modal = Some(Modal::Delete {
                 path: entry.path.clone(),
             });
         }
@@ -405,21 +405,21 @@ impl App {
         // ── Modal intercepts all input ────────────────────────────────────────
         if let Some(modal) = self.modal.take() {
             match &modal {
-                Modal::DeleteConfirm { path } => match key.code {
+                Modal::Delete { path } => match key.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
                         let p = path.clone();
                         self.confirm_delete(&p);
                     }
                     _ => self.status_msg = "Delete cancelled.".into(),
                 },
-                Modal::MultiDeleteConfirm { paths } => match key.code {
+                Modal::MultiDelete { paths } => match key.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
                         let ps = paths.clone();
                         self.confirm_delete_many(&ps);
                     }
                     _ => self.status_msg = "Multi-delete cancelled.".into(),
                 },
-                Modal::OverwriteConfirm { src, dst, is_cut } => match key.code {
+                Modal::Overwrite { src, dst, is_cut } => match key.code {
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
                         let (s, d, cut) = (src.clone(), dst.clone(), *is_cut);
                         self.do_paste(&s, &d, cut);
@@ -923,8 +923,8 @@ mod tests {
         app.paste();
 
         assert!(
-            matches!(app.modal, Some(Modal::OverwriteConfirm { .. })),
-            "expected OverwriteConfirm modal"
+            matches!(app.modal, Some(Modal::Overwrite { .. })),
+            "expected Overwrite modal"
         );
     }
 
@@ -1005,8 +1005,8 @@ mod tests {
         app.prompt_delete();
 
         assert!(
-            matches!(app.modal, Some(Modal::DeleteConfirm { .. })),
-            "expected DeleteConfirm modal"
+            matches!(app.modal, Some(Modal::Delete { .. })),
+            "expected Delete modal"
         );
     }
 
@@ -1217,10 +1217,10 @@ mod tests {
         app.prompt_delete();
 
         match &app.modal {
-            Some(Modal::MultiDeleteConfirm { paths }) => {
+            Some(Modal::MultiDelete { paths }) => {
                 assert_eq!(paths.len(), 2, "modal should list 2 paths");
             }
-            other => panic!("expected MultiDeleteConfirm, got {other:?}"),
+            other => panic!("expected MultiDelete, got {other:?}"),
         }
     }
 
@@ -1234,8 +1234,8 @@ mod tests {
         app.prompt_delete();
 
         assert!(
-            matches!(app.modal, Some(Modal::DeleteConfirm { .. })),
-            "expected DeleteConfirm when nothing is marked"
+            matches!(app.modal, Some(Modal::Delete { .. })),
+            "expected Delete when nothing is marked"
         );
     }
 
@@ -1348,7 +1348,7 @@ mod tests {
         fs::write(sub.join("inner.txt"), b"inner").unwrap();
 
         let mut app = make_app(dir.path().to_path_buf());
-        app.confirm_delete_many(&[sub.clone()]);
+        app.confirm_delete_many(std::slice::from_ref(&sub));
 
         assert!(!sub.exists(), "subdirectory should be removed recursively");
     }
@@ -1361,7 +1361,7 @@ mod tests {
 
         let mut app = make_app(dir.path().to_path_buf());
         // Simulate cancellation: set the modal manually then take it away.
-        app.modal = Some(Modal::MultiDeleteConfirm {
+        app.modal = Some(Modal::MultiDelete {
             paths: vec![f.clone()],
         });
         app.modal = None;
@@ -1442,7 +1442,7 @@ mod tests {
 
         app.prompt_delete();
 
-        if let Some(Modal::MultiDeleteConfirm { paths }) = &app.modal {
+        if let Some(Modal::MultiDelete { paths }) = &app.modal {
             let names: Vec<_> = paths
                 .iter()
                 .map(|p| p.file_name().unwrap().to_string_lossy().to_string())
@@ -1451,7 +1451,7 @@ mod tests {
             sorted.sort();
             assert_eq!(names, sorted, "paths in modal should be sorted");
         } else {
-            panic!("expected MultiDeleteConfirm modal");
+            panic!("expected MultiDelete modal");
         }
     }
 }

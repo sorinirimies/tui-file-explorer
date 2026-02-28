@@ -314,7 +314,7 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
 /// title, a body message, and a key-hint footer.
 pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme) {
     // ── MultiDeleteConfirm — taller modal with a scrollable name list ─────────
-    if let Modal::MultiDeleteConfirm { paths } = modal {
+    if let Modal::MultiDelete { paths } = modal {
         let count = paths.len();
         // Show up to 6 file names inside the box, then a "+ N more" note.
         const MAX_SHOWN: usize = 6;
@@ -414,16 +414,16 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
         return;
     }
 
-    // ── Single-item modals (DeleteConfirm / OverwriteConfirm) ─────────────────
+    // ── Single-item modals (Delete / Overwrite) ───────────────────────────────
     let (title, body) = match modal {
-        Modal::DeleteConfirm { path } => (
+        Modal::Delete { path } => (
             " Confirm Delete ",
             format!(
                 "Delete '{}' ?",
                 path.file_name().unwrap_or_default().to_string_lossy()
             ),
         ),
-        Modal::OverwriteConfirm { dst, .. } => (
+        Modal::Overwrite { dst, .. } => (
             " Confirm Overwrite ",
             format!(
                 "'{}' already exists. Overwrite?",
@@ -431,7 +431,7 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
             ),
         ),
         // Already handled above.
-        Modal::MultiDeleteConfirm { .. } => unreachable!(),
+        Modal::MultiDelete { .. } => unreachable!(),
     };
 
     let w = (body.len() as u16 + 6).max(40).min(area.width - 4);
