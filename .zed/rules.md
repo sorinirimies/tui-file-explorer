@@ -10,11 +10,18 @@ decisions made in this codebase. Read it before opening a PR.
 ```
 tui-file-explorer/
 ├── src/
-│   ├── lib.rs        # Crate root — docs, module declarations, public re-exports only
-│   ├── types.rs      # Plain data types: FsEntry, ExplorerOutcome
-│   ├── palette.rs    # Colour constants (all pub so callers can reference them)
-│   ├── explorer.rs   # FileExplorer state machine + filesystem helpers + unit tests
-│   └── render.rs     # All ratatui Frame rendering (render / render_header / render_list / render_footer)
+│   ├── lib.rs          # Crate root — docs, module declarations, public re-exports only
+│   ├── types.rs        # Plain data types: FsEntry, ExplorerOutcome, SortMode
+│   ├── palette.rs      # Colour constants (all pub so callers can reference them)
+│   ├── explorer.rs     # FileExplorer state machine + filesystem helpers + unit tests
+│   ├── render.rs       # All ratatui Frame rendering (render / render_header / render_list / render_footer)
+│   │
+│   │   ── binary-only (not part of the public library API) ──
+│   ├── main.rs         # CLI entry-point (tfe binary): arg parsing, terminal setup, run loop
+│   ├── app.rs          # App state: two-pane layout, clipboard, Modal, multi-delete, event handling
+│   ├── ui.rs           # Binary-specific TUI drawing: action bar, theme panel, modal overlay
+│   ├── fs.rs           # fs helpers for the binary: copy_dir_all, resolve_output_path, emit_path
+│   └── persistence.rs  # State persistence: load/save last dir, theme, sort mode, hidden flag
 ├── scripts/
 │   ├── bump_version.sh   # Interactive version bump — runs checks before tagging
 │   └── check_publish.sh  # Pre-publish gate — fmt, clippy, tests, doc, dry-run
@@ -30,6 +37,8 @@ tui-file-explorer/
 - Each module has one clear responsibility. If a module starts doing two things,
   split it.
 - New public types go in `types.rs`; new colour tokens go in `palette.rs`.
+- Binary-only logic (two-pane app state, CLI flags, persistence) stays in the
+  binary modules and must not leak into the library crate.
 
 ---
 
@@ -84,11 +93,19 @@ tui-file-explorer/
   - Adding a public item → minor bump.
   - Removing or changing a public item → major bump.
 - The public surface is intentionally narrow:
-  - Types: `FileExplorer`, `FsEntry`, `ExplorerOutcome`
-  - Functions: `render`
+  - Types: `FileExplorer`, `FsEntry`, `ExplorerOutcome`, `SortMode`
+  - Functions: `render`, `render_themed`, `fmt_size`, `entry_icon`
   - Module: `palette` (constants only)
-- `pub(crate)` is used for anything shared between modules that is not part of
-  the external API (e.g. `is_selectable`, `entry_icon`, `fmt_size`).
+- Public fields on `FileExplorer`:
+  - `current_dir`, `entries`, `cursor`, `extension_filter`, `show_hidden`,
+    `sort_mode`, `search_query`, `search_active` — navigation/filter state
+  - `marked: HashSet<PathBuf>` — paths space-marked for multi-item operations
+- Public methods added for multi-delete support:
+  - `marked_paths()` — shared reference to the marked set
+  - `toggle_mark()` — toggle the mark on the current entry and advance cursor
+  - `clear_marks()` — clear all marks (called after multi-delete or navigation)
+- `pub(crate)` is used for anything shared between library modules that is not
+  part of the external API (e.g. `load_entries`, `scroll_offset`, `status`).
 - Do not expose `scroll_offset` or `status` fields publicly — they are rendering
   implementation details.
 
@@ -100,6 +117,10 @@ tui-file-explorer/
   It owns the layout split; callers never pass pre-split areas.
 - All widget construction is local to the `render_*` helpers — no widgets are
   stored in `FileExplorer`.
+- Marked entries are rendered with a `◆` leading marker and `theme.brand`
+  colour. The list block title shows `◆ N marked` when marks are active.
+- The `Modal::MultiDelete` variant uses a taller dynamic-height overlay that
+  lists up to 6 file names and a `… and N more` overflow line.
 - Scroll state is managed manually via `scroll_offset`; `ListState::select` is
   used only to drive ratatui's internal highlight — it is always set to the
   *visible* index (`cursor - scroll_offset`), not the absolute index.
@@ -115,19 +136,28 @@ tui-file-explorer/
 ### What to test
 - Every public method on `FileExplorer` must have at least one test.
 - Every `ExplorerOutcome` variant must be covered.
-- Edge cases: empty directory, cursor at boundaries, filesystem root ascent.
+- Every `Modal` variant (`Delete`, `MultiDelete`, `Overwrite`) must be covered
+  in `app.rs` tests — both the confirm and cancel paths.
+- Edge cases: empty directory, cursor at boundaries, filesystem root ascent,
+  last entry marking (no cursor overflow), partial errors in multi-delete.
 
 ### Conventions
 - Tests live in a `#[cfg(test)] mod tests` block at the **bottom** of the file
-  that owns the code under test (currently `explorer.rs`).
+  that owns the code under test:
+  - `explorer.rs` — widget-level unit tests (key handling, mark toggle, navigation)
+  - `app.rs` — integration-level tests (prompt_delete, confirm_delete_many, paste, clipboard)
+  - `ui.rs` — action-bar span structure tests
 - Use `tempfile::tempdir()` for all filesystem tests. Never rely on the real
   filesystem layout.
-- Helper `fn temp_dir_with_files() -> TempDir` creates a canonical test fixture.
-  Add to it rather than duplicating setup.
+- `explorer.rs` fixture: `fn temp_dir_with_files() -> TempDir` — creates one subdir
+  and three files. Add to it rather than duplicating setup in individual tests.
+- `app.rs` fixture: `fn make_app(dir: PathBuf) -> App` — constructs an `App` with
+  sensible defaults. Use this for all binary-level tests.
 - Test function names follow `verb_condition_expectation`:
   ```rust
   fn move_down_clamps_at_last()
   fn handle_key_enter_on_dir_descends()
+  fn confirm_delete_many_clears_marks_on_both_panes()
   ```
 - No `#[ignore]` tests. If a test is flaky, fix it.
 
@@ -136,6 +166,21 @@ tui-file-explorer/
 just test          # cargo test
 just test-all      # cargo test --all-features --all-targets
 ```
+
+---
+
+### Key bindings to keep covered
+Every key binding that produces a non-trivial state change needs a test:
+
+| Key | Action | Test location |
+|---|---|---|
+| `Space` | Toggle mark on current entry, cursor advances | `explorer.rs` |
+| `d` (no marks) | Raise `Modal::Delete` for current entry | `app.rs` |
+| `d` (with marks) | Raise `Modal::MultiDelete` for all marked paths | `app.rs` |
+| `y` in modal | Confirm delete / multi-delete / overwrite | `app.rs` |
+| any other key in modal | Cancel, set status message | `app.rs` |
+| `Backspace` / `h` | Ascend, clear marks | `explorer.rs` |
+| `Enter` / `l` on dir | Descend, clear marks | `explorer.rs` |
 
 ---
 
@@ -149,6 +194,13 @@ just test-all      # cargo test --all-features --all-targets
 - `lib.rs` must have a module-layout table so users can orient themselves
   without reading every file.
 - Run `just doc` to verify docs build without warnings before a release.
+
+---
+
+### Modal enum naming
+- `Modal` variants must **not** share a common postfix (Clippy `enum_variant_names`).
+- Current variants: `Delete`, `MultiDelete`, `Overwrite` — do not add a `Confirm`
+  suffix or any other suffix that would be uniform across all variants.
 
 ---
 
