@@ -136,9 +136,12 @@ pub struct App {
 }
 
 impl App {
-    /// Construct a new `App` with two panes both starting at `start_dir`.
+    /// Construct a new `App` with the left pane starting at `left_dir` and the
+    /// right pane starting at `right_dir`.  Pass the same path for both when
+    /// no separate right-pane directory has been persisted.
     pub fn new(
-        start_dir: PathBuf,
+        left_dir: PathBuf,
+        right_dir: PathBuf,
         extensions: Vec<String>,
         show_hidden: bool,
         theme_idx: usize,
@@ -146,12 +149,12 @@ impl App {
         single_pane: bool,
         sort_mode: SortMode,
     ) -> Self {
-        let left = FileExplorer::builder(start_dir.clone())
+        let left = FileExplorer::builder(left_dir)
             .extension_filter(extensions.clone())
             .show_hidden(show_hidden)
             .sort_mode(sort_mode)
             .build();
-        let right = FileExplorer::builder(start_dir)
+        let right = FileExplorer::builder(right_dir)
             .extension_filter(extensions)
             .show_hidden(show_hidden)
             .sort_mode(sort_mode)
@@ -515,7 +518,16 @@ mod tests {
 
     /// Build a minimal `App` rooted at `dir` with sensible defaults.
     fn make_app(dir: PathBuf) -> App {
-        App::new(dir, vec![], false, 0, false, false, SortMode::default())
+        App::new(
+            dir.clone(),
+            dir,
+            vec![],
+            false,
+            0,
+            false,
+            false,
+            SortMode::default(),
+        )
     }
 
     // ── Pane ─────────────────────────────────────────────────────────────────
@@ -699,6 +711,7 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let app = App::new(
             dir.path().to_path_buf(),
+            dir.path().to_path_buf(),
             vec![],
             false,
             0,
@@ -713,6 +726,7 @@ mod tests {
     fn new_show_theme_panel_true_when_requested() {
         let dir = tempdir().expect("tempdir");
         let app = App::new(
+            dir.path().to_path_buf(),
             dir.path().to_path_buf(),
             vec![],
             false,
@@ -835,6 +849,7 @@ mod tests {
 
         let mut app = App::new(
             src_dir.path().to_path_buf(),
+            src_dir.path().to_path_buf(),
             vec![],
             false,
             0,
@@ -862,6 +877,7 @@ mod tests {
         fs::write(src_dir.path().join("move_me.txt"), b"data").expect("write");
 
         let mut app = App::new(
+            src_dir.path().to_path_buf(),
             src_dir.path().to_path_buf(),
             vec![],
             false,
@@ -909,6 +925,7 @@ mod tests {
         fs::write(dst_dir.path().join("clash.txt"), b"dst").expect("write dst");
 
         let mut app = App::new(
+            src_dir.path().to_path_buf(),
             src_dir.path().to_path_buf(),
             vec![],
             false,
@@ -1065,6 +1082,7 @@ mod tests {
 
         let mut app = App::new(
             src_dir.path().to_path_buf(),
+            src_dir.path().to_path_buf(),
             vec![],
             false,
             0,
@@ -1143,6 +1161,7 @@ mod tests {
         fs::write(src_dir.path().join("appear.txt"), b"hi").expect("write");
 
         let mut app = App::new(
+            dst_dir.path().to_path_buf(),
             dst_dir.path().to_path_buf(),
             vec![],
             false,

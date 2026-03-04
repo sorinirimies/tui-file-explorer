@@ -34,6 +34,7 @@ use tui_file_explorer::{SortMode, Theme};
 
 const KEY_THEME: &str = "theme";
 const KEY_LAST_DIR: &str = "last_dir";
+const KEY_LAST_DIR_RIGHT: &str = "last_dir_right";
 const KEY_SORT_MODE: &str = "sort_mode";
 const KEY_SHOW_HIDDEN: &str = "show_hidden";
 const KEY_SINGLE_PANE: &str = "single_pane";
@@ -67,6 +68,12 @@ pub struct AppState {
     /// Only restored when the path still exists as a directory; stale entries
     /// (deleted directories) are silently ignored.
     pub last_dir: Option<PathBuf>,
+
+    /// Directory that was open in the right pane when the app last exited.
+    ///
+    /// Only restored when the path still exists as a directory; stale entries
+    /// (deleted directories) are silently ignored.
+    pub last_dir_right: Option<PathBuf>,
 
     /// Active sort mode: `Name`, `SizeDesc`, or `Extension`.
     pub sort_mode: Option<SortMode>,
@@ -169,6 +176,13 @@ pub(crate) fn load_state_from(path: &Path) -> AppState {
                     state.last_dir = Some(p);
                 }
             }
+            KEY_LAST_DIR_RIGHT if !value.is_empty() => {
+                let p = PathBuf::from(value);
+                // Only restore if the directory still exists on disk.
+                if p.is_dir() {
+                    state.last_dir_right = Some(p);
+                }
+            }
             KEY_SORT_MODE => {
                 state.sort_mode = sort_mode_from_key(value);
             }
@@ -203,6 +217,9 @@ pub(crate) fn save_state_to(path: &Path, state: &AppState) -> io::Result<()> {
     }
     if let Some(ref dir) = state.last_dir {
         out.push_str(&format!("{KEY_LAST_DIR}={}\n", dir.display()));
+    }
+    if let Some(ref dir) = state.last_dir_right {
+        out.push_str(&format!("{KEY_LAST_DIR_RIGHT}={}\n", dir.display()));
     }
     if let Some(mode) = state.sort_mode {
         out.push_str(&format!("{KEY_SORT_MODE}={}\n", sort_mode_to_key(mode)));
@@ -317,6 +334,7 @@ mod tests {
         let original = AppState {
             theme: Some("grape".into()),
             last_dir: Some(std::env::temp_dir()),
+            last_dir_right: Some(std::env::temp_dir()),
             sort_mode: Some(SortMode::SizeDesc),
             show_hidden: Some(true),
             single_pane: Some(false),

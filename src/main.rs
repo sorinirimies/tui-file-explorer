@@ -146,6 +146,13 @@ fn run() -> io::Result<()> {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))),
     };
 
+    // Right pane: use the persisted right-pane directory when available,
+    // otherwise mirror the left pane's starting directory.
+    let right_start_dir = saved
+        .last_dir_right
+        .clone()
+        .unwrap_or_else(|| start_dir.clone());
+
     // CLI flags win when explicitly set (true); otherwise fall back to
     // persisted values.  Simple bool flags can't distinguish "not passed" from
     // "passed as false", so the convention is: CLI `true` always wins.
@@ -170,6 +177,7 @@ fn run() -> io::Result<()> {
 
     let mut app = App::new(
         start_dir,
+        right_start_dir,
         cli.extensions,
         show_hidden,
         theme_idx,
@@ -195,6 +203,7 @@ fn run() -> io::Result<()> {
     persistence::save_state(&persistence::AppState {
         theme: Some(app.theme_name().to_string()),
         last_dir: Some(app.left.current_dir.clone()),
+        last_dir_right: Some(app.right.current_dir.clone()),
         sort_mode: Some(app.left.sort_mode),
         show_hidden: Some(app.left.show_hidden),
         single_pane: Some(app.single_pane),
