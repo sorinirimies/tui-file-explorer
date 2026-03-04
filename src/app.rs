@@ -15,6 +15,57 @@ use std::{
     path::{Path, PathBuf},
 };
 
+// ── AppOptions ────────────────────────────────────────────────────────────────
+
+/// Startup configuration passed to [`App::new`].
+///
+/// Grouping all constructor parameters into a single struct keeps the call
+/// sites readable and avoids the `clippy::too_many_arguments` limit.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let app = App::new(AppOptions {
+///     left_dir: PathBuf::from("/home/user"),
+///     right_dir: PathBuf::from("/tmp"),
+///     ..AppOptions::default()
+/// });
+/// ```
+#[derive(Debug, Clone)]
+pub struct AppOptions {
+    /// Starting directory for the left pane.
+    pub left_dir: PathBuf,
+    /// Starting directory for the right pane.
+    pub right_dir: PathBuf,
+    /// File-extension filter (empty = show all).
+    pub extensions: Vec<String>,
+    /// Show hidden (dot-prefixed) entries on startup.
+    pub show_hidden: bool,
+    /// Index into the theme catalogue to use on startup.
+    pub theme_idx: usize,
+    /// Whether the theme-picker side-panel should be open on startup.
+    pub show_theme_panel: bool,
+    /// Whether to start in single-pane mode.
+    pub single_pane: bool,
+    /// Active sort mode.
+    pub sort_mode: SortMode,
+}
+
+impl Default for AppOptions {
+    fn default() -> Self {
+        Self {
+            left_dir: PathBuf::from("."),
+            right_dir: PathBuf::from("."),
+            extensions: vec![],
+            show_hidden: false,
+            theme_idx: 0,
+            show_theme_panel: false,
+            single_pane: false,
+            sort_mode: SortMode::default(),
+        }
+    }
+}
+
 use crate::fs::copy_dir_all;
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
@@ -136,28 +187,17 @@ pub struct App {
 }
 
 impl App {
-    /// Construct a new `App` with the left pane starting at `left_dir` and the
-    /// right pane starting at `right_dir`.  Pass the same path for both when
-    /// no separate right-pane directory has been persisted.
-    pub fn new(
-        left_dir: PathBuf,
-        right_dir: PathBuf,
-        extensions: Vec<String>,
-        show_hidden: bool,
-        theme_idx: usize,
-        show_theme_panel: bool,
-        single_pane: bool,
-        sort_mode: SortMode,
-    ) -> Self {
-        let left = FileExplorer::builder(left_dir)
-            .extension_filter(extensions.clone())
-            .show_hidden(show_hidden)
-            .sort_mode(sort_mode)
+    /// Construct a new `App` from an [`AppOptions`] config struct.
+    pub fn new(opts: AppOptions) -> Self {
+        let left = FileExplorer::builder(opts.left_dir)
+            .extension_filter(opts.extensions.clone())
+            .show_hidden(opts.show_hidden)
+            .sort_mode(opts.sort_mode)
             .build();
-        let right = FileExplorer::builder(right_dir)
-            .extension_filter(extensions)
-            .show_hidden(show_hidden)
-            .sort_mode(sort_mode)
+        let right = FileExplorer::builder(opts.right_dir)
+            .extension_filter(opts.extensions)
+            .show_hidden(opts.show_hidden)
+            .sort_mode(opts.sort_mode)
             .build();
         Self {
             left,
@@ -165,9 +205,9 @@ impl App {
             active: Pane::Left,
             clipboard: None,
             themes: Theme::all_presets(),
-            theme_idx,
-            show_theme_panel,
-            single_pane,
+            theme_idx: opts.theme_idx,
+            show_theme_panel: opts.show_theme_panel,
+            single_pane: opts.single_pane,
             modal: None,
             selected: None,
             status_msg: String::new(),
@@ -518,16 +558,11 @@ mod tests {
 
     /// Build a minimal `App` rooted at `dir` with sensible defaults.
     fn make_app(dir: PathBuf) -> App {
-        App::new(
-            dir.clone(),
-            dir,
-            vec![],
-            false,
-            0,
-            false,
-            false,
-            SortMode::default(),
-        )
+        App::new(AppOptions {
+            left_dir: dir.clone(),
+            right_dir: dir,
+            ..AppOptions::default()
+        })
     }
 
     // ── Pane ─────────────────────────────────────────────────────────────────
@@ -709,32 +744,24 @@ mod tests {
     #[test]
     fn new_single_pane_true_when_requested() {
         let dir = tempdir().expect("tempdir");
-        let app = App::new(
-            dir.path().to_path_buf(),
-            dir.path().to_path_buf(),
-            vec![],
-            false,
-            0,
-            false,
-            true, // single_pane = true
-            SortMode::default(),
-        );
+        let app = App::new(AppOptions {
+            left_dir: dir.path().to_path_buf(),
+            right_dir: dir.path().to_path_buf(),
+            single_pane: true,
+            ..AppOptions::default()
+        });
         assert!(app.single_pane);
     }
 
     #[test]
     fn new_show_theme_panel_true_when_requested() {
         let dir = tempdir().expect("tempdir");
-        let app = App::new(
-            dir.path().to_path_buf(),
-            dir.path().to_path_buf(),
-            vec![],
-            false,
-            0,
-            true, // show_theme_panel = true
-            false,
-            SortMode::default(),
-        );
+        let app = App::new(AppOptions {
+            left_dir: dir.path().to_path_buf(),
+            right_dir: dir.path().to_path_buf(),
+            show_theme_panel: true,
+            ..AppOptions::default()
+        });
         assert!(app.show_theme_panel);
     }
 
@@ -847,16 +874,11 @@ mod tests {
         let dst_dir = tempdir().expect("dst tempdir");
         fs::write(src_dir.path().join("hello.txt"), b"world").expect("write");
 
-        let mut app = App::new(
-            src_dir.path().to_path_buf(),
-            src_dir.path().to_path_buf(),
-            vec![],
-            false,
-            0,
-            false,
-            false,
-            SortMode::default(),
-        );
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: src_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
         app.yank(ClipOp::Copy);
 
         // Switch active pane to right and point it at dst_dir.
@@ -876,16 +898,11 @@ mod tests {
         let dst_dir = tempdir().expect("dst tempdir");
         fs::write(src_dir.path().join("move_me.txt"), b"data").expect("write");
 
-        let mut app = App::new(
-            src_dir.path().to_path_buf(),
-            src_dir.path().to_path_buf(),
-            vec![],
-            false,
-            0,
-            false,
-            false,
-            SortMode::default(),
-        );
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: src_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
         app.yank(ClipOp::Cut);
 
         app.active = Pane::Right;
@@ -924,16 +941,11 @@ mod tests {
         fs::write(src_dir.path().join("clash.txt"), b"src").expect("write src");
         fs::write(dst_dir.path().join("clash.txt"), b"dst").expect("write dst");
 
-        let mut app = App::new(
-            src_dir.path().to_path_buf(),
-            src_dir.path().to_path_buf(),
-            vec![],
-            false,
-            0,
-            false,
-            false,
-            SortMode::default(),
-        );
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: src_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
         app.yank(ClipOp::Copy);
         app.active = Pane::Right;
         app.right.navigate_to(dst_dir.path().to_path_buf());
@@ -1080,16 +1092,11 @@ mod tests {
         let dst_dir = tempdir().expect("dst tempdir");
         fs::write(src_dir.path().join("a.txt"), b"x").expect("write");
 
-        let mut app = App::new(
-            src_dir.path().to_path_buf(),
-            src_dir.path().to_path_buf(),
-            vec![],
-            false,
-            0,
-            false,
-            false,
-            SortMode::default(),
-        );
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: src_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
         // Seed an old status message to prove it gets replaced.
         app.status_msg = "old message".into();
 
@@ -1160,16 +1167,11 @@ mod tests {
         let dst_dir = tempdir().expect("dst tempdir");
         fs::write(src_dir.path().join("appear.txt"), b"hi").expect("write");
 
-        let mut app = App::new(
-            dst_dir.path().to_path_buf(),
-            dst_dir.path().to_path_buf(),
-            vec![],
-            false,
-            0,
-            false,
-            false,
-            SortMode::default(),
-        );
+        let mut app = App::new(AppOptions {
+            left_dir: dst_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
         let src = src_dir.path().join("appear.txt");
         let dst = dst_dir.path().join("appear.txt");
         app.do_paste(&src, &dst, false);

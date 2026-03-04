@@ -175,16 +175,16 @@ fn run() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(
-        start_dir,
-        right_start_dir,
-        cli.extensions,
+    let mut app = App::new(app::AppOptions {
+        left_dir: start_dir,
+        right_dir: right_start_dir,
+        extensions: cli.extensions,
         show_hidden,
         theme_idx,
-        cli.show_themes,
+        show_theme_panel: cli.show_themes,
         single_pane,
         sort_mode,
-    );
+    });
 
     let result = run_loop(&mut terminal, &mut app);
 
