@@ -234,6 +234,54 @@ cli     = ["dep:clap"]     # enables the `tfe` binary
 
 ---
 
+## 14. Commit & Release After Every Change
+
+**Every completed implementation + test cycle must end with a commit and a new
+release.** There is no such thing as "I'll release later" — if the code is
+correct and the tests are green, ship it.
+
+### Mandatory steps after any code change
+
+```
+implement  →  write / update tests  →  cargo clippy  →  cargo test
+     →  git commit  →  just release <next-patch>  →  git push
+```
+
+1. **Implement** the feature or fix.
+2. **Write or update tests** — every changed behaviour needs test coverage.
+3. **`cargo clippy --all-targets -- -D warnings`** must be clean (zero warnings).
+4. **`cargo test`** must be fully green (zero failures).
+5. **`git commit`** with a Conventional Commit message describing the change.
+6. **`just release <next-version>`** — runs all checks again, bumps
+   `Cargo.toml`, updates `Cargo.lock`, regenerates `CHANGELOG.md`, creates the
+   annotated git tag, and pushes branch + tag to GitHub.
+7. **Never skip the release step.** A green test suite that is not tagged and
+   pushed is an unreleased change — treat it as incomplete work.
+
+### Choosing the version number
+| Change type | Bump |
+|---|---|
+| Bug fix, internal refactor, doc update | patch (`0.1.x → 0.1.x+1`) |
+| New user-visible feature, new public API | minor (`0.1.x → 0.2.0`) |
+| Breaking public API change | major (`0.x.y → 1.0.0`) |
+
+When in doubt, bump the patch. Releasing often is better than batching.
+
+### One logical change = one commit = one release
+Do not batch multiple unrelated fixes into a single release. Each logical
+unit of work (feature, fix, refactor) gets its own commit and its own version
+tag. This keeps the changelog readable and makes bisecting trivial.
+
+### Quick reference
+```bash
+# After implementation + tests pass:
+git add <changed files>
+git commit -m "fix: <what was fixed>"    # or feat:/refactor:/chore: etc.
+just release 0.1.X                       # bumps, tags, pushes
+```
+
+---
+
 ## 10. Versioning & Release Workflow
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/)
@@ -307,6 +355,7 @@ just publish-dry     # cargo publish --dry-run
 - [ ] `just check-all` passes locally (fmt + clippy + test)
 - [ ] New public items have `///` doc comments
 - [ ] New logic has tests in the appropriate `mod tests` block
-- [ ] `Cargo.toml` version is **not** bumped in the PR (the release workflow owns that)
+- [ ] A focused commit has been made with a Conventional Commit message
+- [ ] `just release <next-version>` has been run and the tag + branch pushed
 - [ ] No new dependencies added without discussion
 - [ ] Commit messages follow Conventional Commits
