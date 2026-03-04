@@ -200,10 +200,24 @@ fn run() -> io::Result<()> {
     result?;
 
     // Persist full application state on clean exit.
+    //
+    // When single-pane mode is active the right pane is hidden and its
+    // current_dir was never independently navigated — it still mirrors the
+    // left pane's starting directory.  Blindly saving it would clobber the
+    // real last_dir_right that was loaded at startup, so in that case we
+    // re-use whatever was previously persisted instead.
+    let last_dir_right = if app.single_pane {
+        // Preserve the value we loaded at startup (may be None if this is a
+        // fresh install or the path was deleted).
+        saved.last_dir_right.clone()
+    } else {
+        Some(app.right.current_dir.clone())
+    };
+
     persistence::save_state(&persistence::AppState {
         theme: Some(app.theme_name().to_string()),
         last_dir: Some(app.left.current_dir.clone()),
-        last_dir_right: Some(app.right.current_dir.clone()),
+        last_dir_right,
         sort_mode: Some(app.left.sort_mode),
         show_hidden: Some(app.left.show_hidden),
         single_pane: Some(app.single_pane),

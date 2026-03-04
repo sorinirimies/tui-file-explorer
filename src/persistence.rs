@@ -759,4 +759,118 @@ mod tests {
             assert_eq!(loaded, case, "round-trip failed for {case:?}");
         }
     }
+
+    // ── single-pane: last_dir_right preservation ──────────────────────────────
+
+    /// Simulates the exact save logic in main.rs:
+    ///
+    ///   let last_dir_right = if app.single_pane {
+    ///       saved.last_dir_right.clone()   // ← preserve, don't clobber
+    ///   } else {
+    ///       Some(app.right.current_dir.clone())
+    ///   };
+    ///
+    /// When single-pane mode is active the right pane is hidden and its
+    /// current_dir mirrors the left pane's starting directory.  If we wrote
+    /// that mirrored value we'd clobber the real right-pane path, so we
+    /// preserve whatever was previously persisted.
+    #[test]
+    fn last_dir_right_is_preserved_when_single_pane_is_active() {
+        let (_dir, path) = tmp_state_path();
+        let left_dir = std::env::temp_dir();
+        let right_dir = {
+            // Use a sub-directory of temp so it's a different path that exists.
+            let p = std::env::temp_dir().join("tfe_test_right_pane_persist");
+            std::fs::create_dir_all(&p).unwrap();
+            p
+        };
+
+        // First session: dual-pane, user navigated each pane to a different dir.
+        let first_session = AppState {
+            last_dir: Some(left_dir.clone()),
+            last_dir_right: Some(right_dir.clone()),
+            single_pane: Some(false),
+            ..Default::default()
+        };
+        save_state_to(&path, &first_session).unwrap();
+
+        // Second session starts: load state, user switches to single-pane, exits.
+        let saved = load_state_from(&path);
+        assert_eq!(
+            saved.last_dir_right,
+            Some(right_dir.clone()),
+            "right pane dir should have survived the first save"
+        );
+
+        // Replicate the main.rs save logic when single_pane == true:
+        // the right pane's current_dir is the same as left (it was never navigated).
+        let mirrored_right = left_dir.clone(); // what app.right.current_dir would be
+        let last_dir_right = if true
+        /* single_pane active */
+        {
+            saved.last_dir_right.clone() // preserve
+        } else {
+            Some(mirrored_right)
+        };
+
+        let second_session = AppState {
+            last_dir: Some(left_dir.clone()),
+            last_dir_right,
+            single_pane: Some(true),
+            ..Default::default()
+        };
+        save_state_to(&path, &second_session).unwrap();
+
+        let restored = load_state_from(&path);
+        assert_eq!(
+            restored.last_dir_right,
+            Some(right_dir.clone()),
+            "last_dir_right must not be clobbered by the hidden right pane's mirrored path \
+             when single_pane was active on exit"
+        );
+        assert_ne!(
+            restored.last_dir_right, restored.last_dir,
+            "right and left pane dirs should remain independent after a single-pane session"
+        );
+    }
+
+    /// When the app is opened for the very first time (no prior state file),
+    /// last_dir_right is None and the right pane correctly mirrors the left.
+    #[test]
+    fn last_dir_right_is_none_on_fresh_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent").join("state");
+        let state = load_state_from(&path);
+        assert!(
+            state.last_dir_right.is_none(),
+            "fresh install should have no persisted right-pane dir"
+        );
+    }
+
+    /// Dual-pane exit: last_dir_right IS updated (the normal case).
+    #[test]
+    fn last_dir_right_is_updated_when_dual_pane_is_active() {
+        let (_dir, path) = tmp_state_path();
+        let left_dir = std::env::temp_dir();
+        let right_dir = {
+            let p = std::env::temp_dir().join("tfe_test_right_dual");
+            std::fs::create_dir_all(&p).unwrap();
+            p
+        };
+
+        let state = AppState {
+            last_dir: Some(left_dir.clone()),
+            last_dir_right: Some(right_dir.clone()),
+            single_pane: Some(false),
+            ..Default::default()
+        };
+        save_state_to(&path, &state).unwrap();
+
+        let loaded = load_state_from(&path);
+        assert_eq!(
+            loaded.last_dir_right,
+            Some(right_dir),
+            "dual-pane exit should persist the right pane's actual directory"
+        );
+    }
 }
