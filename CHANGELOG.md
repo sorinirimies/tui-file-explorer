@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-03-05
+
+### Features
+- Add DualPane widget to the library
+
+## [0.2.0] - 2026-03-05
+
+### Miscellaneous
+- Bump version to 0.2.0
+
 ## [0.1.10] - 2026-03-04
 
 ### Documentation
