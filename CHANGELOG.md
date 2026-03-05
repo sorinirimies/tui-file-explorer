@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-03-05
+
+### Bug Fixes
+- Arrow keys scroll the list; only Enter/l descend or confirm
+
 ## [0.2.2] - 2026-03-05
 
 ### Bug Fixes
@@ -8,6 +13,9 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 - Update README for v0.2.0 DualPane API
+
+### Miscellaneous
+- Bump version to 0.2.2
 
 ## [0.2.1] - 2026-03-05
 
