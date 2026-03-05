@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.4] - 2026-03-05
+
+### Bug Fixes
+- Cross-platform TUI rendering and shell integration
+
 ## [0.3.3] - 2026-03-05
 
 ### Bug Fixes
 - Render TUI on /dev/tty so shell wrapper $() capture works
+
+### Miscellaneous
+- Bump version to 0.3.3
 
 ## [0.3.2] - 2026-03-05
 
