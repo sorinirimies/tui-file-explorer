@@ -248,10 +248,19 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
     let visible_height = area.height.saturating_sub(2) as usize;
 
     // Keep scroll_offset in sync so the cursor is always visible.
+    // All arithmetic uses saturating ops so a zero visible_height or a cursor
+    // of 0 can never underflow the usize values.
     if explorer.cursor < explorer.scroll_offset {
         explorer.scroll_offset = explorer.cursor;
-    } else if explorer.cursor >= explorer.scroll_offset + visible_height {
-        explorer.scroll_offset = explorer.cursor - visible_height + 1;
+    } else if explorer.cursor >= explorer.scroll_offset.saturating_add(visible_height) {
+        explorer.scroll_offset = explorer
+            .cursor
+            .saturating_sub(visible_height.saturating_sub(1));
+    }
+    // Guard: scroll_offset must never exceed the last valid entry index.
+    let max_scroll = explorer.entries.len().saturating_sub(1);
+    if explorer.scroll_offset > max_scroll {
+        explorer.scroll_offset = max_scroll;
     }
 
     let items: Vec<ListItem> = explorer

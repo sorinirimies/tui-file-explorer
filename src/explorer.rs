@@ -466,11 +466,28 @@ impl FileExplorer {
         if self.cursor > 0 {
             self.cursor -= 1;
         }
+        // If entries shrank (e.g. external deletion) clamp to valid range.
+        self.clamp_cursor();
     }
 
     fn move_down(&mut self) {
-        if !self.entries.is_empty() && self.cursor < self.entries.len() - 1 {
+        let last = self.entries.len().saturating_sub(1);
+        if !self.entries.is_empty() && self.cursor < last {
             self.cursor += 1;
+        }
+        self.clamp_cursor();
+    }
+
+    /// Clamp `cursor` and `scroll_offset` so they never exceed the current
+    /// entries length.  Safe to call at any time — a no-op when everything is
+    /// already in range.
+    fn clamp_cursor(&mut self) {
+        let max = self.entries.len().saturating_sub(1);
+        if self.cursor > max {
+            self.cursor = max;
+        }
+        if self.scroll_offset > self.cursor {
+            self.scroll_offset = self.cursor;
         }
     }
 
@@ -489,7 +506,10 @@ impl FileExplorer {
             if let Some(idx) = self.entries.iter().position(|e| e.path == prev) {
                 self.cursor = idx;
             }
+            // Always clamp in case the parent is empty or shorter than expected.
+            self.clamp_cursor();
         } else {
+            // Already at root — stay put, do nothing.
             self.status = "Already at the filesystem root.".to_string();
         }
     }
@@ -530,6 +550,10 @@ impl FileExplorer {
             self.sort_mode,
             &self.search_query,
         );
+        // After every reload the entry count may have shrunk (filter change,
+        // external deletion, empty directory).  Clamp so cursor and
+        // scroll_offset never point past the end of the new list.
+        self.clamp_cursor();
     }
 }
 
@@ -858,7 +882,7 @@ mod tests {
     use super::*;
     use crossterm::event::{KeyEvent, KeyModifiers};
     use std::fs;
-    use tempfile::TempDir;
+    use tempfile::{tempdir, TempDir};
 
     // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -1795,6 +1819,113 @@ mod tests {
         }
 
         assert_eq!(explorer.marked.len(), total, "all entries should be marked");
+    }
+
+    // ── Cursor / scroll boundary safety ──────────────────────────────────────
+
+    #[test]
+    fn move_up_at_top_does_not_underflow() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").unwrap();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.cursor = 0;
+        // Should be a no-op, not a panic.
+        explorer.handle_key(key(KeyCode::Up));
+        assert_eq!(explorer.cursor, 0);
+    }
+
+    #[test]
+    fn move_down_at_bottom_does_not_overflow() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").unwrap();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        let last = explorer.entries.len().saturating_sub(1);
+        explorer.cursor = last;
+        explorer.handle_key(key(KeyCode::Down));
+        assert_eq!(explorer.cursor, last);
+    }
+
+    #[test]
+    fn move_down_on_empty_dir_does_not_panic() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        assert!(explorer.entries.is_empty());
+        // Must not panic.
+        explorer.handle_key(key(KeyCode::Down));
+        assert_eq!(explorer.cursor, 0);
+    }
+
+    #[test]
+    fn move_up_on_empty_dir_does_not_panic() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        assert!(explorer.entries.is_empty());
+        explorer.handle_key(key(KeyCode::Up));
+        assert_eq!(explorer.cursor, 0);
+    }
+
+    #[test]
+    fn page_down_at_bottom_does_not_overflow() {
+        let dir = tempdir().expect("tempdir");
+        for i in 0..5 {
+            fs::write(dir.path().join(format!("{i}.txt")), b"x").unwrap();
+        }
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        let last = explorer.entries.len().saturating_sub(1);
+        explorer.cursor = last;
+        explorer.handle_key(key(KeyCode::PageDown));
+        assert_eq!(explorer.cursor, last);
+    }
+
+    #[test]
+    fn page_up_at_top_does_not_underflow() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").unwrap();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.cursor = 0;
+        explorer.handle_key(key(KeyCode::PageUp));
+        assert_eq!(explorer.cursor, 0);
+    }
+
+    #[test]
+    fn ascend_at_root_does_not_panic() {
+        let mut explorer = FileExplorer::new(std::path::PathBuf::from("/"), vec![]);
+        // Pressing Backspace at root must not panic — it should stay put.
+        explorer.handle_key(key(KeyCode::Backspace));
+        assert_eq!(explorer.current_dir, std::path::PathBuf::from("/"));
+    }
+
+    #[test]
+    fn cursor_clamped_after_reload_with_fewer_entries() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").unwrap();
+        fs::write(dir.path().join("b.txt"), b"b").unwrap();
+        fs::write(dir.path().join("c.txt"), b"c").unwrap();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        // Move to last entry.
+        explorer.cursor = explorer.entries.len() - 1;
+        // Now apply a filter that shows only one file — reload happens inside.
+        explorer.set_extension_filter(["a"]);
+        // Cursor must be clamped to the new (smaller) list.
+        assert!(
+            explorer.cursor < explorer.entries.len().max(1),
+            "cursor {} out of range for {} entries",
+            explorer.cursor,
+            explorer.entries.len()
+        );
+    }
+
+    #[test]
+    fn scroll_offset_clamped_after_reload_with_empty_entries() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("test.rs"), b"fn main(){}").unwrap();
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.scroll_offset = 5; // artificially stale
+        explorer.cursor = 0;
+        // Apply a filter that matches nothing — entries becomes empty.
+        explorer.set_extension_filter(["xyz"]);
+        assert_eq!(explorer.cursor, 0);
+        assert_eq!(explorer.scroll_offset, 0);
     }
 
     #[test]
