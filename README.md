@@ -41,7 +41,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 - 🎛️ **Live theme panel** — press `t` to open a side panel, `[`/`]` to cycle themes
 - 🔧 Fluent builder API for ergonomic embedding — both `FileExplorer` and `DualPane`
 - 📦 **`DualPane` library widget** — drop a full two-pane explorer into any Ratatui app with one struct
-- 🖥️ Standalone `tfe` binary with full shell-pipeline integration
+- 🖥️ **`cd` on exit** — dismiss with `Esc`/`q` and your terminal jumps to the directory you were browsing (requires a one-line shell wrapper)
 - ✅ Lean library — only `ratatui` + `crossterm` required (`clap` is opt-out)
 
 ---
@@ -624,7 +624,7 @@ tfe [OPTIONS] [PATH]
 | `--list-themes` | Print all 27 available themes and exit |
 | `--show-themes` | Open the theme panel on startup (`T` toggles it at runtime) |
 | `--single-pane` | Start in single-pane mode (default is two-pane; toggle at runtime with `w`) |
-| `--print-dir` | Print the selected file's **parent directory** instead of the full path |
+| `--print-dir` | Print the **parent directory** of the selected file instead of the full path (on dismiss, the current directory is always printed regardless) |
 | `-0, --null` | Terminate output with a NUL byte (for `xargs -0`) |
 | `-h, --help` | Show help |
 | `-V, --version` | Show version |
@@ -633,33 +633,58 @@ tfe [OPTIONS] [PATH]
 
 | Code | Meaning |
 |------|---------|
-| `0` | File selected — path printed to stdout |
-| `1` | Dismissed (`Esc` / `q`) without selecting |
+| `0` | Path printed to stdout (file selected, or dismissed — always emits the active pane's directory) |
 | `2` | Bad arguments or I/O error |
 
 ### Shell integration
 
-```bash
-# Open the selected file in $EDITOR
-tfe | xargs -r $EDITOR
+The killer feature: add a wrapper function to your shell so that pressing
+`Esc` or `q` to dismiss `tfe` **automatically `cd`s your terminal** to
+whichever directory you were browsing.
 
-# cd into the directory containing the selected file
-cd "$(tfe --print-dir)"
+```bash
+# bash / zsh — add to ~/.bashrc or ~/.zshrc
+tfe() {
+    local dir
+    dir=$(command tfe "$@")
+    [ -n "$dir" ] && cd "$dir"
+}
+```
+
+```fish
+# fish — save as ~/.config/fish/functions/tfe.fish
+function tfe
+    set dir (command tfe $argv)
+    if test -n "$dir"
+        cd $dir
+    end
+end
+```
+
+How it works: `tfe` always prints a path to stdout on exit.
+- **Dismiss** (`Esc` / `q`) → prints the active pane's current directory.
+- **File selected** (`Enter` / `l`) → prints the selected file's path.
+
+The wrapper captures whichever path was printed and calls `cd` on it.
+
+```bash
+# Open the selected file in $EDITOR (bypasses the wrapper)
+command tfe | xargs -r $EDITOR
 
 # Select a Rust source file and edit it
-tfe -e rs | xargs -r nvim
+command tfe -e rs | xargs -r nvim
 
 # Start with the Catppuccin Mocha theme and the theme panel open
 tfe --theme catppuccin-mocha --show-themes
 
-# Start in single-pane mode (useful for narrow terminals or shell pipelines)
+# Start in single-pane mode (useful for narrow terminals)
 tfe --single-pane
 
 # List all available themes
 tfe --list-themes
 
 # NUL-delimited output (safe for filenames with spaces or newlines)
-tfe -0 | xargs -0 wc -l
+command tfe -0 | xargs -0 wc -l
 ```
 
 > **Theme names** are case-insensitive and hyphens/spaces are interchangeable:  

@@ -4,9 +4,32 @@
 //!
 //! ## Shell integration
 //!
+//! Add the wrapper function to your shell rc file so that dismissing `tfe`
+//! automatically `cd`s the terminal to the pane's current directory:
+//!
+//! ```bash
+//! # bash / zsh — put this in ~/.bashrc or ~/.zshrc
+//! tfe() {
+//!     local dir
+//!     dir=$(command tfe "$@")
+//!     [ -n "$dir" ] && cd "$dir"
+//! }
+//! ```
+//!
+//! ```fish
+//! # fish — put this in ~/.config/fish/functions/tfe.fish
+//! function tfe
+//!     set dir (command tfe $argv)
+//!     if test -n "$dir"
+//!         cd $dir
+//!     end
+//! end
+//! ```
+//!
+//! Other examples:
+//!
 //! ```bash
 //! tfe | xargs -r $EDITOR           # open selected file in $EDITOR
-//! cd "$(tfe --print-dir)"          # cd into the directory of the selection
 //! tfe -e rs | pbcopy               # copy a .rs path to the clipboard
 //! tfe --theme catppuccin-mocha     # choose a colour theme
 //! tfe --single-pane                # start in single-pane mode
@@ -15,8 +38,7 @@
 //! ```
 //!
 //! Exit codes:
-//!   0 — a file was selected (path printed to stdout)
-//!   1 — explorer was dismissed without a selection
+//!   0 — path printed to stdout (file selected, or dismissed with a current dir)
 //!   2 — bad arguments / I/O error
 
 mod app;
@@ -52,8 +74,15 @@ use ui::draw;
     about = "Keyboard-driven two-pane terminal file explorer",
     after_help = "\
 SHELL INTEGRATION:\n\
+  Wrap tfe so Esc/q automatically cd's to the browsed directory:\n\
+\n\
+    # bash/zsh (~/.bashrc or ~/.zshrc)\n\
+    tfe() { local d; d=$(command tfe \"$@\"); [ -n \"$d\" ] && cd \"$d\"; }\n\
+\n\
+    # fish (~/.config/fish/functions/tfe.fish)\n\
+    function tfe; set d (command tfe $argv); test -n \"$d\" && cd $d; end\n\
+\n\
   Open selected file in $EDITOR:     tfe | xargs -r $EDITOR\n\
-  cd into directory of selection:    cd \"$(tfe --print-dir)\"\n\
   NUL-delimited output:              tfe -0 | xargs -0 wc -l"
 )]
 struct Cli {
@@ -223,14 +252,19 @@ fn run() -> io::Result<()> {
         single_pane: Some(app.single_pane),
     });
 
-    match app.selected {
-        Some(path) => {
-            let output = resolve_output_path(path, cli.print_dir);
-            fs::emit_path(&output, cli.null)?;
-            // exit 0 implicit
-        }
-        None => process::exit(1),
-    }
+    // Emit a path to stdout so a shell wrapper can act on it (e.g. `cd`).
+    //
+    // • File selected  → emit the selected path (or its parent with --print-dir).
+    // • Dismissed      → emit the active pane's current directory so the shell
+    //                    wrapper can `cd` there even when no file was chosen.
+    //
+    // In both cases we exit 0 — the shell wrapper receives a non-empty path
+    // and calls `cd`.  Exit code 2 is reserved for argument / I/O errors.
+    let output = match app.selected {
+        Some(path) => resolve_output_path(path, cli.print_dir),
+        None => app.active_pane().current_dir.clone(),
+    };
+    fs::emit_path(&output, cli.null)?;
 
     Ok(())
 }
