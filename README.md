@@ -39,7 +39,8 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 - ⌨️ Full keyboard navigation: arrow keys, vim keys (`h/j/k/l`), `PgUp/PgDn`, `g/G`
 - 🎨 **27 named themes** — Catppuccin, Dracula, Nord, Tokyo Night, Kanagawa, Gruvbox, and more
 - 🎛️ **Live theme panel** — press `t` to open a side panel, `[`/`]` to cycle themes
-- 🔧 Fluent builder API for ergonomic embedding
+- 🔧 Fluent builder API for ergonomic embedding — both `FileExplorer` and `DualPane`
+- 📦 **`DualPane` library widget** — drop a full two-pane explorer into any Ratatui app with one struct
 - 🖥️ Standalone `tfe` binary with full shell-pipeline integration
 - ✅ Lean library — only `ratatui` + `crossterm` required (`clap` is opt-out)
 
@@ -55,8 +56,8 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 | File operations | 4 (copy, cut, paste, delete) |
 | Key bindings | 20+ |
 | File-type icons | 50+ extensions mapped |
-| Public API surface | 6 types, 4 free functions |
-| Unit tests | 93 |
+| Public API surface | 10 types, 6 free functions |
+| Unit tests | 263 |
 
 ---
 
@@ -66,7 +67,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 
 ```toml
 [dependencies]
-tui-file-explorer = "0.1"
+tui-file-explorer = "0.2"
 ratatui = "0.30"
 ```
 
@@ -74,7 +75,7 @@ Library-only (no `clap`-powered CLI binary):
 
 ```toml
 [dependencies]
-tui-file-explorer = { version = "0.1", default-features = false }
+tui-file-explorer = { version = "0.2", default-features = false }
 ```
 
 ### As a CLI tool
@@ -88,6 +89,8 @@ Installs the `tfe` binary onto your `PATH`.
 ---
 
 ## Quick Start
+
+### Single-pane
 
 ```rust
 use tui_file_explorer::{FileExplorer, ExplorerOutcome, SortMode, render};
@@ -109,6 +112,33 @@ let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
 match explorer.handle_key(key) {
     ExplorerOutcome::Selected(path) => println!("chosen: {}", path.display()),
     ExplorerOutcome::Dismissed      => { /* close the overlay */ }
+    _                               => {}
+}
+```
+
+### Dual-pane
+
+```rust
+use tui_file_explorer::{DualPane, DualPaneOutcome, render_dual_pane_themed, Theme};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::path::PathBuf;
+
+// 1. Create once — left pane defaults to cwd; right pane can differ.
+let mut dual = DualPane::builder(std::env::current_dir().unwrap())
+    .right_dir(PathBuf::from("/tmp"))
+    .show_hidden(false)
+    .build();
+
+let theme = Theme::default();
+
+// 2. Inside Terminal::draw:
+// render_dual_pane_themed(&mut dual, frame, frame.area(), &theme);
+
+// 3. Inside your key-handler:
+let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+match dual.handle_key(key) {
+    DualPaneOutcome::Selected(path) => println!("chosen: {}", path.display()),
+    DualPaneOutcome::Dismissed      => { /* close the overlay */ }
     _                               => {}
 }
 ```
@@ -281,6 +311,8 @@ Non-matching files are shown dimmed so the directory structure remains visible. 
 
 ## Builder API
 
+### `FileExplorer::builder`
+
 `FileExplorer::builder` gives a fluent, chainable construction API:
 
 ```rust
@@ -303,6 +335,37 @@ let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
 ```
 
 The classic `FileExplorer::new(dir, filter)` constructor is still available and fully backwards-compatible.
+
+---
+
+### `DualPane::builder`
+
+`DualPane::builder` mirrors the single-pane builder and adds dual-pane-specific options:
+
+```rust
+use tui_file_explorer::{DualPane, SortMode};
+use std::path::PathBuf;
+
+let dual = DualPane::builder(std::env::current_dir().unwrap())
+    .right_dir(PathBuf::from("/tmp")) // independent right-pane directory
+    .allow_extension("rs")            // applied to both panes
+    .allow_extension("toml")
+    .show_hidden(false)               // both panes
+    .sort_mode(SortMode::Name)        // both panes
+    .single_pane(false)               // start in dual-pane mode (default)
+    .build();
+```
+
+Once built, pane directories, sort mode, and hidden-file visibility can still be changed independently on `dual.left` and `dual.right` at runtime.
+
+| Builder method | Effect |
+|---|---|
+| `.right_dir(path)` | Independent starting directory for the right pane |
+| `.allow_extension(ext)` | Append one extension to the shared filter |
+| `.extension_filter(vec)` | Replace the shared filter entirely |
+| `.show_hidden(bool)` | Hidden-file visibility for both panes |
+| `.sort_mode(mode)` | Initial sort order for both panes |
+| `.single_pane(bool)` | Start in single-pane mode (default `false`) |
 
 ---
 
@@ -392,6 +455,37 @@ cargo run --example basic
 
 # Only .rs and .toml files are selectable
 cargo run --example basic -- rs toml md
+```
+
+---
+
+### `dual_pane`
+
+[`examples/dual_pane.rs`](examples/dual_pane.rs) — a fully self-contained dual-pane Ratatui app built entirely on the **library API** (no binary code):
+
+- `DualPane::builder` with an optional independent right-pane directory
+- `render_dual_pane_themed` for rendering both panes in one call
+- All `DualPaneOutcome` variants
+- Status bar showing active pane and current layout mode
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Switch focus left ↔ right |
+| `w` | Toggle single-pane / dual-pane mode |
+| `↑/↓/j/k` | Move cursor in active pane |
+| `Enter` / `l` | Descend / select |
+| `Backspace` / `h` | Ascend |
+| `.` | Toggle hidden files |
+| `/` | Incremental search |
+| `s` | Cycle sort mode |
+| `Esc` / `q` | Quit |
+
+```bash
+# Both panes start in the current directory
+cargo run --example dual_pane
+
+# Left pane starts in cwd, right pane starts in /tmp
+cargo run --example dual_pane -- /tmp
 ```
 
 ---
@@ -502,6 +596,8 @@ Demonstrates the three layout controls in sequence:
 | Extension filter | `cargo run --example basic -- rs toml` | Dimmed non-matching files, footer status |
 | Incremental search | `cargo run --example basic` → `/` | Live filtering, backspace, Esc behaviour |
 | Sort modes | `cargo run --example basic` → `s` | Three modes, combined with search |
+| **Dual-pane (library)** | `cargo run --example dual_pane` | `DualPane` widget, Tab focus, `w` toggle, status bar |
+| **Dual-pane (right dir)** | `cargo run --example dual_pane -- /tmp` | Independent left/right starting directories |
 | File operations | `cargo run --bin tfe` | Copy, cut, paste, delete, overwrite modal |
 | Theme switcher | `cargo run --example theme_switcher` | 27 live themes, sidebar catalogue |
 | Pane toggle | `cargo run --bin tfe` | Tab focus-switch, `w` single/two-pane, `T` theme panel |
@@ -570,6 +666,8 @@ tfe -0 | xargs -0 wc -l
 
 The public surface is intentionally narrow for stability:
 
+### Single-pane
+
 | Item | Kind | Description |
 |------|------|-------------|
 | `FileExplorer` | `struct` | Core state machine — cursor, entries, search, sort state |
@@ -578,10 +676,21 @@ The public surface is intentionally narrow for stability:
 | `FsEntry` | `struct` | A single directory entry (name, path, size, extension, is_dir) |
 | `SortMode` | `enum` | `Name` \| `SizeDesc` \| `Extension` |
 | `Theme` | `struct` | Colour palette with builder methods and 27 named presets |
-| `render` | `fn` | Render using the default theme |
-| `render_themed` | `fn` | Render with a custom `Theme` |
+| `render` | `fn` | Render one pane using the default theme |
+| `render_themed` | `fn` | Render one pane with a custom `Theme` |
 | `entry_icon` | `fn` | Map an `FsEntry` to its Unicode icon |
 | `fmt_size` | `fn` | Format a byte count as a human-readable string (`1.5 KB`) |
+
+### Dual-pane
+
+| Item | Kind | Description |
+|------|------|-------------|
+| `DualPane` | `struct` | Owns `left` + `right: FileExplorer`; routes keys; manages focus and single-pane mode |
+| `DualPaneBuilder` | `struct` | Fluent builder for `DualPane` — independent dirs, shared filter/sort/hidden |
+| `DualPaneActive` | `enum` | `Left` \| `Right` — which pane has focus; `.other()` flips it |
+| `DualPaneOutcome` | `enum` | Result of `DualPane::handle_key` — `Selected`, `Dismissed`, `Pending`, `Unhandled` |
+| `render_dual_pane` | `fn` | Render both panes using the default theme |
+| `render_dual_pane_themed` | `fn` | Render both panes with a custom `Theme` |
 
 ---
 
@@ -594,9 +703,10 @@ The public surface is intentionally narrow for stability:
 | `types` | `FsEntry`, `ExplorerOutcome`, `SortMode` — data types only, no I/O |
 | `palette` | Palette constants + `Theme` builder + 27 named presets |
 | `explorer` | `FileExplorer`, `FileExplorerBuilder`, `entry_icon`, `fmt_size` |
-| `render` | `render`, `render_themed` — pure rendering, no state |
+| `dual_pane` | `DualPane`, `DualPaneBuilder`, `DualPaneActive`, `DualPaneOutcome` |
+| `render` | `render`, `render_themed`, `render_dual_pane`, `render_dual_pane_themed` — pure rendering, no state |
 
-Because rendering is fully decoupled from state, you can slot the explorer into any Ratatui layout, render it conditionally as an overlay, or build a completely custom renderer by reading `FileExplorer`'s public fields directly.
+Because rendering is fully decoupled from state, you can slot either widget into any Ratatui layout, render it conditionally as an overlay, or build a completely custom renderer by reading `FileExplorer`'s public fields directly.
 
 ### Binary (`tfe` CLI, not part of the public library API)
 
@@ -635,7 +745,7 @@ GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
 
 ### Prerequisites
 
-- Rust 1.74.0 or later
+- Rust 1.75.0 or later
 - [`just`](https://github.com/casey/just) — task runner
 - [`git-cliff`](https://github.com/orhun/git-cliff) — changelog generator
 - [`vhs`](https://github.com/charmbracelet/vhs) — GIF recorder (optional, for demos)
