@@ -1,10 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-03-05
+
+### Bug Fixes
+- Prevent crashes at navigation boundaries
+
+### Documentation
+- Update README for v0.2.0 DualPane API
+
 ## [0.2.1] - 2026-03-05
 
 ### Features
 - Add DualPane widget to the library
+
+### Miscellaneous
+- Bump version to 0.2.1
 
 ## [0.2.0] - 2026-03-05
 
