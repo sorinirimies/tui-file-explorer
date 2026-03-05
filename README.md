@@ -624,8 +624,11 @@ tfe [OPTIONS] [PATH]
 | `--list-themes` | Print all 27 available themes and exit |
 | `--show-themes` | Open the theme panel on startup (`T` toggles it at runtime) |
 | `--single-pane` | Start in single-pane mode (default is two-pane; toggle at runtime with `w`) |
-| `--print-dir` | Print the **parent directory** of the selected file instead of the full path (on dismiss, the current directory is always printed regardless) |
+| `--print-dir` | Print the **parent directory** of the selected file instead of the full path |
 | `-0, --null` | Terminate output with a NUL byte (for `xargs -0`) |
+| `--cd` | Enable cd-on-exit: on dismiss, print the active pane's directory to stdout (persisted) |
+| `--no-cd` | Disable cd-on-exit (persisted) |
+| `--init <SHELL>` | Install the shell wrapper for cd-on-exit and exit. Shells: `bash`, `zsh`, `fish`, `powershell` |
 | `-h, --help` | Show help |
 | `-V, --version` | Show version |
 
@@ -633,39 +636,48 @@ tfe [OPTIONS] [PATH]
 
 | Code | Meaning |
 |------|---------|
-| `0` | Path printed to stdout (file selected, or dismissed — always emits the active pane's directory) |
+| `0` | File selected — path printed to stdout |
+| `0` | Dismissed with `--cd` enabled — active pane's directory printed to stdout |
+| `1` | Dismissed without `--cd` — nothing printed |
 | `2` | Bad arguments or I/O error |
 
-### Shell integration
+### Shell integration (cd on exit)
 
 The killer feature: press `Esc` or `q` to dismiss `tfe` and your terminal
 **automatically `cd`s** to whichever directory you were browsing.
 Works on **macOS, Linux, and Windows**.
 
-Run the one-time setup command for your shell:
+This is **opt-in** — two one-time steps to enable:
+
+**Step 1 — enable the feature** (persisted across sessions):
 
 ```bash
-# bash
-tfe --init bash        # writes to ~/.bashrc
-
-# zsh
-tfe --init zsh         # writes to ~/.zshrc
-
-# fish
-tfe --init fish        # writes to ~/.config/fish/functions/tfe.fish
-
-# PowerShell (Windows or cross-platform pwsh)
-tfe --init powershell  # writes to $PROFILE
+tfe --cd
 ```
 
-`--init` appends the wrapper function to your rc file (creating it and any
-missing parent directories if needed), tells you where it wrote, and is
-idempotent — running it twice will not duplicate the snippet.  Then restart
-your shell or `source` the rc file as instructed.
+Run `tfe --no-cd` at any time to turn it off again.
 
-How it works: `tfe` always prints a path to stdout on exit.
-- **Dismiss** (`Esc` / `q`) → prints the active pane's current directory.
-- **File selected** (`Enter` / `l`) → prints the selected file's path.
+**Step 2 — install the shell wrapper** (once per shell):
+
+```bash
+tfe --init bash        # writes to ~/.bashrc
+tfe --init zsh         # writes to ~/.zshrc
+tfe --init fish        # writes to ~/.config/fish/functions/tfe.fish
+tfe --init powershell  # writes to $PROFILE  (Windows / cross-platform pwsh)
+```
+
+`--init` appends the wrapper to your rc file (creating it and any missing
+parent directories if needed), is idempotent — running it twice will not
+duplicate the snippet — and tells you where it wrote.  Then restart your
+shell or `source` the rc file as instructed.
+
+**How it works:**
+
+| Situation | stdout | exit code |
+|---|---|---|
+| File selected (`Enter` / `l`) | selected file path | `0` |
+| Dismissed (`Esc` / `q`) + `--cd` enabled | active pane's directory | `0` |
+| Dismissed + `--cd` disabled (default) | *(nothing)* | `1` |
 
 The TUI renders on **stderr** so it is never swallowed by the shell's
 `$()` capture — the path on stdout is all the wrapper ever sees.

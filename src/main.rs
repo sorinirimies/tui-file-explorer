@@ -74,15 +74,17 @@ use ui::draw;
     version,
     about = "Keyboard-driven two-pane terminal file explorer",
     after_help = "\
-SHELL INTEGRATION:\n\
-  One-time setup — installs the cd-on-exit wrapper to your rc file:\n\
+SHELL INTEGRATION (cd on exit):\n\
+  Step 1 — enable the feature (persisted across sessions):\n\
+    tfe --cd\n\
 \n\
+  Step 2 — install the shell wrapper (one time):\n\
     tfe --init bash        # ~/.bashrc\n\
     tfe --init zsh         # ~/.zshrc\n\
     tfe --init fish        # ~/.config/fish/functions/tfe.fish\n\
     tfe --init powershell  # $PROFILE (Windows / cross-platform PowerShell)\n\
 \n\
-  After setup, dismissing tfe with Esc/q cd's your terminal to the\n\
+  After both steps, dismissing tfe with Esc/q cd's your terminal to the\n\
   directory you were browsing.  Works on macOS, Linux, and Windows.\n\
 \n\
   Open selected file in $EDITOR:     command tfe | xargs -r $EDITOR\n\
@@ -132,6 +134,17 @@ struct Cli {
     /// Examples: tfe --init zsh   tfe --init powershell
     #[arg(long, value_name = "SHELL")]
     init: Option<String>,
+
+    /// Enable cd-on-exit: on dismiss, print the active pane's current directory
+    /// to stdout so the shell wrapper can cd to it.  The setting is persisted —
+    /// run once to enable, run with --no-cd to disable.
+    #[arg(long = "cd", overrides_with = "no_cd")]
+    cd_on_exit: bool,
+
+    /// Disable cd-on-exit (persisted).  Dismissing without a selection will
+    /// print nothing and exit with code 1.
+    #[arg(long = "no-cd", overrides_with = "cd_on_exit")]
+    no_cd: bool,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -297,6 +310,15 @@ fn run() -> io::Result<()> {
         Some(app.right.current_dir.clone())
     };
 
+    // Resolve cd-on-exit: CLI flags take priority, then persisted value.
+    let cd_on_exit = if cli.cd_on_exit {
+        true
+    } else if cli.no_cd {
+        false
+    } else {
+        saved.cd_on_exit.unwrap_or(false)
+    };
+
     persistence::save_state(&persistence::AppState {
         theme: Some(app.theme_name().to_string()),
         last_dir: Some(app.left.current_dir.clone()),
@@ -304,26 +326,37 @@ fn run() -> io::Result<()> {
         sort_mode: Some(app.left.sort_mode),
         show_hidden: Some(app.left.show_hidden),
         single_pane: Some(app.single_pane),
+        cd_on_exit: if cli.cd_on_exit || cli.no_cd {
+            Some(cd_on_exit)
+        } else {
+            saved.cd_on_exit
+        },
     });
 
     // Emit a path to stdout so a shell wrapper can act on it (e.g. `cd`).
     //
-    // • File selected  → emit the selected path (or its parent with --print-dir).
-    // • Dismissed      → emit the active pane's current directory so the shell
-    //                    wrapper can `cd` there even when no file was chosen.
-    //
-    // In both cases we exit 0 — the shell wrapper receives a non-empty path
-    // and calls `cd`.  Exit code 2 is reserved for argument / I/O errors.
-    let output = match app.selected {
-        Some(path) => resolve_output_path(path, cli.print_dir),
-        None => app.active_pane().current_dir.clone(),
-    };
-    // Always write the path to real stdout (not tty) so the shell wrapper
-    // can capture it with $() even though the TUI rendered on /dev/tty.
-    let mut out = stdout();
-    write!(out, "{}", output.display())?;
-    out.write_all(if cli.null { b"\0" } else { b"\n" })?;
-    out.flush()?;
+    // • File selected            → always emit the selected path (or its parent
+    //                              with --print-dir), exit 0.
+    // • Dismissed + cd_on_exit   → emit the active pane's current directory so
+    //                              the shell wrapper can `cd` there, exit 0.
+    // • Dismissed + !cd_on_exit  → print nothing, exit 1 (classic behaviour).
+    match app.selected {
+        Some(path) => {
+            let output = resolve_output_path(path, cli.print_dir);
+            let mut out = stdout();
+            write!(out, "{}", output.display())?;
+            out.write_all(if cli.null { b"\0" } else { b"\n" })?;
+            out.flush()?;
+        }
+        None if cd_on_exit => {
+            let output = app.active_pane().current_dir.clone();
+            let mut out = stdout();
+            write!(out, "{}", output.display())?;
+            out.write_all(if cli.null { b"\0" } else { b"\n" })?;
+            out.flush()?;
+        }
+        None => process::exit(1),
+    }
 
     Ok(())
 }

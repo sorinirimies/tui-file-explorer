@@ -156,9 +156,8 @@
 //! | `PgUp` / `PgDn` | Jump 10 entries |
 //! | `Home` / `g` | Jump to top |
 //! | `End` / `G` | Jump to bottom |
-//! | `←` / `→` | Scroll cursor up / down (no navigation side-effects) |
-//! | `Enter` / `l` | Descend into directory or confirm file selection |
-//! | `Backspace` / `h` | Ascend to parent directory |
+//! | `→` / `l` / `Enter` | Descend into directory; on a file `→` moves cursor down, `l`/`Enter` confirm |
+//! | `←` / `h` / `Backspace` | Ascend to parent directory |
 //! | `/` | Activate incremental search |
 //! | `s` | Cycle sort mode (`Name` → `Size ↓` → `Extension`) |
 //! | `.` | Toggle hidden (dot-file) entries |

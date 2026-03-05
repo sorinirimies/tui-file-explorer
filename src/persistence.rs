@@ -38,6 +38,7 @@ const KEY_LAST_DIR_RIGHT: &str = "last_dir_right";
 const KEY_SORT_MODE: &str = "sort_mode";
 const KEY_SHOW_HIDDEN: &str = "show_hidden";
 const KEY_SINGLE_PANE: &str = "single_pane";
+const KEY_CD_ON_EXIT: &str = "cd_on_exit";
 
 // ── AppState ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +84,13 @@ pub struct AppState {
 
     /// Whether single-pane mode was active.
     pub single_pane: Option<bool>,
+
+    /// Whether the cd-on-exit feature is enabled.
+    ///
+    /// When `true`, `tfe` prints the active pane's current directory to stdout
+    /// on dismiss so the shell wrapper can `cd` to it.  When `false` (default),
+    /// dismissing without a selection prints nothing and exits with code 1.
+    pub cd_on_exit: Option<bool>,
 }
 
 // ── Config-dir helpers ────────────────────────────────────────────────────────
@@ -192,6 +200,9 @@ pub(crate) fn load_state_from(path: &Path) -> AppState {
             KEY_SINGLE_PANE => {
                 state.single_pane = value.parse::<bool>().ok();
             }
+            KEY_CD_ON_EXIT => {
+                state.cd_on_exit = value.parse::<bool>().ok();
+            }
             _ => {
                 // Forward-compatible: unknown keys are silently ignored.
             }
@@ -229,6 +240,9 @@ pub(crate) fn save_state_to(path: &Path, state: &AppState) -> io::Result<()> {
     }
     if let Some(single) = state.single_pane {
         out.push_str(&format!("{KEY_SINGLE_PANE}={single}\n"));
+    }
+    if let Some(cd) = state.cd_on_exit {
+        out.push_str(&format!("{KEY_CD_ON_EXIT}={cd}\n"));
     }
 
     fs::write(path, out)
@@ -338,6 +352,7 @@ mod tests {
             sort_mode: Some(SortMode::SizeDesc),
             show_hidden: Some(true),
             single_pane: Some(false),
+            cd_on_exit: Some(true),
         };
         save_state_to(&path, &original).unwrap();
         let loaded = load_state_from(&path);
@@ -358,6 +373,31 @@ mod tests {
         assert!(loaded.sort_mode.is_none());
         assert!(loaded.show_hidden.is_none());
         assert!(loaded.single_pane.is_none());
+        assert!(loaded.cd_on_exit.is_none());
+    }
+
+    #[test]
+    fn cd_on_exit_true_round_trips() {
+        let (_dir, path) = tmp_state_path();
+        let state = AppState {
+            cd_on_exit: Some(true),
+            ..Default::default()
+        };
+        save_state_to(&path, &state).unwrap();
+        let loaded = load_state_from(&path);
+        assert_eq!(loaded.cd_on_exit, Some(true));
+    }
+
+    #[test]
+    fn cd_on_exit_false_round_trips() {
+        let (_dir, path) = tmp_state_path();
+        let state = AppState {
+            cd_on_exit: Some(false),
+            ..Default::default()
+        };
+        save_state_to(&path, &state).unwrap();
+        let loaded = load_state_from(&path);
+        assert_eq!(loaded.cd_on_exit, Some(false));
     }
 
     #[test]
