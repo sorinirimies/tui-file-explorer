@@ -58,3 +58,7 @@ path = "examples/basic.rs"
 [[example]]
 name = "theme_switcher"
 path = "examples/theme_switcher.rs"
+
+[[example]]
+name = "dual_pane"
+path = "examples/dual_pane.rs"

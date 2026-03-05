@@ -23,6 +23,8 @@
 //!   [`FileExplorer::set_sort_mode`].
 //! * **Themeable** — every colour is overridable via [`Theme`] and
 //!   [`render_themed`].
+//! * **Dual-pane** — [`DualPane`] owns two independent [`FileExplorer`]s,
+//!   manages focus switching (`Tab`), and supports a single-pane toggle (`w`).
 //!
 //! ## Quick start
 //!
@@ -162,15 +164,56 @@
 //! | `Esc` | Clear search (if active), then dismiss |
 //! | `q` | Dismiss (when search is not active) |
 //!
+//! ## Dual-pane quick start
+//!
+//! ```no_run
+//! use tui_file_explorer::{DualPane, DualPaneOutcome, render_dual_pane_themed, Theme};
+//! use crossterm::event::{Event, KeyCode, KeyModifiers, self};
+//! # use ratatui::{Terminal, backend::TestBackend};
+//! # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+//!
+//! // 1. Create once — left pane defaults to cwd; right pane mirrors it.
+//! let mut dual = DualPane::builder(std::env::current_dir().unwrap())
+//!     .right_dir(std::path::PathBuf::from("/tmp"))
+//!     .build();
+//!
+//! let theme = Theme::default();
+//!
+//! // 2. In your Terminal::draw closure:
+//! // terminal.draw(|frame| {
+//! //     render_dual_pane_themed(&mut dual, frame, frame.area(), &theme);
+//! // }).unwrap();
+//!
+//! // 3. In your event loop:
+//! # let Event::Key(key) = event::read().unwrap() else { return; };
+//! match dual.handle_key(key) {
+//!     DualPaneOutcome::Selected(path) => println!("chosen: {}", path.display()),
+//!     DualPaneOutcome::Dismissed      => { /* close the overlay */ }
+//!     _                               => {}
+//! }
+//! ```
+//!
+//! ### Extra key bindings provided by `DualPane`
+//!
+//! | Key   | Action                              |
+//! |-------|-------------------------------------|
+//! | `Tab` | Switch focus between left and right pane |
+//! | `w`   | Toggle single-pane / dual-pane mode |
+//!
+//! All standard [`FileExplorer`] bindings continue to work on whichever pane
+//! is currently active.
+//!
 //! ## Module layout
 //!
-//! | Module      | Contents                                                                        |
-//! |-------------|---------------------------------------------------------------------------------|
-//! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                  |
-//! | `palette`   | Palette constants (all `pub`) + [`Theme`] + named presets                       |
-//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`]         |
-//! | `render`    | [`render`], [`render_themed`]                                                   |
+//! | Module      | Contents                                                                                          |
+//! |-------------|---------------------------------------------------------------------------------------------------|
+//! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                                    |
+//! | `palette`   | Palette constants (all `pub`) + [`Theme`] + named presets                                         |
+//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`]                           |
+//! | `dual_pane` | [`DualPane`], [`DualPaneBuilder`], [`DualPaneActive`], [`DualPaneOutcome`]                        |
+//! | `render`    | [`render`], [`render_themed`], [`render_dual_pane`], [`render_dual_pane_themed`]                  |
 
+pub mod dual_pane;
 pub mod explorer;
 pub mod palette;
 pub mod render;
@@ -178,7 +221,8 @@ pub mod types;
 
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
+pub use dual_pane::{DualPane, DualPaneActive, DualPaneBuilder, DualPaneOutcome};
 pub use explorer::{entry_icon, fmt_size, FileExplorer, FileExplorerBuilder};
 pub use palette::Theme;
-pub use render::{render, render_themed};
+pub use render::{render, render_dual_pane, render_dual_pane_themed, render_themed};
 pub use types::{ExplorerOutcome, FsEntry, SortMode};

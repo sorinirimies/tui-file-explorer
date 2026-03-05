@@ -1,13 +1,24 @@
 //! Ratatui rendering functions for the file-explorer widget.
 //!
-//! Two public entry-points are provided:
+//! ## Single-pane entry-points
 //!
-//! * [`render`] — uses the built-in [`Theme::default()`] palette.
-//! * [`render_themed`] — accepts a [`Theme`] so every colour can be overridden.
+//! * [`render`] — renders one [`FileExplorer`] using the built-in [`Theme::default()`] palette.
+//! * [`render_themed`] — same, but accepts a custom [`Theme`].
 //!
-//! Both delegate to the same three private helpers (`render_header`,
+//! ## Dual-pane entry-points
+//!
+//! * [`render_dual_pane`] — renders a [`DualPane`] using the default palette.
+//! * [`render_dual_pane_themed`] — same, but accepts a custom [`Theme`].
+//!
+//! In dual-pane mode the available area is split evenly into two columns, each
+//! rendered as an independent [`FileExplorer`].  The active pane's border is
+//! drawn in the theme's accent colour; the inactive pane's border is dimmed.
+//! In single-pane mode (`dual.single_pane == true`) the full area is given to
+//! the active pane.
+//!
+//! Both families delegate to the same three private helpers (`render_header`,
 //! `render_list`, `render_footer`) that handle the three vertical segments of
-//! the widget area.
+//! each pane area.
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -18,6 +29,7 @@ use ratatui::{
 };
 
 use crate::{
+    dual_pane::DualPane,
     explorer::{entry_icon, fmt_size},
     palette::Theme,
     FileExplorer,
@@ -49,6 +61,110 @@ use crate::{
 /// ```
 pub fn render(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect) {
     render_themed(explorer, frame, area, &Theme::default());
+}
+
+/// Render a [`DualPane`] into `area` using the default colour theme.
+///
+/// In dual-pane mode the area is split evenly into two columns.  In
+/// single-pane mode (`dual.single_pane == true`) the full area is given to
+/// the active pane.
+///
+/// The active pane's border uses `theme.accent`; the inactive pane's border
+/// uses `theme.dim` so the user always knows which side has focus.
+///
+/// # Example
+///
+/// ```no_run
+/// # use tui_file_explorer::{DualPane, render_dual_pane};
+/// # use ratatui::{Terminal, backend::TestBackend};
+/// # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+/// let mut dual = DualPane::builder(std::env::current_dir().unwrap()).build();
+/// terminal.draw(|frame| {
+///     render_dual_pane(&mut dual, frame, frame.area());
+/// }).unwrap();
+/// ```
+pub fn render_dual_pane(dual: &mut DualPane, frame: &mut Frame, area: Rect) {
+    render_dual_pane_themed(dual, frame, area, &Theme::default());
+}
+
+/// Render a [`DualPane`] into `area` with a custom [`Theme`].
+///
+/// This is identical to [`render_dual_pane`] except that you supply the
+/// colour palette.
+///
+/// # Example
+///
+/// ```no_run
+/// # use tui_file_explorer::{DualPane, render_dual_pane_themed, Theme};
+/// # use ratatui::{Terminal, backend::TestBackend};
+/// # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+/// let mut dual  = DualPane::builder(std::env::current_dir().unwrap()).build();
+/// let theme = Theme::nord();
+/// terminal.draw(|frame| {
+///     render_dual_pane_themed(&mut dual, frame, frame.area(), &theme);
+/// }).unwrap();
+/// ```
+pub fn render_dual_pane_themed(dual: &mut DualPane, frame: &mut Frame, area: Rect, theme: &Theme) {
+    use crate::dual_pane::DualPaneActive;
+
+    if dual.single_pane {
+        // Full area goes to whichever pane is active.
+        match dual.active_side {
+            DualPaneActive::Left => render_pane(
+                &mut dual.left,
+                frame,
+                area,
+                theme,
+                true, // is_active
+            ),
+            DualPaneActive::Right => render_pane(&mut dual.right, frame, area, theme, true),
+        }
+    } else {
+        // Split evenly: left | right.
+        let halves = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area);
+
+        let left_active = dual.active_side == DualPaneActive::Left;
+        render_pane(&mut dual.left, frame, halves[0], theme, left_active);
+        render_pane(&mut dual.right, frame, halves[1], theme, !left_active);
+    }
+}
+
+/// Render a single [`FileExplorer`] pane, dimming the border when inactive.
+fn render_pane(
+    explorer: &mut FileExplorer,
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    is_active: bool,
+) {
+    // Build a locally-adjusted theme copy so the inactive pane has a dimmed
+    // border without altering the caller's theme value.
+    let pane_theme;
+    let effective_theme = if is_active {
+        theme
+    } else {
+        pane_theme = Theme {
+            accent: theme.dim,
+            ..*theme
+        };
+        &pane_theme
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(1),
+            Constraint::Length(3),
+        ])
+        .split(area);
+
+    render_header(explorer, frame, chunks[0], effective_theme);
+    render_list(explorer, frame, chunks[1], effective_theme);
+    render_footer(explorer, frame, chunks[2], effective_theme);
 }
 
 /// Render the file explorer into `area` with a custom [`Theme`].
