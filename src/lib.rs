@@ -158,6 +158,7 @@
 //! | `End` / `G` | Jump to bottom |
 //! | `→` / `l` / `Enter` | Descend into directory; on a file `→` moves cursor down, `l`/`Enter` confirm |
 //! | `←` / `h` / `Backspace` | Ascend to parent directory |
+//! | `Space` | Toggle space-mark on current entry and advance cursor |
 //! | `/` | Activate incremental search |
 //! | `s` | Cycle sort mode (`Name` → `Size ↓` → `Extension`) |
 //! | `.` | Toggle hidden (dot-file) entries |
@@ -195,23 +196,24 @@
 //!
 //! ### Extra key bindings provided by `DualPane`
 //!
-//! | Key   | Action                              |
-//! |-------|-------------------------------------|
-//! | `Tab` | Switch focus between left and right pane |
-//! | `w`   | Toggle single-pane / dual-pane mode |
+//! | Key     | Action                                    |
+//! |---------|-------------------------------------------|
+//! | `Tab`   | Switch focus between left and right pane  |
+//! | `w`     | Toggle single-pane / dual-pane mode       |
+//! | `Space` | Mark current entry (forwarded to active pane) |
 //!
 //! All standard [`FileExplorer`] bindings continue to work on whichever pane
 //! is currently active.
 //!
 //! ## Module layout
 //!
-//! | Module      | Contents                                                                                          |
-//! |-------------|---------------------------------------------------------------------------------------------------|
-//! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                                    |
-//! | `palette`   | Palette constants (all `pub`) + [`Theme`] + named presets                                         |
-//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`]                           |
-//! | `dual_pane` | [`DualPane`], [`DualPaneBuilder`], [`DualPaneActive`], [`DualPaneOutcome`]                        |
-//! | `render`    | [`render`], [`render_themed`], [`render_dual_pane`], [`render_dual_pane_themed`]                  |
+//! | Module      | Contents                                                                                                          |
+//! |-------------|-------------------------------------------------------------------------------------------------------------------|
+//! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                                                    |
+//! | `palette`   | Palette constants (all `pub`) + [`Theme`] builder + 27 named presets                                             |
+//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`], `load_entries`                          |
+//! | `dual_pane` | [`DualPane`], [`DualPaneBuilder`], [`DualPaneActive`], [`DualPaneOutcome`]                                        |
+//! | `render`    | [`render`], [`render_themed`], [`render_dual_pane`], [`render_dual_pane_themed`] — pure rendering, no I/O        |
 
 pub mod dual_pane;
 pub mod explorer;

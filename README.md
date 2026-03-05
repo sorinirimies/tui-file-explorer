@@ -1,6 +1,6 @@
 # tui-file-explorer
 
-[![Crates.io](https://img.shields.io/crates/v/tui-file-explorer)](https://crates.io/crates/tui-file-explorer)
+[![Crates.io](https://img.shields.io/crates/v/tui-file-explorer?color=orange)](https://crates.io/crates/tui-file-explorer)
 [![Documentation](https://docs.rs/tui-file-explorer/badge.svg)](https://docs.rs/tui-file-explorer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/release.yml/badge.svg)](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/release.yml)
@@ -25,6 +25,10 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 **27 Live Themes** — `cargo run --example theme_switcher`
 
 ![27 live themes](examples/vhs/generated/theme_switcher.gif)
+
+**DualPane Library Widget** — Tab focus, `w` toggle, independent panes · `cargo run --example dual_pane`
+
+![DualPane library widget](examples/vhs/generated/dual_pane.gif)
 
 ---
 
@@ -57,7 +61,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 | Key bindings | 20+ |
 | File-type icons | 50+ extensions mapped |
 | Public API surface | 10 types, 6 free functions |
-| Unit tests | 263 |
+| Unit tests | 475 |
 
 ---
 
@@ -67,7 +71,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 
 ```toml
 [dependencies]
-tui-file-explorer = "0.2"
+tui-file-explorer = "0.3"
 ratatui = "0.30"
 ```
 
@@ -75,7 +79,7 @@ Library-only (no `clap`-powered CLI binary):
 
 ```toml
 [dependencies]
-tui-file-explorer = { version = "0.2", default-features = false }
+tui-file-explorer = { version = "0.3", default-features = false }
 ```
 
 ### As a CLI tool
@@ -593,6 +597,24 @@ Demonstrates the three layout controls in sequence:
 
 ---
 
+### DualPane Library Widget
+
+**Run:** `cargo run --example dual_pane`
+
+![DualPane library widget](examples/vhs/generated/dual_pane.gif)
+
+A complete two-pane file manager built entirely on the **library API** — no binary code. Demonstrates:
+
+- `DualPane::builder` constructing two independent panes
+- `render_dual_pane_themed` rendering both panes in a single call
+- **`Tab`** switching keyboard focus; each pane tracks its own cursor and directory
+- **`w`** collapsing to single-pane mode (active pane fills the full width) and back
+- Incremental search (`/`) and sort cycling (`s`) inside the active pane
+- A live status bar showing the active pane label and current layout mode
+- `DualPaneOutcome::Selected` — selecting a file prints its path to stdout and exits
+
+---
+
 ## Demo Quick Reference
 
 | Demo | Command | Highlights |
@@ -606,6 +628,7 @@ Demonstrates the three layout controls in sequence:
 | File operations | `cargo run --bin tfe` | Copy, cut, paste, delete, overwrite modal |
 | Theme switcher | `cargo run --example theme_switcher` | 27 live themes, sidebar catalogue |
 | Pane toggle | `cargo run --bin tfe` | Tab focus-switch, `w` single/two-pane, `T` theme panel |
+| **Dual-pane GIF** | `vhs examples/vhs/dual_pane.tape` | Full `dual_pane` example recorded end-to-end |
 
 ---
 
@@ -761,9 +784,10 @@ Because rendering is fully decoupled from state, you can slot either widget into
 |--------|----------|
 | `main` | `Cli` struct (argument parsing), `run()`, `run_loop()` — thin entry-point only |
 | `app` | `App` state, `Pane`, `ClipOp`, `ClipboardItem`, `Modal`, `handle_event` |
-| `ui` | `draw()`, `render_theme_panel()`, `render_action_bar()`, `render_modal()` |
-| `fs` | `copy_dir_all()`, `emit_path()`, `resolve_output_path()` |
+| `ui` | `draw()`, `render_theme_panel()`, `render_options_panel()`, `render_nav_hints()`, `render_nav_hints_spans()`, `render_action_bar()`, `render_action_bar_spans()`, `render_modal()` |
+| `fs` | `copy_dir_all()`, `resolve_output_path()` |
 | `persistence` | `AppState`, `load_state()`, `save_state()`, `resolve_theme_idx()` |
+| `shell_init` | `Shell`, `detect_shell()`, `snippet()`, `rc_path_with()`, `is_installed()`, `install()`, `install_or_print()` |
 
 ---
 
@@ -782,9 +806,22 @@ vhs examples/vhs/sort.tape
 vhs examples/vhs/filter.tape
 vhs examples/vhs/file_ops.tape
 vhs examples/vhs/theme_switcher.tape
+vhs examples/vhs/pane_toggle.tape
+vhs examples/vhs/dual_pane.tape
 ```
 
 GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
+
+| Tape | Demo | Command |
+|------|------|---------|
+| `basic.tape` | Navigation, search, sort, hidden-file toggle, selection | `cargo run --example basic` |
+| `search.tape` | Full incremental search lifecycle | `cargo run --example basic` |
+| `sort.tape` | Name → Size ↓ → Extension cycling | `cargo run --example basic` |
+| `filter.tape` | Extension filter — selectable vs dimmed files | `cargo run --example basic -- rs toml` |
+| `file_ops.tape` | Copy, cut, paste, delete, overwrite modal | `cargo run --bin tfe` |
+| `theme_switcher.tape` | Live cycling of all 27 themes with sidebar | `cargo run --example theme_switcher` |
+| `pane_toggle.tape` | Tab focus-switch, `w` single/dual, `T` theme panel | `cargo run --bin tfe` |
+| `dual_pane.tape` | `DualPane` library widget — Tab, `w`, status bar | `cargo run --example dual_pane` |
 
 ---
 
@@ -792,7 +829,7 @@ GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
 
 ### Prerequisites
 
-- Rust 1.75.0 or later
+- Rust 1.75.0 or later (MSRV)
 - [`just`](https://github.com/casey/just) — task runner
 - [`git-cliff`](https://github.com/orhun/git-cliff) — changelog generator
 - [`vhs`](https://github.com/charmbracelet/vhs) — GIF recorder (optional, for demos)
@@ -810,8 +847,11 @@ just test         # run tests
 just check-all    # fmt + clippy + test in one shot
 just doc          # build and open docs
 
-just bump 0.2.0   # interactive version bump + tag
-just release 0.2.0 # non-interactive: bump + commit + tag + push (triggers CI release)
+just bump 0.3.6   # interactive version bump + tag
+just release 0.3.6 # non-interactive: bump + commit + tag + push (triggers CI release)
+
+just vhs basic           # record a single demo GIF
+just vhs-all             # record all demo GIFs
 
 just --list       # see all available commands
 ```
