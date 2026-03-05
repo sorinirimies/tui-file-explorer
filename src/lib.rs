@@ -12,9 +12,9 @@
 //! * **Extension filtering** — pass a list of allowed extensions so that only
 //!   relevant files are selectable (e.g. `["iso", "img"]`); directories are
 //!   always navigable.
-//! * **Keyboard-driven** — arrow keys / vim keys, `Enter` to descend or
-//!   confirm, `Backspace` / `h` to ascend, `/` to search, `s` to cycle sort,
-//!   `Esc` / `q` to dismiss.
+//! * **Keyboard-driven** — `↑`/`↓`/`←`/`→` scroll the list, `Enter` / `l`
+//!   to descend or confirm, `Backspace` / `h` to ascend, `/` to search,
+//!   `s` to cycle sort, `Esc` / `q` to dismiss.
 //! * **Searchable** — press `/` to enter incremental search; entries are
 //!   filtered live as you type.  `Esc` clears the query; a second `Esc`
 //!   dismisses the explorer.
@@ -156,8 +156,9 @@
 //! | `PgUp` / `PgDn` | Jump 10 entries |
 //! | `Home` / `g` | Jump to top |
 //! | `End` / `G` | Jump to bottom |
-//! | `Enter` / `→` / `l` | Descend into directory or confirm file |
-//! | `Backspace` / `←` / `h` | Ascend to parent directory |
+//! | `←` / `→` | Scroll cursor up / down (no navigation side-effects) |
+//! | `Enter` / `l` | Descend into directory or confirm file selection |
+//! | `Backspace` / `h` | Ascend to parent directory |
 //! | `/` | Activate incremental search |
 //! | `s` | Cycle sort mode (`Name` → `Size ↓` → `Extension`) |
 //! | `.` | Toggle hidden (dot-file) entries |

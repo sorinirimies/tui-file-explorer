@@ -36,7 +36,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 - 🔃 **Sort modes** — cycle `Name → Size ↓ → Extension` with `s`
 - 🎛️ **Extension filter** — only matching files are selectable; dirs are always navigable
 - 👁️ Toggle hidden dot-file visibility with `.`
-- ⌨️ Full keyboard navigation: arrow keys, vim keys (`h/j/k/l`), `PgUp/PgDn`, `g/G`
+- ⌨️ Full keyboard navigation: `↑`/`↓`/`←`/`→` scroll, vim keys (`h/j/k/l`), `PgUp/PgDn`, `g/G` — arrows never accidentally exit a directory
 - 🎨 **27 named themes** — Catppuccin, Dracula, Nord, Tokyo Night, Kanagawa, Gruvbox, and more
 - 🎛️ **Live theme panel** — press `t` to open a side panel, `[`/`]` to cycle themes
 - 🔧 Fluent builder API for ergonomic embedding — both `FileExplorer` and `DualPane`
@@ -107,7 +107,7 @@ let mut explorer = FileExplorer::builder(std::env::current_dir().unwrap())
 // 2. Inside Terminal::draw:
 // render(&mut explorer, frame, frame.area());
 
-// 3. Inside your key-handler:
+// 3. Inside your key-handler — ↑/↓/←/→ scroll the list, Enter confirms:
 let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
 match explorer.handle_key(key) {
     ExplorerOutcome::Selected(path) => println!("chosen: {}", path.display()),
@@ -157,8 +157,9 @@ match dual.handle_key(key) {
 | `PgDn` | Jump down 10 rows |
 | `g` / `Home` | Jump to top |
 | `G` / `End` | Jump to bottom |
-| `Enter` / `→` / `l` | Descend into directory or confirm file |
-| `Backspace` / `←` / `h` | Ascend to parent directory |
+| `←` / `→` | Scroll cursor up / down (no navigation side-effects) |
+| `Enter` / `l` | Descend into directory or confirm file |
+| `Backspace` / `h` | Ascend to parent directory |
 | `Tab` | **Switch active pane** (left ↔ right) |
 | `w` | **Toggle two-pane ↔ single-pane** layout |
 
@@ -197,7 +198,8 @@ match dual.handle_key(key) {
 | Any character | Append to query — list filters live |
 | `Backspace` | Remove last character; empty query exits search |
 | `Esc` | Clear query and exit search |
-| `↑` / `↓` / `Enter` | Navigate the filtered results normally |
+| `↑` / `↓` / `←` / `→` | Scroll the filtered results |
+| `Enter` / `l` | Confirm the highlighted entry |
 
 ---
 
@@ -220,6 +222,7 @@ The `tfe` binary opens a **split-screen file manager** with a left and right pan
 
 - The **active pane** renders with your full theme accent; the **inactive pane** dims its borders so focus is always clear at a glance
 - Press `Tab` to switch which pane has keyboard focus
+- Arrow keys (`←`/`→`) scroll the cursor up/down **without** entering or exiting a directory — use `Enter` / `l` to descend and `Backspace` / `h` to ascend
 - Press `w` to **collapse to a single pane** — the hidden pane keeps its state and reappears when you press `w` again
 - Press `t` / `[` to cycle themes forward / backward; press `T` to open the theme panel
 - Each pane navigates independently — scroll to different directories and use one as source, one as destination
@@ -472,9 +475,10 @@ cargo run --example basic -- rs toml md
 |-----|--------|
 | `Tab` | Switch focus left ↔ right |
 | `w` | Toggle single-pane / dual-pane mode |
-| `↑/↓/j/k` | Move cursor in active pane |
-| `Enter` / `l` | Descend / select |
-| `Backspace` / `h` | Ascend |
+| `↑` / `↓` / `j` / `k` | Move cursor up / down |
+| `←` / `→` | Scroll cursor up / down (no navigation side-effects) |
+| `Enter` / `l` | Descend into directory or confirm file |
+| `Backspace` / `h` | Ascend to parent directory |
 | `.` | Toggle hidden files |
 | `/` | Incremental search |
 | `s` | Cycle sort mode |
@@ -498,9 +502,10 @@ cargo run --example dual_pane -- /tmp
 |-----|--------|
 | `Tab` | Next theme |
 | `Shift+Tab` | Previous theme |
-| `↑/↓/j/k` | Navigate file list |
-| `Enter` | Descend / select |
-| `Backspace` | Ascend |
+| `↑` / `↓` / `j` / `k` | Move cursor up / down |
+| `←` / `→` | Scroll cursor up / down (no navigation side-effects) |
+| `Enter` / `l` | Descend into directory or confirm file |
+| `Backspace` / `h` | Ascend to parent directory |
 | `.` | Toggle hidden files |
 | `/` | Search |
 | `s` | Cycle sort mode |

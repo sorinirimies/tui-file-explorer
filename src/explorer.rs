@@ -280,13 +280,29 @@ impl FileExplorer {
             }
 
             // ── Ascend (go to parent) ─────────────────────────────────────────
-            KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => {
+            // Left arrow scrolls up without ascending; only Backspace / h ascend.
+            KeyCode::Backspace | KeyCode::Char('h') => {
                 self.ascend();
                 ExplorerOutcome::Pending
             }
 
+            // ── Scroll with arrow keys (no navigation side-effects) ───────────
+            // Left / Right arrows move the cursor without entering or leaving
+            // a directory.  They clamp at the top / bottom and never dismiss.
+            KeyCode::Left => {
+                self.move_up();
+                ExplorerOutcome::Pending
+            }
+
+            KeyCode::Right => {
+                self.move_down();
+                ExplorerOutcome::Pending
+            }
+
             // ── Confirm / descend ─────────────────────────────────────────────
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.confirm(),
+            // Enter and l are the only keys that descend into a directory or
+            // confirm a file selection.
+            KeyCode::Enter | KeyCode::Char('l') => self.confirm(),
 
             // ── Toggle hidden files ───────────────────────────────────────────
             KeyCode::Char('.') => {
@@ -1217,15 +1233,19 @@ mod tests {
 
         // Manually inject search state (simulates user having typed a query
         // while already inside subdir, then pressing the ascend key).
-        // We bypass handle_key so the search interception doesn't consume
-        // the Backspace — instead we call ascend() via the Left arrow which
-        // is only handled by the non-search branch.
+        // When search_active is true, ALL KeyCode::Char(_) keys are consumed
+        // by the search interception block — they append to the query rather
+        // than triggering navigation.  Backspace pops the query.  The only
+        // way to ascend while search is active is via the non-char ascend
+        // keys, but those aren't exposed through handle_key without going
+        // through the search block first.  Call ascend() directly: this is
+        // the correct unit test for the ascend() logic itself, independent
+        // of key dispatch.
         explorer.search_active = true;
         explorer.search_query = "foo".into();
 
-        // Left arrow is not intercepted by the search block, so it reaches
-        // the ascend() arm in the main match.
-        explorer.handle_key(key(KeyCode::Left));
+        // Call ascend() directly — ascend() clears search state unconditionally.
+        explorer.ascend();
 
         assert!(
             !explorer.search_active,
@@ -1241,6 +1261,27 @@ mod tests {
             tmp.path(),
             "must have ascended to parent"
         );
+    }
+
+    #[test]
+    fn backspace_in_search_pops_char_not_ascend() {
+        // Verify Backspace is consumed by search interception (pops the query)
+        // and does NOT trigger ascend when search is active with a non-empty query.
+        let tmp = temp_dir_with_files();
+        let subdir = tmp.path().join("subdir");
+        let mut explorer = FileExplorer::new(subdir.clone(), vec![]);
+        explorer.search_active = true;
+        explorer.search_query = "foo".into();
+
+        explorer.handle_key(key(KeyCode::Backspace)); // should pop 'o', not ascend
+
+        assert_eq!(explorer.current_dir, subdir, "must NOT have ascended");
+        assert_eq!(
+            explorer.search_query(),
+            "fo",
+            "Backspace should pop last char"
+        );
+        assert!(explorer.search_active, "search must still be active");
     }
 
     // ── Sort tests ────────────────────────────────────────────────────────────
@@ -1367,14 +1408,59 @@ mod tests {
     }
 
     #[test]
-    fn right_arrow_confirms_file() {
+    fn right_arrow_scrolls_down_not_confirms() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        // Put cursor on the first file entry.
+        let file_idx = explorer.entries.iter().position(|e| !e.is_dir).unwrap();
+        explorer.cursor = file_idx;
+        // Right arrow must scroll down (Pending), never confirm (Selected).
+        let outcome = explorer.handle_key(key(KeyCode::Right));
+        assert_eq!(
+            outcome,
+            ExplorerOutcome::Pending,
+            "Right arrow should scroll, not confirm"
+        );
+    }
+
+    #[test]
+    fn left_arrow_scrolls_up_not_ascends() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let original_dir = explorer.current_dir.clone();
+        explorer.cursor = 1;
+        // Left arrow must scroll up (Pending), never ascend.
+        let outcome = explorer.handle_key(key(KeyCode::Left));
+        assert_eq!(
+            outcome,
+            ExplorerOutcome::Pending,
+            "Left arrow should scroll, not ascend"
+        );
+        assert_eq!(
+            explorer.current_dir, original_dir,
+            "Left arrow must not change directory"
+        );
+        assert_eq!(explorer.cursor, 0, "Left arrow should move cursor up by 1");
+    }
+
+    #[test]
+    fn enter_still_confirms_file() {
         let tmp = temp_dir_with_files();
         let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
         let file_idx = explorer.entries.iter().position(|e| !e.is_dir).unwrap();
         explorer.cursor = file_idx;
         let expected = explorer.entries[file_idx].path.clone();
-        let outcome = explorer.handle_key(key(KeyCode::Right));
+        let outcome = explorer.handle_key(key(KeyCode::Enter));
         assert_eq!(outcome, ExplorerOutcome::Selected(expected));
+    }
+
+    #[test]
+    fn backspace_still_ascends() {
+        let tmp = temp_dir_with_files();
+        let subdir = tmp.path().join("subdir");
+        let mut explorer = FileExplorer::new(subdir, vec![]);
+        explorer.handle_key(key(KeyCode::Backspace));
+        assert_eq!(explorer.current_dir, tmp.path());
     }
 
     #[test]

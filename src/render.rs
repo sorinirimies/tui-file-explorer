@@ -408,7 +408,8 @@ fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
         );
         frame.render_widget(search_para, chunks[0]);
     } else {
-        let hints = " \u{2191}/k Up  \u{2193}/j Down  Enter Confirm  \u{2190} Ascend  \
+        let hints =
+            " \u{2191}/\u{2190}/k Up  \u{2193}/\u{2192}/j Down  Enter/l Confirm  Bksp/h Ascend  \
                      / Search  s Sort  . Hidden  Esc Dismiss";
         let hints_para = Paragraph::new(Span::styled(hints, Style::default().fg(theme.dim))).block(
             Block::default()
