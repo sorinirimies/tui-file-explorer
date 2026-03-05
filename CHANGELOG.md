@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-03-05
+
+### Features
+- --init <shell> installs cd-on-exit wrapper automatically
+
 ## [0.3.1] - 2026-03-05
 
 ### Features
 - Cd to browsed directory on dismiss
+
+### Miscellaneous
+- Bump version to 0.3.1
 
 ## [0.3.0] - 2026-03-05
 
