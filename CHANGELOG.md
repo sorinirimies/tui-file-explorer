@@ -1,10 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-03-05
+
+### Documentation
+- Update README key bindings for Miller-columns navigation
+
+### Features
+- Miller-columns navigation and split action bar
+
 ## [0.2.3] - 2026-03-05
 
 ### Bug Fixes
 - Arrow keys scroll the list; only Enter/l descend or confirm
+
+### Miscellaneous
+- Bump version to 0.2.3
 
 ## [0.2.2] - 2026-03-05
 
