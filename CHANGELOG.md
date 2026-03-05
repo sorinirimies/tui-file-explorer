@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.5] - 2026-03-05
+
+### Features
+- Make cd-on-exit opt-in via --cd / --no-cd flags
+
 ## [0.3.4] - 2026-03-05
 
 ### Bug Fixes
 - Cross-platform TUI rendering and shell integration
+
+### Miscellaneous
+- Bump version to 0.3.4
 
 ## [0.3.3] - 2026-03-05
 
