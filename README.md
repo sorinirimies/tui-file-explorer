@@ -41,7 +41,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 - 🎛️ **Live theme panel** — press `t` to open a side panel, `[`/`]` to cycle themes
 - 🔧 Fluent builder API for ergonomic embedding — both `FileExplorer` and `DualPane`
 - 📦 **`DualPane` library widget** — drop a full two-pane explorer into any Ratatui app with one struct
-- 🖥️ **`cd` on exit** — dismiss with `Esc`/`q` and your terminal jumps to the directory you were browsing (requires a one-line shell wrapper)
+- 🖥️ **`cd` on exit** — dismiss with `Esc`/`q` and your terminal jumps to the directory you were browsing; one-time setup with `tfe --init <shell>` (bash, zsh, fish, powershell)
 - ✅ Lean library — only `ratatui` + `crossterm` required (`clap` is opt-out)
 
 ---
@@ -640,28 +640,35 @@ tfe [OPTIONS] [PATH]
 
 The killer feature: press `Esc` or `q` to dismiss `tfe` and your terminal
 **automatically `cd`s** to whichever directory you were browsing.
+Works on **macOS, Linux, and Windows**.
 
 Run the one-time setup command for your shell:
 
 ```bash
 # bash
-tfe --init bash
+tfe --init bash        # writes to ~/.bashrc
 
 # zsh
-tfe --init zsh
+tfe --init zsh         # writes to ~/.zshrc
 
 # fish
-tfe --init fish
+tfe --init fish        # writes to ~/.config/fish/functions/tfe.fish
+
+# PowerShell (Windows or cross-platform pwsh)
+tfe --init powershell  # writes to $PROFILE
 ```
 
-`--init` appends the wrapper function to your rc file (creating it if it
-doesn't exist), tells you where it wrote, and is idempotent — running it
-twice won't duplicate the snippet.  Then restart your shell or `source` the
-rc file as instructed.
+`--init` appends the wrapper function to your rc file (creating it and any
+missing parent directories if needed), tells you where it wrote, and is
+idempotent — running it twice will not duplicate the snippet.  Then restart
+your shell or `source` the rc file as instructed.
 
 How it works: `tfe` always prints a path to stdout on exit.
 - **Dismiss** (`Esc` / `q`) → prints the active pane's current directory.
 - **File selected** (`Enter` / `l`) → prints the selected file's path.
+
+The TUI renders on **stderr** so it is never swallowed by the shell's
+`$()` capture — the path on stdout is all the wrapper ever sees.
 
 The installed wrapper captures whichever path was printed and calls `cd` on it.
 

@@ -30,6 +30,9 @@ pub enum Shell {
     Zsh,
     /// Friendly Interactive Shell — uses `~/.config/fish/functions/tfe.fish`.
     Fish,
+    /// PowerShell (Windows and cross-platform) — uses `$PROFILE`.
+    /// Named `Pwsh` after the cross-platform PowerShell binary.
+    Pwsh,
 }
 
 impl Shell {
@@ -41,6 +44,7 @@ impl Shell {
             "bash" => Some(Self::Bash),
             "zsh" => Some(Self::Zsh),
             "fish" => Some(Self::Fish),
+            "powershell" | "pwsh" => Some(Self::Pwsh),
             _ => None,
         }
     }
@@ -51,6 +55,7 @@ impl Shell {
             Self::Bash => "bash",
             Self::Zsh => "zsh",
             Self::Fish => "fish",
+            Self::Pwsh => "powershell",
         }
     }
 }
@@ -63,10 +68,22 @@ impl fmt::Display for Shell {
 
 // ── Detection ─────────────────────────────────────────────────────────────────
 
-/// Infer the current shell from the `$SHELL` environment variable.
+/// Infer the current shell from environment variables.
 ///
-/// Returns `None` when `$SHELL` is unset, empty, or not a recognised shell.
+/// - Unix/macOS: reads `$SHELL` (e.g. `/bin/zsh` → `Zsh`).
+/// - Windows: checks `$PSVersionTable` / `$PSModulePath` presence to detect
+///   PowerShell; falls back to `None` for CMD or unknown shells.
+///
+/// Returns `None` when the shell cannot be determined or is not supported.
 pub fn detect_shell() -> Option<Shell> {
+    if cfg!(windows) {
+        // On Windows $SHELL is not set. Detect PowerShell by the presence of
+        // $PSModulePath which is always injected by the PowerShell host.
+        if std::env::var_os("PSModulePath").is_some() {
+            return Some(Shell::Pwsh);
+        }
+        return None;
+    }
     let shell_var = std::env::var("SHELL").ok()?;
     // $SHELL is typically a full path like /bin/zsh — take just the filename.
     let name = Path::new(&shell_var).file_name()?.to_str()?;
@@ -105,6 +122,13 @@ pub fn snippet(shell: Shell) -> String {
              \x20   end\n\
              end\n"
         ),
+        Shell::Pwsh => format!(
+            "\n{SENTINEL}\n\
+             function tfe {{\n\
+             \x20   $dir = & (Get-Command tfe -CommandType Application).Source @args\n\
+             \x20   if ($dir) {{ Set-Location $dir }}\n\
+             }}\n"
+        ),
     }
 }
 
@@ -130,6 +154,25 @@ pub fn rc_path_with(
                 .map(|p| p.to_path_buf())
                 .or_else(|| home.map(|h| h.join(".config")))?;
             Some(config.join("fish/functions/tfe.fish"))
+        }
+        Shell::Pwsh => {
+            // Use $PROFILE when available (set by PowerShell itself).
+            // Fall back to the conventional Documents\PowerShell path under $HOME.
+            if let Some(profile) = std::env::var_os("PROFILE") {
+                return Some(PathBuf::from(profile));
+            }
+            home.map(|h| {
+                if cfg!(windows) {
+                    h.join("Documents")
+                        .join("PowerShell")
+                        .join("Microsoft.PowerShell_profile.ps1")
+                } else {
+                    // PowerShell on Linux/macOS uses ~/.config/powershell
+                    h.join(".config")
+                        .join("powershell")
+                        .join("Microsoft.PowerShell_profile.ps1")
+                }
+            })
         }
     }
 }
@@ -213,6 +256,21 @@ pub(crate) fn install_or_print_to(
     home: Option<&Path>,
     xdg_config_home: Option<&Path>,
 ) -> InitOutcome {
+    // On Windows, only PowerShell is supported for --init.
+    // CMD has no equivalent of shell functions. WSL users should run the
+    // Linux tfe binary inside WSL and use tfe --init zsh/bash there.
+    if cfg!(windows) {
+        if let Some(s) = shell {
+            if s != Shell::Pwsh {
+                eprintln!(
+                    "tfe: on Windows only PowerShell is supported: tfe --init powershell\n\
+                     For WSL (bash/zsh/fish) run tfe --init <shell> inside WSL."
+                );
+                return InitOutcome::UnknownShell;
+            }
+        }
+    }
+
     // Step 1 — resolve shell.
     let resolved = match shell.or_else(detect_shell) {
         Some(s) => s,
@@ -287,15 +345,23 @@ mod tests {
     }
 
     #[test]
+    fn from_str_recognises_powershell() {
+        assert_eq!(Shell::from_str("powershell"), Some(Shell::Pwsh));
+        assert_eq!(Shell::from_str("pwsh"), Some(Shell::Pwsh));
+    }
+
+    #[test]
     fn from_str_is_case_insensitive() {
         assert_eq!(Shell::from_str("ZSH"), Some(Shell::Zsh));
         assert_eq!(Shell::from_str("Bash"), Some(Shell::Bash));
         assert_eq!(Shell::from_str("FISH"), Some(Shell::Fish));
+        assert_eq!(Shell::from_str("PowerShell"), Some(Shell::Pwsh));
+        assert_eq!(Shell::from_str("PWSH"), Some(Shell::Pwsh));
     }
 
     #[test]
     fn from_str_returns_none_for_unknown() {
-        assert_eq!(Shell::from_str("powershell"), None);
+        assert_eq!(Shell::from_str("cmd"), None);
         assert_eq!(Shell::from_str(""), None);
         assert_eq!(Shell::from_str("sh"), None);
     }
@@ -305,13 +371,14 @@ mod tests {
         assert_eq!(Shell::Bash.to_string(), "bash");
         assert_eq!(Shell::Zsh.to_string(), "zsh");
         assert_eq!(Shell::Fish.to_string(), "fish");
+        assert_eq!(Shell::Pwsh.to_string(), "powershell");
     }
 
     // ── snippet ───────────────────────────────────────────────────────────────
 
     #[test]
     fn snippet_contains_sentinel() {
-        for shell in [Shell::Bash, Shell::Zsh, Shell::Fish] {
+        for shell in [Shell::Bash, Shell::Zsh, Shell::Fish, Shell::Pwsh] {
             assert!(
                 snippet(shell).contains(SENTINEL),
                 "{shell} snippet missing sentinel"
@@ -353,6 +420,19 @@ mod tests {
         assert_ne!(snippet(Shell::Fish), snippet(Shell::Bash));
     }
 
+    #[test]
+    fn snippet_powershell_contains_function_body() {
+        let s = snippet(Shell::Pwsh);
+        assert!(s.contains("function tfe"), "missing function tfe");
+        assert!(s.contains("Set-Location"), "missing Set-Location");
+        assert!(s.contains("Get-Command tfe"), "missing Get-Command tfe");
+    }
+
+    #[test]
+    fn snippet_powershell_differs_from_bash() {
+        assert_ne!(snippet(Shell::Pwsh), snippet(Shell::Bash));
+    }
+
     // ── rc_path_with ──────────────────────────────────────────────────────────
 
     #[test]
@@ -365,6 +445,17 @@ mod tests {
     fn rc_path_zsh_ends_with_zshrc() {
         let p = rc_path_with(Shell::Zsh, Some(Path::new("/test/home")), None).unwrap();
         assert_eq!(p, PathBuf::from("/test/home/.zshrc"));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn rc_path_powershell_falls_back_to_home_config_on_unix() {
+        std::env::remove_var("PROFILE");
+        let p = rc_path_with(Shell::Pwsh, Some(Path::new("/test/home")), None).unwrap();
+        assert_eq!(
+            p,
+            PathBuf::from("/test/home/.config/powershell/Microsoft.PowerShell_profile.ps1")
+        );
     }
 
     #[test]
@@ -389,9 +480,11 @@ mod tests {
 
     #[test]
     fn rc_path_returns_none_when_home_unset() {
+        std::env::remove_var("PROFILE");
         assert!(rc_path_with(Shell::Bash, None, None).is_none());
         assert!(rc_path_with(Shell::Zsh, None, None).is_none());
         assert!(rc_path_with(Shell::Fish, None, None).is_none());
+        assert!(rc_path_with(Shell::Pwsh, None, None).is_none());
     }
 
     // ── is_installed ──────────────────────────────────────────────────────────

@@ -48,7 +48,6 @@ mod shell_init;
 mod ui;
 
 use std::{
-    fs::OpenOptions,
     io::{self, stdout, Write},
     path::PathBuf,
     process,
@@ -76,11 +75,15 @@ use ui::draw;
     about = "Keyboard-driven two-pane terminal file explorer",
     after_help = "\
 SHELL INTEGRATION:\n\
-  Print and install the shell wrapper so Esc/q cd's to the browsed directory:\n\
+  One-time setup — installs the cd-on-exit wrapper to your rc file:\n\
 \n\
-    tfe --init zsh  >> ~/.zshrc  && source ~/.zshrc\n\
-    tfe --init bash >> ~/.bashrc && source ~/.bashrc\n\
-    tfe --init fish >> ~/.config/fish/functions/tfe.fish\n\
+    tfe --init bash        # ~/.bashrc\n\
+    tfe --init zsh         # ~/.zshrc\n\
+    tfe --init fish        # ~/.config/fish/functions/tfe.fish\n\
+    tfe --init powershell  # $PROFILE (Windows / cross-platform PowerShell)\n\
+\n\
+  After setup, dismissing tfe with Esc/q cd's your terminal to the\n\
+  directory you were browsing.  Works on macOS, Linux, and Windows.\n\
 \n\
   Open selected file in $EDITOR:     command tfe | xargs -r $EDITOR\n\
   NUL-delimited output:              command tfe -0 | xargs -0 wc -l"
@@ -124,9 +127,9 @@ struct Cli {
 
     /// Install the shell wrapper for cd-on-exit integration and exit.
     ///
-    /// Appends the wrapper function to your rc file and prints instructions.
-    /// Supported shells: bash, zsh, fish.
-    /// Example: tfe --init zsh
+    /// Appends the wrapper function to your rc file (creating it if needed)
+    /// and prints instructions.  Supported shells: bash, zsh, fish, powershell.
+    /// Examples: tfe --init zsh   tfe --init powershell
     #[arg(long, value_name = "SHELL")]
     init: Option<String>,
 }
@@ -235,28 +238,20 @@ fn run() -> io::Result<()> {
 
     // Terminal setup.
     //
-    // Open /dev/tty directly so the TUI renders on the real terminal even when
-    // stdout is captured by a shell command substitution (e.g. `dir=$(tfe)`).
-    // The final path is written to real stdout after the TUI exits.
-    #[cfg(unix)]
-    let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
-    #[cfg(unix)]
-    let backend = CrosstermBackend::new(&tty);
-    #[cfg(not(unix))]
-    let backend = CrosstermBackend::new(stdout());
+    // Render the TUI on stderr rather than stdout.  This works on all
+    // platforms (Unix, macOS, Windows) without any platform-specific code:
+    //
+    // • The shell wrapper captures stdout with `dir=$(command tfe)`.
+    //   stderr is never captured by $() so the TUI renders correctly.
+    // • On Windows, stderr is connected to the console just like stdout,
+    //   so crossterm's raw-mode and alternate-screen work without needing
+    //   CONOUT$ or any other Windows-specific console API.
+    // • The final directory/file path is written to real stdout after the
+    //   TUI exits, where the shell wrapper's $() captures it correctly.
+    let backend = CrosstermBackend::new(io::stderr());
 
     enable_raw_mode()?;
-
-    #[cfg(unix)]
-    {
-        let mut tty_ref = &tty;
-        execute!(tty_ref, EnterAlternateScreen, EnableMouseCapture)?;
-    }
-    #[cfg(not(unix))]
-    {
-        let mut out = stdout();
-        execute!(out, EnterAlternateScreen, EnableMouseCapture)?;
-    }
+    execute!(io::stderr(), EnterAlternateScreen, EnableMouseCapture)?;
 
     let mut terminal = Terminal::new(backend)?;
 
@@ -281,8 +276,8 @@ fn run() -> io::Result<()> {
         DisableMouseCapture
     );
     let _ = terminal.show_cursor();
-    // Drop the terminal (and tty handle) before writing to stdout so the
-    // alternate screen is fully restored before the path appears.
+    // Drop the terminal before writing to stdout so the alternate screen is
+    // fully restored before the path appears.
     drop(terminal);
 
     result?;
