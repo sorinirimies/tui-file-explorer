@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 ### Documentation
 - Mandate commit + release after every implementation and test cycle
 
+### Miscellaneous
+- Bump version to 0.1.10
+
 ## [0.1.9] - 2026-03-04
 
 ### Bug Fixes
