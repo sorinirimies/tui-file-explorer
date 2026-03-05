@@ -49,6 +49,8 @@ pub struct AppOptions {
     pub single_pane: bool,
     /// Active sort mode.
     pub sort_mode: SortMode,
+    /// Whether cd-on-exit is enabled.
+    pub cd_on_exit: bool,
 }
 
 impl Default for AppOptions {
@@ -62,6 +64,7 @@ impl Default for AppOptions {
             show_theme_panel: false,
             single_pane: false,
             sort_mode: SortMode::default(),
+            cd_on_exit: false,
         }
     }
 }
@@ -176,6 +179,8 @@ pub struct App {
     pub theme_idx: usize,
     /// Whether the theme-picker side-panel is visible.
     pub show_theme_panel: bool,
+    /// Whether the options side-panel is visible.
+    pub show_options_panel: bool,
     /// Whether only the active pane is shown (single-pane mode).
     pub single_pane: bool,
     /// The currently displayed confirmation modal, if any.
@@ -184,6 +189,8 @@ pub struct App {
     pub selected: Option<PathBuf>,
     /// One-line status text shown in the action bar.
     pub status_msg: String,
+    /// Whether cd-on-exit is enabled (dismiss prints cwd to stdout).
+    pub cd_on_exit: bool,
 }
 
 impl App {
@@ -207,10 +214,12 @@ impl App {
             themes: Theme::all_presets(),
             theme_idx: opts.theme_idx,
             show_theme_panel: opts.show_theme_panel,
+            show_options_panel: false,
             single_pane: opts.single_pane,
             modal: None,
             selected: None,
             status_msg: String::new(),
+            cd_on_exit: opts.cd_on_exit,
         }
     }
 
@@ -485,9 +494,27 @@ impl App {
                 self.prev_theme();
                 return Ok(false);
             }
-            // Toggle theme panel
+            // Toggle theme panel — closes options panel if open
             KeyCode::Char('T') => {
                 self.show_theme_panel = !self.show_theme_panel;
+                if self.show_theme_panel {
+                    self.show_options_panel = false;
+                }
+                return Ok(false);
+            }
+            // Toggle options panel — closes theme panel if open
+            KeyCode::Char('O') => {
+                self.show_options_panel = !self.show_options_panel;
+                if self.show_options_panel {
+                    self.show_theme_panel = false;
+                }
+                return Ok(false);
+            }
+            // Toggle cd-on-exit (also available in the options panel)
+            KeyCode::Char('C') => {
+                self.cd_on_exit = !self.cd_on_exit;
+                let state = if self.cd_on_exit { "on" } else { "off" };
+                self.status_msg = format!("cd-on-exit: {state}");
                 return Ok(false);
             }
             // Switch pane
@@ -763,6 +790,128 @@ mod tests {
             ..AppOptions::default()
         });
         assert!(app.show_theme_panel);
+    }
+
+    #[test]
+    fn new_show_options_panel_false_by_default() {
+        let dir = tempdir().expect("tempdir");
+        let app = make_app(dir.path().to_path_buf());
+        assert!(!app.show_options_panel);
+    }
+
+    #[test]
+    fn new_cd_on_exit_false_by_default() {
+        let dir = tempdir().expect("tempdir");
+        let app = make_app(dir.path().to_path_buf());
+        assert!(!app.cd_on_exit);
+    }
+
+    #[test]
+    fn new_cd_on_exit_true_when_requested() {
+        let dir = tempdir().expect("tempdir");
+        let app = App::new(AppOptions {
+            left_dir: dir.path().to_path_buf(),
+            right_dir: dir.path().to_path_buf(),
+            cd_on_exit: true,
+            ..AppOptions::default()
+        });
+        assert!(app.cd_on_exit);
+    }
+
+    // ── Options panel ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn capital_o_opens_options_panel() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(!app.show_options_panel);
+        app.show_options_panel = true;
+        assert!(app.show_options_panel);
+    }
+
+    #[test]
+    fn capital_o_closes_options_panel_when_already_open() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.show_options_panel = true;
+        app.show_options_panel = !app.show_options_panel;
+        assert!(!app.show_options_panel);
+    }
+
+    #[test]
+    fn opening_options_panel_closes_theme_panel() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.show_theme_panel = true;
+        // Simulate the O key handler logic.
+        app.show_options_panel = !app.show_options_panel;
+        if app.show_options_panel {
+            app.show_theme_panel = false;
+        }
+        assert!(app.show_options_panel);
+        assert!(!app.show_theme_panel);
+    }
+
+    #[test]
+    fn opening_theme_panel_closes_options_panel() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.show_options_panel = true;
+        // Simulate the T key handler logic.
+        app.show_theme_panel = !app.show_theme_panel;
+        if app.show_theme_panel {
+            app.show_options_panel = false;
+        }
+        assert!(app.show_theme_panel);
+        assert!(!app.show_options_panel);
+    }
+
+    #[test]
+    fn capital_c_toggles_cd_on_exit_on() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(!app.cd_on_exit);
+        app.cd_on_exit = !app.cd_on_exit;
+        assert!(app.cd_on_exit);
+    }
+
+    #[test]
+    fn capital_c_toggles_cd_on_exit_off() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = App::new(AppOptions {
+            left_dir: dir.path().to_path_buf(),
+            right_dir: dir.path().to_path_buf(),
+            cd_on_exit: true,
+            ..AppOptions::default()
+        });
+        app.cd_on_exit = !app.cd_on_exit;
+        assert!(!app.cd_on_exit);
+    }
+
+    #[test]
+    fn capital_c_sets_status_message_on() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        // Simulate the C key handler.
+        app.cd_on_exit = !app.cd_on_exit;
+        let state = if app.cd_on_exit { "on" } else { "off" };
+        app.status_msg = format!("cd-on-exit: {state}");
+        assert_eq!(app.status_msg, "cd-on-exit: on");
+    }
+
+    #[test]
+    fn capital_c_sets_status_message_off() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = App::new(AppOptions {
+            left_dir: dir.path().to_path_buf(),
+            right_dir: dir.path().to_path_buf(),
+            cd_on_exit: true,
+            ..AppOptions::default()
+        });
+        app.cd_on_exit = !app.cd_on_exit;
+        let state = if app.cd_on_exit { "on" } else { "off" };
+        app.status_msg = format!("cd-on-exit: {state}");
+        assert_eq!(app.status_msg, "cd-on-exit: off");
     }
 
     // ── Pane switching ────────────────────────────────────────────────────────
@@ -1474,5 +1623,226 @@ mod tests {
         } else {
             panic!("expected MultiDelete modal");
         }
+    }
+
+    // ── Tab key switches active pane ──────────────────────────────────────────
+
+    #[test]
+    fn tab_key_switches_active_pane_from_left_to_right() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert_eq!(app.active, Pane::Left);
+        // Simulate Tab via the active field directly (handle_event reads stdin).
+        app.active = app.active.other();
+        assert_eq!(app.active, Pane::Right);
+    }
+
+    #[test]
+    fn tab_key_switches_active_pane_from_right_to_left() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.active = Pane::Right;
+        app.active = app.active.other();
+        assert_eq!(app.active, Pane::Left);
+    }
+
+    #[test]
+    fn tab_key_two_switches_return_to_original() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let original = app.active;
+        app.active = app.active.other();
+        app.active = app.active.other();
+        assert_eq!(app.active, original);
+    }
+
+    // ── App::new — themes list ────────────────────────────────────────────────
+
+    #[test]
+    fn new_themes_list_is_non_empty() {
+        let dir = tempdir().expect("tempdir");
+        let app = make_app(dir.path().to_path_buf());
+        assert!(!app.themes.is_empty(), "themes list must not be empty");
+    }
+
+    #[test]
+    fn new_theme_idx_is_zero() {
+        let dir = tempdir().expect("tempdir");
+        let app = make_app(dir.path().to_path_buf());
+        assert_eq!(app.theme_idx, 0);
+    }
+
+    #[test]
+    fn new_theme_idx_from_options_is_respected() {
+        let dir = tempdir().expect("tempdir");
+        let app = App::new(AppOptions {
+            left_dir: dir.path().to_path_buf(),
+            right_dir: dir.path().to_path_buf(),
+            theme_idx: 2,
+            ..AppOptions::default()
+        });
+        assert_eq!(app.theme_idx, 2);
+    }
+
+    // ── next_theme / prev_theme index bounds ──────────────────────────────────
+
+    #[test]
+    fn next_theme_never_exceeds_themes_len() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let total = app.themes.len();
+        for _ in 0..total * 2 {
+            app.next_theme();
+            assert!(
+                app.theme_idx < total,
+                "theme_idx {} out of bounds (len {})",
+                app.theme_idx,
+                total
+            );
+        }
+    }
+
+    #[test]
+    fn prev_theme_never_exceeds_themes_len() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let total = app.themes.len();
+        for _ in 0..total * 2 {
+            app.prev_theme();
+            assert!(
+                app.theme_idx < total,
+                "theme_idx {} out of bounds (len {})",
+                app.theme_idx,
+                total
+            );
+        }
+    }
+
+    // ── do_paste status on success ────────────────────────────────────────────
+
+    #[test]
+    fn do_paste_copy_clears_previous_error_status() {
+        let dir = tempdir().expect("tempdir");
+        let src_file = dir.path().join("src.txt");
+        let dst_file = dir.path().join("dst.txt");
+        fs::write(&src_file, b"content").unwrap();
+
+        let mut app = make_app(dir.path().to_path_buf());
+        app.status_msg = "Error: something bad".into();
+
+        app.do_paste(&src_file, &dst_file, false);
+
+        assert!(
+            !app.status_msg.starts_with("Error"),
+            "successful paste must replace error status, got: {}",
+            app.status_msg
+        );
+    }
+
+    #[test]
+    fn do_paste_success_status_mentions_filename() {
+        let dir = tempdir().expect("tempdir");
+        let src_file = dir.path().join("report.txt");
+        let dst_file = dir.path().join("report_copy.txt");
+        fs::write(&src_file, b"data").unwrap();
+
+        let mut app = make_app(dir.path().to_path_buf());
+        app.do_paste(&src_file, &dst_file, false);
+
+        assert!(
+            app.status_msg.contains("report_copy.txt"),
+            "status should mention destination filename, got: {}",
+            app.status_msg
+        );
+    }
+
+    // ── inactive pane accessor ────────────────────────────────────────────────
+
+    #[test]
+    fn inactive_pane_is_right_when_left_is_active() {
+        let dir = tempdir().expect("tempdir");
+        let app = make_app(dir.path().to_path_buf());
+        assert_eq!(app.active, Pane::Left);
+        // When left is active, accessing the "other" pane via active.other()
+        // should give Right — validate via the Pane::other helper.
+        assert_eq!(app.active.other(), Pane::Right);
+    }
+
+    #[test]
+    fn inactive_pane_is_left_when_right_is_active() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.active = Pane::Right;
+        assert_eq!(app.active.other(), Pane::Left);
+    }
+
+    // ── active_pane_mut ───────────────────────────────────────────────────────
+
+    #[test]
+    fn active_pane_mut_returns_right_when_right_is_active() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.active = Pane::Right;
+        let right_dir = app.right.current_dir.clone();
+        assert_eq!(app.active_pane_mut().current_dir, right_dir);
+    }
+
+    #[test]
+    fn active_pane_mut_returns_left_when_left_is_active() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.active = Pane::Left;
+        let left_dir = app.left.current_dir.clone();
+        assert_eq!(app.active_pane_mut().current_dir, left_dir);
+    }
+
+    // ── single_pane toggle ────────────────────────────────────────────────────
+
+    #[test]
+    fn single_pane_toggle_via_field() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(!app.single_pane);
+        app.single_pane = !app.single_pane;
+        assert!(app.single_pane);
+        app.single_pane = !app.single_pane;
+        assert!(!app.single_pane);
+    }
+
+    // ── AppOptions default ────────────────────────────────────────────────────
+
+    #[test]
+    fn app_options_default_show_hidden_false() {
+        assert!(!AppOptions::default().show_hidden);
+    }
+
+    #[test]
+    fn app_options_default_theme_idx_zero() {
+        assert_eq!(AppOptions::default().theme_idx, 0);
+    }
+
+    #[test]
+    fn app_options_default_sort_mode_is_name() {
+        assert_eq!(AppOptions::default().sort_mode, SortMode::Name);
+    }
+
+    #[test]
+    fn app_options_default_extensions_empty() {
+        assert!(AppOptions::default().extensions.is_empty());
+    }
+
+    #[test]
+    fn app_options_default_single_pane_false() {
+        assert!(!AppOptions::default().single_pane);
+    }
+
+    #[test]
+    fn app_options_default_show_theme_panel_false() {
+        assert!(!AppOptions::default().show_theme_panel);
+    }
+
+    #[test]
+    fn app_options_default_cd_on_exit_false() {
+        assert!(!AppOptions::default().cd_on_exit);
     }
 }

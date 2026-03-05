@@ -1,6 +1,23 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.6] - 2026-03-05
+
+### Bug Fixes
+- Remove dead `Theme::new()` (identical to `Default::default()`, never called)
+- Remove stray `theme_switcher.rs` from repository root (already present in `examples/`)
+- Extract `render_nav_hints_spans` helper for testability, mirroring `render_action_bar_spans`
+
+### Testing
+- Add 310 new unit tests across all modules (475 total, up from 165)
+- `types` — full coverage of `SortMode::next` cycle, `FsEntry` construction, `ExplorerOutcome` variants
+- `palette` — palette constants match `Theme::default()`, all builder setters, `all_presets` catalogue invariants
+- `explorer` — extended `entry_icon` coverage (22 extensions), `fmt_size` full boundary suite, `navigate_to` with `&str`/`&Path`, `is_searching` accessor, `status` cleared on reload, `load_entries` directly
+- `dual_pane` — `DualPaneActive::default()`, focus round-trips, inactive accessor, `DualPaneOutcome` variants, `active_mut` for right pane, `toggle_single_pane` idempotency
+- `persistence` — `sort_mode_to_key`/`sort_mode_from_key` internal helpers, `AppState::default` all-None invariant
+- `ui` — `render_nav_hints_spans` content, bold/accent/dim style assertions, stable span count
+- `app` — Tab pane switching, `themes` list non-empty, `theme_idx` from options, next/prev theme bounds, `do_paste` success status, `active_pane_mut`, `AppOptions::default` fields
+
 ## [0.3.5] - 2026-03-05
 
 ### Features

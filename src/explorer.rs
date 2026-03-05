@@ -2145,4 +2145,390 @@ mod tests {
             "marked_paths() should reflect the same set as the field"
         );
     }
+
+    // ── entry_icon — extended coverage ───────────────────────────────────────
+
+    fn make_file_entry(name: &str) -> crate::types::FsEntry {
+        let ext = std::path::Path::new(name)
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        crate::types::FsEntry {
+            name: name.to_string(),
+            path: std::path::PathBuf::from(name),
+            is_dir: false,
+            size: None,
+            extension: ext,
+        }
+    }
+
+    #[test]
+    fn entry_icon_iso_returns_disc() {
+        let e = make_file_entry("release.iso");
+        assert_eq!(entry_icon(&e), "💿");
+    }
+
+    #[test]
+    fn entry_icon_dmg_returns_disc() {
+        let e = make_file_entry("app.dmg");
+        assert_eq!(entry_icon(&e), "💿");
+    }
+
+    #[test]
+    fn entry_icon_zip_returns_package() {
+        let e = make_file_entry("archive.zip");
+        assert_eq!(entry_icon(&e), "📦");
+    }
+
+    #[test]
+    fn entry_icon_tar_returns_package() {
+        let e = make_file_entry("src.tar");
+        assert_eq!(entry_icon(&e), "📦");
+    }
+
+    #[test]
+    fn entry_icon_gz_returns_package() {
+        let e = make_file_entry("data.gz");
+        assert_eq!(entry_icon(&e), "📦");
+    }
+
+    #[test]
+    fn entry_icon_pdf_returns_book() {
+        let e = make_file_entry("manual.pdf");
+        assert_eq!(entry_icon(&e), "📕");
+    }
+
+    #[test]
+    fn entry_icon_md_returns_memo() {
+        let e = make_file_entry("README.md");
+        assert_eq!(entry_icon(&e), "📝");
+    }
+
+    #[test]
+    fn entry_icon_toml_returns_gear() {
+        let e = make_file_entry("Cargo.toml");
+        assert_eq!(entry_icon(&e), "⚙ ");
+    }
+
+    #[test]
+    fn entry_icon_json_returns_gear() {
+        let e = make_file_entry("config.json");
+        assert_eq!(entry_icon(&e), "⚙ ");
+    }
+
+    #[test]
+    fn entry_icon_lock_returns_lock() {
+        let e = make_file_entry("Cargo.lock");
+        assert_eq!(entry_icon(&e), "🔒");
+    }
+
+    #[test]
+    fn entry_icon_py_returns_snake() {
+        let e = make_file_entry("script.py");
+        assert_eq!(entry_icon(&e), "🐍");
+    }
+
+    #[test]
+    fn entry_icon_html_returns_globe() {
+        let e = make_file_entry("index.html");
+        assert_eq!(entry_icon(&e), "🌐");
+    }
+
+    #[test]
+    fn entry_icon_css_returns_palette() {
+        let e = make_file_entry("style.css");
+        assert_eq!(entry_icon(&e), "🎨");
+    }
+
+    #[test]
+    fn entry_icon_svg_returns_palette() {
+        let e = make_file_entry("logo.svg");
+        assert_eq!(entry_icon(&e), "🎨");
+    }
+
+    #[test]
+    fn entry_icon_png_returns_image() {
+        let e = make_file_entry("photo.png");
+        assert_eq!(entry_icon(&e), "🖼 ");
+    }
+
+    #[test]
+    fn entry_icon_jpg_returns_image() {
+        let e = make_file_entry("photo.jpg");
+        assert_eq!(entry_icon(&e), "🖼 ");
+    }
+
+    #[test]
+    fn entry_icon_mp4_returns_film() {
+        let e = make_file_entry("video.mp4");
+        assert_eq!(entry_icon(&e), "🎬");
+    }
+
+    #[test]
+    fn entry_icon_mp3_returns_music() {
+        let e = make_file_entry("song.mp3");
+        assert_eq!(entry_icon(&e), "🎵");
+    }
+
+    #[test]
+    fn entry_icon_ttf_returns_font() {
+        let e = make_file_entry("font.ttf");
+        assert_eq!(entry_icon(&e), "🔤");
+    }
+
+    #[test]
+    fn entry_icon_exe_returns_gear() {
+        let e = make_file_entry("setup.exe");
+        assert_eq!(entry_icon(&e), "⚙ ");
+    }
+
+    #[test]
+    fn entry_icon_unknown_extension_returns_document() {
+        let e = make_file_entry("mystery.xyz");
+        assert_eq!(entry_icon(&e), "📄");
+    }
+
+    #[test]
+    fn entry_icon_no_extension_returns_document() {
+        let e = crate::types::FsEntry {
+            name: "Makefile".into(),
+            path: std::path::PathBuf::from("Makefile"),
+            is_dir: false,
+            size: None,
+            extension: String::new(),
+        };
+        assert_eq!(entry_icon(&e), "📄");
+    }
+
+    // ── fmt_size — full boundary coverage ────────────────────────────────────
+
+    #[test]
+    fn fmt_size_zero_bytes() {
+        assert_eq!(fmt_size(0), "0 B");
+    }
+
+    #[test]
+    fn fmt_size_one_byte() {
+        assert_eq!(fmt_size(1), "1 B");
+    }
+
+    #[test]
+    fn fmt_size_1023_bytes_stays_bytes() {
+        assert_eq!(fmt_size(1_023), "1023 B");
+    }
+
+    #[test]
+    fn fmt_size_exactly_1_kb() {
+        assert_eq!(fmt_size(1_024), "1.0 KB");
+    }
+
+    #[test]
+    fn fmt_size_1_5_kb() {
+        assert_eq!(fmt_size(1_536), "1.5 KB");
+    }
+
+    #[test]
+    fn fmt_size_1_mb_boundary() {
+        assert_eq!(fmt_size(1_048_576), "1.0 MB");
+    }
+
+    #[test]
+    fn fmt_size_2_mb() {
+        assert_eq!(fmt_size(2_097_152), "2.0 MB");
+    }
+
+    #[test]
+    fn fmt_size_1_gb_boundary() {
+        assert_eq!(fmt_size(1_073_741_824), "1.0 GB");
+    }
+
+    #[test]
+    fn fmt_size_large_value() {
+        // 10 GB
+        assert_eq!(fmt_size(10 * 1_073_741_824), "10.0 GB");
+    }
+
+    // ── navigate_to — &str and &Path inputs ──────────────────────────────────
+
+    #[test]
+    fn navigate_to_accepts_str_slice() {
+        let dir = tempdir().expect("tempdir");
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.navigate_to(sub.to_str().unwrap());
+        assert_eq!(explorer.current_dir, sub);
+    }
+
+    #[test]
+    fn navigate_to_accepts_path_ref() {
+        let dir = tempdir().expect("tempdir");
+        let sub = dir.path().join("sub2");
+        fs::create_dir(&sub).unwrap();
+
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.navigate_to(sub.as_path());
+        assert_eq!(explorer.current_dir, sub);
+    }
+
+    #[test]
+    fn navigate_to_resets_cursor_to_zero() {
+        let dir = tempdir().expect("tempdir");
+        let sub = dir.path().join("sub3");
+        fs::create_dir(&sub).unwrap();
+
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.cursor = 99;
+        explorer.scroll_offset = 5;
+        explorer.navigate_to(sub.as_path());
+        assert_eq!(explorer.cursor, 0);
+        assert_eq!(explorer.scroll_offset, 0);
+    }
+
+    // ── is_searching accessor ─────────────────────────────────────────────────
+
+    #[test]
+    fn is_searching_false_by_default() {
+        let dir = tempdir().expect("tempdir");
+        let explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        assert!(!explorer.is_searching());
+    }
+
+    #[test]
+    fn is_searching_true_after_slash_key() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.handle_key(key(KeyCode::Char('/')));
+        assert!(explorer.is_searching());
+    }
+
+    #[test]
+    fn is_searching_false_after_esc_cancels_search() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.handle_key(key(KeyCode::Char('/')));
+        explorer.handle_key(key(KeyCode::Esc));
+        assert!(!explorer.is_searching());
+    }
+
+    // ── status cleared on reload ──────────────────────────────────────────────
+
+    #[test]
+    fn status_is_empty_on_fresh_explorer() {
+        let dir = tempdir().expect("tempdir");
+        let explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        assert!(explorer.status().is_empty());
+    }
+
+    #[test]
+    fn status_cleared_after_reload() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        // Manually set a stale status message.
+        explorer.status = "stale message".into();
+        explorer.reload();
+        assert!(
+            explorer.status().is_empty(),
+            "reload should clear the status message"
+        );
+    }
+
+    // ── load_entries with an empty directory ──────────────────────────────────
+
+    #[test]
+    fn load_entries_empty_dir_returns_empty_vec() {
+        let dir = tempdir().expect("tempdir");
+        let entries = load_entries(dir.path(), false, &[], crate::types::SortMode::Name, "");
+        assert!(
+            entries.is_empty(),
+            "empty directory should produce no entries"
+        );
+    }
+
+    #[test]
+    fn load_entries_hidden_excluded_by_default() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join(".hidden"), b"h").unwrap();
+        fs::write(dir.path().join("visible.txt"), b"v").unwrap();
+
+        let entries = load_entries(dir.path(), false, &[], crate::types::SortMode::Name, "");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "visible.txt");
+    }
+
+    #[test]
+    fn load_entries_hidden_included_when_show_hidden_true() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join(".hidden"), b"h").unwrap();
+        fs::write(dir.path().join("visible.txt"), b"v").unwrap();
+
+        let entries = load_entries(dir.path(), true, &[], crate::types::SortMode::Name, "");
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn load_entries_nonexistent_dir_returns_empty_vec() {
+        let entries = load_entries(
+            std::path::Path::new("/nonexistent/path/that/does/not/exist"),
+            false,
+            &[],
+            crate::types::SortMode::Name,
+            "",
+        );
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn load_entries_search_query_is_case_insensitive() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("README.md"), b"r").unwrap();
+        fs::write(dir.path().join("main.rs"), b"m").unwrap();
+
+        let entries = load_entries(
+            dir.path(),
+            false,
+            &[],
+            crate::types::SortMode::Name,
+            "readme",
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].name, "README.md");
+    }
+
+    #[test]
+    fn load_entries_dirs_always_precede_files() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("z_file.txt"), b"z").unwrap();
+        fs::create_dir(dir.path().join("a_dir")).unwrap();
+
+        let entries = load_entries(dir.path(), false, &[], crate::types::SortMode::Name, "");
+        assert!(entries[0].is_dir, "directory must come before file");
+        assert!(!entries[1].is_dir);
+    }
+
+    #[test]
+    fn load_entries_ext_filter_excludes_non_matching_files() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("main.rs"), b"r").unwrap();
+        fs::write(dir.path().join("Cargo.toml"), b"t").unwrap();
+
+        let filter = vec!["rs".to_string()];
+        let entries = load_entries(dir.path(), false, &filter, crate::types::SortMode::Name, "");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].extension, "rs");
+    }
+
+    #[test]
+    fn load_entries_ext_filter_always_includes_dirs() {
+        let dir = tempdir().expect("tempdir");
+        fs::create_dir(dir.path().join("subdir")).unwrap();
+        fs::write(dir.path().join("file.txt"), b"t").unwrap();
+
+        // Filter for .rs — the dir should still appear, the .txt file should not.
+        let filter = vec!["rs".to_string()];
+        let entries = load_entries(dir.path(), false, &filter, crate::types::SortMode::Name, "");
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].is_dir);
+    }
 }

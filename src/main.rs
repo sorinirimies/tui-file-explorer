@@ -249,6 +249,15 @@ fn run() -> io::Result<()> {
     };
     let sort_mode = saved.sort_mode.unwrap_or_default();
 
+    // Resolve cd-on-exit: CLI flags take priority, then persisted value.
+    let cd_on_exit = if cli.cd_on_exit {
+        true
+    } else if cli.no_cd {
+        false
+    } else {
+        saved.cd_on_exit.unwrap_or(false)
+    };
+
     // Terminal setup.
     //
     // Render the TUI on stderr rather than stdout.  This works on all
@@ -277,6 +286,7 @@ fn run() -> io::Result<()> {
         show_theme_panel: cli.show_themes,
         single_pane,
         sort_mode,
+        cd_on_exit,
     });
 
     let result = run_loop(&mut terminal, &mut app);
@@ -310,15 +320,6 @@ fn run() -> io::Result<()> {
         Some(app.right.current_dir.clone())
     };
 
-    // Resolve cd-on-exit: CLI flags take priority, then persisted value.
-    let cd_on_exit = if cli.cd_on_exit {
-        true
-    } else if cli.no_cd {
-        false
-    } else {
-        saved.cd_on_exit.unwrap_or(false)
-    };
-
     persistence::save_state(&persistence::AppState {
         theme: Some(app.theme_name().to_string()),
         last_dir: Some(app.left.current_dir.clone()),
@@ -326,11 +327,9 @@ fn run() -> io::Result<()> {
         sort_mode: Some(app.left.sort_mode),
         show_hidden: Some(app.left.show_hidden),
         single_pane: Some(app.single_pane),
-        cd_on_exit: if cli.cd_on_exit || cli.no_cd {
-            Some(cd_on_exit)
-        } else {
-            saved.cd_on_exit
-        },
+        // Always persist the final value from app — this captures both CLI
+        // flags (--cd / --no-cd) and any in-TUI toggle via the O panel / C key.
+        cd_on_exit: Some(app.cd_on_exit),
     });
 
     // Emit a path to stdout so a shell wrapper can act on it (e.g. `cd`).
@@ -348,7 +347,8 @@ fn run() -> io::Result<()> {
             out.write_all(if cli.null { b"\0" } else { b"\n" })?;
             out.flush()?;
         }
-        None if cd_on_exit => {
+        // Use app.cd_on_exit — reflects both CLI flags and any in-TUI toggle.
+        None if app.cd_on_exit => {
             let output = app.active_pane().current_dir.clone();
             let mut out = stdout();
             write!(out, "{}", output.display())?;

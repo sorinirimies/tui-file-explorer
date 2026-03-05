@@ -318,6 +318,83 @@ pub fn resolve_theme_idx(name: &str, themes: &[(&str, &str, Theme)]) -> usize {
 
 #[cfg(test)]
 mod tests {
+    // ── sort_mode_to_key / sort_mode_from_key ─────────────────────────────────
+
+    #[test]
+    fn sort_mode_to_key_name() {
+        assert_eq!(sort_mode_to_key(SortMode::Name), "name");
+    }
+
+    #[test]
+    fn sort_mode_to_key_size_desc() {
+        assert_eq!(sort_mode_to_key(SortMode::SizeDesc), "size_desc");
+    }
+
+    #[test]
+    fn sort_mode_to_key_extension() {
+        assert_eq!(sort_mode_to_key(SortMode::Extension), "extension");
+    }
+
+    #[test]
+    fn sort_mode_from_key_name() {
+        assert_eq!(sort_mode_from_key("name"), Some(SortMode::Name));
+    }
+
+    #[test]
+    fn sort_mode_from_key_size_desc() {
+        assert_eq!(sort_mode_from_key("size_desc"), Some(SortMode::SizeDesc));
+    }
+
+    #[test]
+    fn sort_mode_from_key_extension() {
+        assert_eq!(sort_mode_from_key("extension"), Some(SortMode::Extension));
+    }
+
+    #[test]
+    fn sort_mode_from_key_unknown_returns_none() {
+        assert_eq!(sort_mode_from_key("bogus"), None);
+        assert_eq!(sort_mode_from_key(""), None);
+        assert_eq!(sort_mode_from_key("SIZE_DESC"), None);
+    }
+
+    #[test]
+    fn sort_mode_key_round_trips_all_variants() {
+        for mode in [SortMode::Name, SortMode::SizeDesc, SortMode::Extension] {
+            let key = sort_mode_to_key(mode);
+            let back = sort_mode_from_key(key);
+            assert_eq!(back, Some(mode), "round-trip failed for {mode:?}");
+        }
+    }
+
+    // ── AppState default ──────────────────────────────────────────────────────
+
+    #[test]
+    fn app_state_default_all_fields_none() {
+        let state = AppState::default();
+        assert!(state.theme.is_none());
+        assert!(state.last_dir.is_none());
+        assert!(state.last_dir_right.is_none());
+        assert!(state.sort_mode.is_none());
+        assert!(state.show_hidden.is_none());
+        assert!(state.single_pane.is_none());
+        assert!(state.cd_on_exit.is_none());
+    }
+
+    #[test]
+    fn app_state_default_equals_default() {
+        assert_eq!(AppState::default(), AppState::default());
+    }
+
+    #[test]
+    fn app_state_clone_equals_original() {
+        let state = AppState {
+            theme: Some("nord".into()),
+            show_hidden: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(state.clone(), state);
+    }
+
     use super::*;
     use std::fs;
     use tempfile::TempDir;

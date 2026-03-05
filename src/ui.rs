@@ -62,6 +62,9 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     if app.show_theme_panel {
         h_constraints.push(Constraint::Length(32));
     }
+    if app.show_options_panel {
+        h_constraints.push(Constraint::Length(36));
+    }
     let h_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(h_constraints)
@@ -86,6 +89,12 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     if app.show_theme_panel {
         let panel_area = h_chunks[h_chunks.len() - 1];
         render_theme_panel(frame, panel_area, app);
+    }
+
+    // ── Options panel ─────────────────────────────────────────────────────────
+    if app.show_options_panel {
+        let panel_area = h_chunks[h_chunks.len() - 1];
+        render_options_panel(frame, panel_area, app);
     }
 
     // ── Action bar ────────────────────────────────────────────────────────────
@@ -205,10 +214,113 @@ pub fn render_theme_panel(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(desc, v[2]);
 }
 
+// ── Options panel ─────────────────────────────────────────────────────────────
+
+/// Render the slide-in options panel occupying `area`.
+///
+/// Shows all toggleable persistent settings with their current state.
+/// Each row shows the toggle key, setting name, and on/off indicator.
+pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let theme = app.theme();
+
+    // Two-row vertical layout: header | options list.
+    let v = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(area);
+
+    // Header.
+    let header = Paragraph::new(Line::from(vec![
+        Span::styled(
+            " O ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("close  ", Style::default().fg(theme.dim)),
+        Span::styled(
+            "C ",
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("toggle cd", Style::default().fg(theme.dim)),
+    ]))
+    .block(
+        Block::default()
+            .title(Span::styled(
+                " ⚙ Options ",
+                Style::default()
+                    .fg(theme.brand)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.accent)),
+    );
+    frame.render_widget(header, v[0]);
+
+    // Options list — each row: key | name | value.
+    let on_style = Style::default()
+        .fg(theme.success)
+        .add_modifier(Modifier::BOLD);
+    let off_style = Style::default().fg(theme.dim);
+    let key_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+    let label_style = Style::default().fg(theme.fg);
+
+    let opts: &[(&str, &str, bool)] = &[
+        ("C", "cd on exit", app.cd_on_exit),
+        ("w", "single pane", app.single_pane),
+        ("T", "theme panel", app.show_theme_panel),
+    ];
+
+    let items: Vec<ListItem> = opts
+        .iter()
+        .map(|(key, label, enabled)| {
+            let (indicator, val_style) = if *enabled {
+                ("● on ", on_style)
+            } else {
+                ("○ off", off_style)
+            };
+            ListItem::new(Line::from(vec![
+                Span::raw(" "),
+                Span::styled(format!("{key:<2}"), key_style),
+                Span::raw("  "),
+                Span::styled(format!("{label:<14}"), label_style),
+                Span::styled(indicator, val_style),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.accent)),
+    );
+    frame.render_widget(list, v[1]);
+}
+
 // ── Action bar ────────────────────────────────────────────────────────────────
 
 /// Render the full-width navigation hint row (top half of the action bar).
 pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
+    let hints = Line::from(render_nav_hints_spans(theme));
+    let nav_bar = Paragraph::new(hints).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.dim)),
+    );
+    frame.render_widget(nav_bar, area);
+}
+
+/// Build the list of styled [`Span`]s for the navigation hint row.
+///
+/// Extracted so the spans can be tested independently of a real [`Frame`].
+pub fn render_nav_hints_spans(theme: &Theme) -> Vec<Span<'_>> {
     let k = |s: &'static str| {
         Span::styled(
             s,
@@ -218,7 +330,7 @@ pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
         )
     };
     let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
-    let hints = Line::from(vec![
+    vec![
         k("↑"),
         d("/"),
         k("k"),
@@ -247,14 +359,7 @@ pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
         d(" hidden  "),
         k("Esc"),
         d(" dismiss"),
-    ]);
-    let nav_bar = Paragraph::new(hints).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.dim)),
-    );
-    frame.render_widget(nav_bar, area);
+    ]
 }
 
 /// Render the bottom status/shortcut bar occupying `area`.
@@ -361,7 +466,9 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
         k("t"),
         d(" theme  "),
         k("w"),
-        d(" split"),
+        d(" split  "),
+        k("O"),
+        d(" options"),
     ]
 }
 
@@ -579,26 +686,12 @@ mod tests {
     fn action_bar_spans_count_is_stable() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        // 9 key spans + 9 description spans = 18 total.
+        // 10 key spans + 10 description spans = 20 total.
         assert_eq!(
             spans.len(),
-            18,
+            20,
             "span count changed — update this test if the action bar was intentionally modified"
         );
-    }
-
-    #[test]
-    fn nav_hints_spans_contain_expected_keys() {
-        // Smoke-test: render_nav_hints must not panic and the global shortcuts
-        // row must still carry the expected labels.
-        let theme = Theme::default();
-        let spans = render_action_bar_spans(&theme);
-        let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
-        // Navigation keys live in the nav bar, not the shortcuts row — make
-        // sure the shortcuts row still contains its own labels.
-        assert!(text.contains("Tab"), "missing Tab");
-        assert!(text.contains("Spc"), "missing Spc");
-        assert!(text.contains('w'), "missing w (split)");
     }
 
     #[test]
@@ -606,7 +699,7 @@ mod tests {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
         // Key spans are the ones whose content matches a known key label.
-        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w", "O"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -623,7 +716,7 @@ mod tests {
     fn action_bar_spans_description_spans_are_not_bold() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w", "O"];
         // Every span that is NOT a key label should not carry BOLD.
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
@@ -640,7 +733,7 @@ mod tests {
     fn action_bar_spans_key_spans_use_accent_colour() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w", "O"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -658,7 +751,7 @@ mod tests {
     fn action_bar_spans_description_spans_use_dim_colour() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w", "O"];
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
                 assert_eq!(
@@ -669,5 +762,124 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── render_nav_hints_spans ────────────────────────────────────────────────
+
+    #[test]
+    fn nav_hints_spans_contain_arrow_keys() {
+        let theme = Theme::default();
+        let spans = render_nav_hints_spans(&theme);
+        let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains('k'), "missing k (up)");
+        assert!(text.contains('j'), "missing j (down)");
+        assert!(text.contains('h'), "missing h (ascend)");
+        assert!(text.contains('l'), "missing l (confirm)");
+        assert!(text.contains("Enter"), "missing Enter");
+        assert!(text.contains("Bksp"), "missing Bksp");
+    }
+
+    #[test]
+    fn nav_hints_spans_contain_search_and_sort() {
+        let theme = Theme::default();
+        let spans = render_nav_hints_spans(&theme);
+        let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains('/'), "missing / (search)");
+        assert!(text.contains('s'), "missing s (sort)");
+        assert!(text.contains('.'), "missing . (hidden)");
+        assert!(text.contains("Esc"), "missing Esc (dismiss)");
+    }
+
+    #[test]
+    fn nav_hints_key_spans_are_bold() {
+        let theme = Theme::default();
+        let spans = render_nav_hints_spans(&theme);
+        // '/' appears both as a dim separator (between e.g. "↑" and "k") and as
+        // the bold search-activation key.  Exclude it from the simple
+        // "first match" check and verify it separately below.
+        let key_labels = [
+            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "Esc",
+        ];
+        for label in key_labels {
+            let span = spans
+                .iter()
+                .find(|s| s.content.as_ref() == label)
+                .unwrap_or_else(|| panic!("nav hint span for '{label}' not found"));
+            assert!(
+                span.style.add_modifier.contains(Modifier::BOLD),
+                "nav key span '{label}' should be bold"
+            );
+        }
+        // '/' is used both as a separator (dim) and as the search key (bold).
+        // Assert that at least one '/' span is bold.
+        let slash_bold = spans
+            .iter()
+            .any(|s| s.content.as_ref() == "/" && s.style.add_modifier.contains(Modifier::BOLD));
+        assert!(slash_bold, "the search '/' key span should be bold");
+    }
+
+    #[test]
+    fn nav_hints_key_spans_use_accent_colour() {
+        let theme = Theme::default();
+        let spans = render_nav_hints_spans(&theme);
+        // Exclude '/' — it appears as both a dim separator and a bold accent key.
+        let key_labels = ["↑", "k", "↓", "j", "Enter", "Bksp", "s", ".", "Esc"];
+        for label in key_labels {
+            let span = spans
+                .iter()
+                .find(|s| s.content.as_ref() == label)
+                .unwrap_or_else(|| panic!("nav hint span for '{label}' not found"));
+            assert_eq!(
+                span.style.fg,
+                Some(theme.accent),
+                "nav key span '{label}' should use the accent colour"
+            );
+        }
+        // Verify the search '/' key span (bold one) uses the accent colour.
+        let slash_accent = spans.iter().any(|s| {
+            s.content.as_ref() == "/"
+                && s.style.add_modifier.contains(Modifier::BOLD)
+                && s.style.fg == Some(theme.accent)
+        });
+        assert!(
+            slash_accent,
+            "the search '/' key span should use the accent colour"
+        );
+    }
+
+    #[test]
+    fn nav_hints_description_spans_use_dim_colour() {
+        let theme = Theme::default();
+        let spans = render_nav_hints_spans(&theme);
+        // Bold key labels — spans carrying these as content must be accent-coloured.
+        // '/' is excluded because it also appears as a dim separator between combos.
+        let key_labels = [
+            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "Esc",
+        ];
+        for span in &spans {
+            let content = span.content.as_ref();
+            // Skip bold key spans and '/' (mixed role).
+            if key_labels.contains(&content) || content == "/" {
+                continue;
+            }
+            assert_eq!(
+                span.style.fg,
+                Some(theme.dim),
+                "nav description span '{}' should use the dim colour",
+                span.content
+            );
+        }
+    }
+
+    #[test]
+    fn nav_hints_span_count_is_stable() {
+        let theme = Theme::default();
+        let spans = render_nav_hints_spans(&theme);
+        // 14 key spans + 14 separator/description spans = 28 total.
+        assert_eq!(
+            spans.len(),
+            28,
+            "nav hint span count changed — update this test if the nav bar was intentionally modified"
+        );
     }
 }

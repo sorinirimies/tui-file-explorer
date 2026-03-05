@@ -767,4 +767,164 @@ mod tests {
         assert!(!dual.left.entries.is_empty(), "left should see new file");
         assert!(!dual.right.entries.is_empty(), "right should see new file");
     }
+
+    // ── DualPaneActive default ────────────────────────────────────────────────
+
+    #[test]
+    fn dual_pane_active_default_is_left() {
+        assert_eq!(DualPaneActive::default(), DualPaneActive::Left);
+    }
+
+    // ── focus_left / focus_right after a switch ───────────────────────────────
+
+    #[test]
+    fn focus_left_after_switch_to_right_restores_left() {
+        let dir = tempdir().expect("tempdir");
+        let mut dual = DualPane::builder(dir.path().to_path_buf()).build();
+        dual.focus_right();
+        assert_eq!(dual.active_side, DualPaneActive::Right);
+        dual.focus_left();
+        assert_eq!(dual.active_side, DualPaneActive::Left);
+    }
+
+    #[test]
+    fn focus_right_after_switch_to_left_restores_right() {
+        let dir = tempdir().expect("tempdir");
+        let mut dual = DualPane::builder(dir.path().to_path_buf()).build();
+        dual.focus_left();
+        assert_eq!(dual.active_side, DualPaneActive::Left);
+        dual.focus_right();
+        assert_eq!(dual.active_side, DualPaneActive::Right);
+    }
+
+    // ── inactive accessor after focus switch ──────────────────────────────────
+
+    #[test]
+    fn inactive_after_focus_right_is_left() {
+        let dir = tempdir().expect("tempdir");
+        let mut dual = DualPane::builder(dir.path().to_path_buf()).build();
+        dual.focus_right();
+        // When right is active, inactive() must return the left pane.
+        assert_eq!(
+            dual.inactive().current_dir,
+            dual.left.current_dir,
+            "inactive() should point to left when right is active"
+        );
+    }
+
+    #[test]
+    fn inactive_after_focus_left_is_right() {
+        let dir = tempdir().expect("tempdir");
+        let _right_dir = {
+            let d = tempdir().expect("tempdir right");
+            d.path().to_path_buf()
+            // Note: TempDir is dropped here but path still exists momentarily;
+            // use a sub-dir of the same temp dir instead.
+        };
+        let sub = dir.path().join("right_sub");
+        fs::create_dir(&sub).unwrap();
+        let mut dual = DualPane::builder(dir.path().to_path_buf())
+            .right_dir(sub.clone())
+            .build();
+        dual.focus_left();
+        assert_eq!(
+            dual.inactive().current_dir,
+            sub,
+            "inactive() should point to right when left is active"
+        );
+    }
+
+    // ── builder extension_filter applies to both panes ────────────────────────
+
+    #[test]
+    fn builder_extension_filter_limits_visible_files_on_both_panes() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("main.rs"), b"fn main(){}").unwrap();
+        fs::write(dir.path().join("Cargo.toml"), b"[package]").unwrap();
+
+        let dual = DualPane::builder(dir.path().to_path_buf())
+            .extension_filter(vec!["rs".into()])
+            .build();
+
+        // Only .rs files visible — .toml must be filtered out on both sides.
+        assert_eq!(dual.left.entries.len(), 1, "left should show only .rs");
+        assert_eq!(dual.right.entries.len(), 1, "right should show only .rs");
+        assert_eq!(dual.left.entries[0].extension, "rs");
+        assert_eq!(dual.right.entries[0].extension, "rs");
+    }
+
+    // ── DualPaneOutcome variants ──────────────────────────────────────────────
+
+    #[test]
+    fn dual_pane_outcome_dismissed_eq() {
+        assert_eq!(DualPaneOutcome::Dismissed, DualPaneOutcome::Dismissed);
+    }
+
+    #[test]
+    fn dual_pane_outcome_pending_eq() {
+        assert_eq!(DualPaneOutcome::Pending, DualPaneOutcome::Pending);
+    }
+
+    #[test]
+    fn dual_pane_outcome_unhandled_eq() {
+        assert_eq!(DualPaneOutcome::Unhandled, DualPaneOutcome::Unhandled);
+    }
+
+    #[test]
+    fn dual_pane_outcome_selected_carries_path() {
+        use std::path::PathBuf;
+        let path = PathBuf::from("/tmp/chosen.txt");
+        let outcome = DualPaneOutcome::Selected(path.clone());
+        assert_eq!(outcome, DualPaneOutcome::Selected(path));
+    }
+
+    #[test]
+    fn dual_pane_outcome_selected_neq_dismissed() {
+        use std::path::PathBuf;
+        let outcome = DualPaneOutcome::Selected(PathBuf::from("/tmp/x"));
+        assert_ne!(outcome, DualPaneOutcome::Dismissed);
+    }
+
+    // ── active_mut returns mutable ref to active pane ─────────────────────────
+
+    #[test]
+    fn active_mut_returns_right_when_right_is_active() {
+        let dir = tempdir().expect("tempdir");
+        let sub = dir.path().join("right");
+        fs::create_dir(&sub).unwrap();
+        let mut dual = DualPane::builder(dir.path().to_path_buf())
+            .right_dir(sub.clone())
+            .build();
+        dual.focus_right();
+        assert_eq!(
+            dual.active_mut().current_dir,
+            sub,
+            "active_mut() should return right pane when right is active"
+        );
+    }
+
+    // ── toggle_single_pane ────────────────────────────────────────────────────
+
+    #[test]
+    fn toggle_single_pane_from_false_to_true() {
+        let dir = tempdir().expect("tempdir");
+        let mut dual = DualPane::builder(dir.path().to_path_buf()).build();
+        assert!(!dual.single_pane);
+        dual.toggle_single_pane();
+        assert!(dual.single_pane);
+    }
+
+    #[test]
+    fn toggle_single_pane_twice_returns_to_original() {
+        let dir = tempdir().expect("tempdir");
+        let mut dual = DualPane::builder(dir.path().to_path_buf())
+            .single_pane(true)
+            .build();
+        dual.toggle_single_pane();
+        dual.toggle_single_pane();
+        assert!(
+            dual.single_pane,
+            "two toggles should restore original state"
+        );
+    }
 }

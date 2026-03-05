@@ -92,3 +92,155 @@ pub enum ExplorerOutcome {
     /// The key was not recognised / consumed by the explorer.
     Unhandled,
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── SortMode ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn sort_mode_default_is_name() {
+        assert_eq!(SortMode::default(), SortMode::Name);
+    }
+
+    #[test]
+    fn sort_mode_next_name_gives_size_desc() {
+        assert_eq!(SortMode::Name.next(), SortMode::SizeDesc);
+    }
+
+    #[test]
+    fn sort_mode_next_size_desc_gives_extension() {
+        assert_eq!(SortMode::SizeDesc.next(), SortMode::Extension);
+    }
+
+    #[test]
+    fn sort_mode_next_extension_wraps_to_name() {
+        assert_eq!(SortMode::Extension.next(), SortMode::Name);
+    }
+
+    #[test]
+    fn sort_mode_full_cycle_returns_to_start() {
+        let start = SortMode::Name;
+        let cycled = start.next().next().next();
+        assert_eq!(cycled, start);
+    }
+
+    #[test]
+    fn sort_mode_label_name() {
+        assert_eq!(SortMode::Name.label(), "name");
+    }
+
+    #[test]
+    fn sort_mode_label_size_desc() {
+        assert_eq!(SortMode::SizeDesc.label(), "size ↓");
+    }
+
+    #[test]
+    fn sort_mode_label_extension() {
+        assert_eq!(SortMode::Extension.label(), "ext");
+    }
+
+    #[test]
+    fn sort_mode_is_copy() {
+        let a = SortMode::Name;
+        let b = a;
+        assert_eq!(a, b);
+    }
+
+    // ── FsEntry ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn fs_entry_construction_file() {
+        let entry = FsEntry {
+            name: "main.rs".into(),
+            path: PathBuf::from("/src/main.rs"),
+            is_dir: false,
+            size: Some(1024),
+            extension: "rs".into(),
+        };
+        assert_eq!(entry.name, "main.rs");
+        assert_eq!(entry.path, PathBuf::from("/src/main.rs"));
+        assert!(!entry.is_dir);
+        assert_eq!(entry.size, Some(1024));
+        assert_eq!(entry.extension, "rs");
+    }
+
+    #[test]
+    fn fs_entry_construction_directory() {
+        let entry = FsEntry {
+            name: "src".into(),
+            path: PathBuf::from("/src"),
+            is_dir: true,
+            size: None,
+            extension: String::new(),
+        };
+        assert!(entry.is_dir);
+        assert!(entry.size.is_none());
+        assert!(entry.extension.is_empty());
+    }
+
+    #[test]
+    fn fs_entry_equality() {
+        let a = FsEntry {
+            name: "a.txt".into(),
+            path: PathBuf::from("/a.txt"),
+            is_dir: false,
+            size: Some(42),
+            extension: "txt".into(),
+        };
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn fs_entry_no_extension_is_empty_string() {
+        let entry = FsEntry {
+            name: "Makefile".into(),
+            path: PathBuf::from("/Makefile"),
+            is_dir: false,
+            size: Some(256),
+            extension: String::new(),
+        };
+        assert!(entry.extension.is_empty());
+    }
+
+    // ── ExplorerOutcome ───────────────────────────────────────────────────────
+
+    #[test]
+    fn explorer_outcome_dismissed_equals_dismissed() {
+        assert_eq!(ExplorerOutcome::Dismissed, ExplorerOutcome::Dismissed);
+    }
+
+    #[test]
+    fn explorer_outcome_pending_equals_pending() {
+        assert_eq!(ExplorerOutcome::Pending, ExplorerOutcome::Pending);
+    }
+
+    #[test]
+    fn explorer_outcome_unhandled_equals_unhandled() {
+        assert_eq!(ExplorerOutcome::Unhandled, ExplorerOutcome::Unhandled);
+    }
+
+    #[test]
+    fn explorer_outcome_selected_carries_path() {
+        let path = PathBuf::from("/tmp/file.txt");
+        let outcome = ExplorerOutcome::Selected(path.clone());
+        assert_eq!(outcome, ExplorerOutcome::Selected(path));
+    }
+
+    #[test]
+    fn explorer_outcome_selected_neq_dismissed() {
+        let outcome = ExplorerOutcome::Selected(PathBuf::from("/tmp/x"));
+        assert_ne!(outcome, ExplorerOutcome::Dismissed);
+    }
+
+    #[test]
+    fn explorer_outcome_is_clone() {
+        let a = ExplorerOutcome::Pending;
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+}
