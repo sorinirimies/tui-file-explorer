@@ -36,7 +36,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 - 🔃 **Sort modes** — cycle `Name → Size ↓ → Extension` with `s`
 - 🎛️ **Extension filter** — only matching files are selectable; dirs are always navigable
 - 👁️ Toggle hidden dot-file visibility with `.`
-- ⌨️ Full keyboard navigation: `↑`/`↓`/`←`/`→` scroll, vim keys (`h/j/k/l`), `PgUp/PgDn`, `g/G` — arrows never accidentally exit a directory
+- ⌨️ Full keyboard navigation: Miller-columns `←`/`→` (ascend/descend), vim keys (`h/j/k/l`), `↑`/`↓`/`j`/`k`, `PgUp/PgDn`, `g/G` — `→` on a file moves down, never exits the TUI
 - 🎨 **27 named themes** — Catppuccin, Dracula, Nord, Tokyo Night, Kanagawa, Gruvbox, and more
 - 🎛️ **Live theme panel** — press `t` to open a side panel, `[`/`]` to cycle themes
 - 🔧 Fluent builder API for ergonomic embedding — both `FileExplorer` and `DualPane`
@@ -157,9 +157,8 @@ match dual.handle_key(key) {
 | `PgDn` | Jump down 10 rows |
 | `g` / `Home` | Jump to top |
 | `G` / `End` | Jump to bottom |
-| `←` / `→` | Scroll cursor up / down (no navigation side-effects) |
-| `Enter` / `l` | Descend into directory or confirm file |
-| `Backspace` / `h` | Ascend to parent directory |
+| `→` / `l` / `Enter` | Descend into directory; on a file `→` moves cursor down, `l`/`Enter` confirm (exits TUI) |
+| `←` / `h` / `Backspace` | Ascend to parent directory |
 | `Tab` | **Switch active pane** (left ↔ right) |
 | `w` | **Toggle two-pane ↔ single-pane** layout |
 
@@ -198,8 +197,9 @@ match dual.handle_key(key) {
 | Any character | Append to query — list filters live |
 | `Backspace` | Remove last character; empty query exits search |
 | `Esc` | Clear query and exit search |
-| `↑` / `↓` / `←` / `→` | Scroll the filtered results |
-| `Enter` / `l` | Confirm the highlighted entry |
+| `↑` / `↓` / `j` / `k` | Scroll the filtered results |
+| `→` / `Enter` / `l` | Descend into directory or confirm/navigate entry |
+| `←` / `Backspace` / `h` | Ascend to parent directory |
 
 ---
 
