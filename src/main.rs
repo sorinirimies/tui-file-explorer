@@ -44,6 +44,7 @@
 mod app;
 mod fs;
 mod persistence;
+mod shell_init;
 mod ui;
 
 use std::{
@@ -74,16 +75,14 @@ use ui::draw;
     about = "Keyboard-driven two-pane terminal file explorer",
     after_help = "\
 SHELL INTEGRATION:\n\
-  Wrap tfe so Esc/q automatically cd's to the browsed directory:\n\
+  Print and install the shell wrapper so Esc/q cd's to the browsed directory:\n\
 \n\
-    # bash/zsh (~/.bashrc or ~/.zshrc)\n\
-    tfe() { local d; d=$(command tfe \"$@\"); [ -n \"$d\" ] && cd \"$d\"; }\n\
+    tfe --init zsh  >> ~/.zshrc  && source ~/.zshrc\n\
+    tfe --init bash >> ~/.bashrc && source ~/.bashrc\n\
+    tfe --init fish >> ~/.config/fish/functions/tfe.fish\n\
 \n\
-    # fish (~/.config/fish/functions/tfe.fish)\n\
-    function tfe; set d (command tfe $argv); test -n \"$d\" && cd $d; end\n\
-\n\
-  Open selected file in $EDITOR:     tfe | xargs -r $EDITOR\n\
-  NUL-delimited output:              tfe -0 | xargs -0 wc -l"
+  Open selected file in $EDITOR:     command tfe | xargs -r $EDITOR\n\
+  NUL-delimited output:              command tfe -0 | xargs -0 wc -l"
 )]
 struct Cli {
     /// Starting directory [default: current directory]
@@ -121,6 +120,14 @@ struct Cli {
     /// Terminate output with a NUL byte instead of a newline
     #[arg(short = '0', long)]
     null: bool,
+
+    /// Install the shell wrapper for cd-on-exit integration and exit.
+    ///
+    /// Appends the wrapper function to your rc file and prints instructions.
+    /// Supported shells: bash, zsh, fish.
+    /// Example: tfe --init zsh
+    #[arg(long, value_name = "SHELL")]
+    init: Option<String>,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -134,6 +141,34 @@ fn main() {
 
 fn run() -> io::Result<()> {
     let cli = Cli::parse();
+
+    // --init: install the shell wrapper (or print it as fallback) then exit.
+    if let Some(ref shell_name) = cli.init {
+        let shell = match shell_init::Shell::from_str(shell_name) {
+            Some(s) => Some(s),
+            None => {
+                eprintln!("tfe: unrecognised shell '{shell_name}'. Supported: bash, zsh, fish");
+                process::exit(2);
+            }
+        };
+        use shell_init::InitOutcome;
+        match shell_init::install_or_print(shell) {
+            InitOutcome::Installed(path) => {
+                eprintln!("tfe: shell integration installed to {}", path.display());
+                eprintln!("Restart your shell or run: source {}", path.display());
+            }
+            InitOutcome::AlreadyInstalled(path) => {
+                eprintln!(
+                    "tfe: shell integration already present in {}",
+                    path.display()
+                );
+            }
+            InitOutcome::PrintedToStdout | InitOutcome::UnknownShell => {
+                // Diagnostic already printed by install_or_print.
+            }
+        }
+        return Ok(());
+    }
 
     let themes = Theme::all_presets();
 

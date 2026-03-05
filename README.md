@@ -638,34 +638,32 @@ tfe [OPTIONS] [PATH]
 
 ### Shell integration
 
-The killer feature: add a wrapper function to your shell so that pressing
-`Esc` or `q` to dismiss `tfe` **automatically `cd`s your terminal** to
-whichever directory you were browsing.
+The killer feature: press `Esc` or `q` to dismiss `tfe` and your terminal
+**automatically `cd`s** to whichever directory you were browsing.
+
+Run the one-time setup command for your shell:
 
 ```bash
-# bash / zsh — add to ~/.bashrc or ~/.zshrc
-tfe() {
-    local dir
-    dir=$(command tfe "$@")
-    [ -n "$dir" ] && cd "$dir"
-}
+# bash
+tfe --init bash
+
+# zsh
+tfe --init zsh
+
+# fish
+tfe --init fish
 ```
 
-```fish
-# fish — save as ~/.config/fish/functions/tfe.fish
-function tfe
-    set dir (command tfe $argv)
-    if test -n "$dir"
-        cd $dir
-    end
-end
-```
+`--init` appends the wrapper function to your rc file (creating it if it
+doesn't exist), tells you where it wrote, and is idempotent — running it
+twice won't duplicate the snippet.  Then restart your shell or `source` the
+rc file as instructed.
 
 How it works: `tfe` always prints a path to stdout on exit.
 - **Dismiss** (`Esc` / `q`) → prints the active pane's current directory.
 - **File selected** (`Enter` / `l`) → prints the selected file's path.
 
-The wrapper captures whichever path was printed and calls `cd` on it.
+The installed wrapper captures whichever path was printed and calls `cd` on it.
 
 ```bash
 # Open the selected file in $EDITOR (bypasses the wrapper)
