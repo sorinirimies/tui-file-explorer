@@ -48,7 +48,8 @@ mod shell_init;
 mod ui;
 
 use std::{
-    io::{self, stdout},
+    fs::OpenOptions,
+    io::{self, stdout, Write},
     path::PathBuf,
     process,
 };
@@ -233,10 +234,30 @@ fn run() -> io::Result<()> {
     let sort_mode = saved.sort_mode.unwrap_or_default();
 
     // Terminal setup.
+    //
+    // Open /dev/tty directly so the TUI renders on the real terminal even when
+    // stdout is captured by a shell command substitution (e.g. `dir=$(tfe)`).
+    // The final path is written to real stdout after the TUI exits.
+    #[cfg(unix)]
+    let tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+    #[cfg(unix)]
+    let backend = CrosstermBackend::new(&tty);
+    #[cfg(not(unix))]
+    let backend = CrosstermBackend::new(stdout());
+
     enable_raw_mode()?;
-    let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
+
+    #[cfg(unix)]
+    {
+        let mut tty_ref = &tty;
+        execute!(tty_ref, EnterAlternateScreen, EnableMouseCapture)?;
+    }
+    #[cfg(not(unix))]
+    {
+        let mut out = stdout();
+        execute!(out, EnterAlternateScreen, EnableMouseCapture)?;
+    }
+
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(app::AppOptions {
@@ -260,6 +281,9 @@ fn run() -> io::Result<()> {
         DisableMouseCapture
     );
     let _ = terminal.show_cursor();
+    // Drop the terminal (and tty handle) before writing to stdout so the
+    // alternate screen is fully restored before the path appears.
+    drop(terminal);
 
     result?;
 
@@ -299,13 +323,18 @@ fn run() -> io::Result<()> {
         Some(path) => resolve_output_path(path, cli.print_dir),
         None => app.active_pane().current_dir.clone(),
     };
-    fs::emit_path(&output, cli.null)?;
+    // Always write the path to real stdout (not tty) so the shell wrapper
+    // can capture it with $() even though the TUI rendered on /dev/tty.
+    let mut out = stdout();
+    write!(out, "{}", output.display())?;
+    out.write_all(if cli.null { b"\0" } else { b"\n" })?;
+    out.flush()?;
 
     Ok(())
 }
 
-fn run_loop(
-    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+fn run_loop<W: io::Write>(
+    terminal: &mut Terminal<CrosstermBackend<W>>,
     app: &mut App,
 ) -> io::Result<()> {
     loop {

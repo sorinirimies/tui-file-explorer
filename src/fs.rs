@@ -3,13 +3,11 @@
 //! This module contains small, pure filesystem utilities that have no
 //! dependency on application state or terminal rendering:
 //!
-//! * [`copy_dir_all`]       — recursively copy a directory tree.
-//! * [`emit_path`]          — write a path to stdout with a newline or NUL terminator.
+//! * [`copy_dir_all`]        — recursively copy a directory tree.
 //! * [`resolve_output_path`] — apply the `--print-dir` flag to a selected path.
 
 use std::{
-    fs,
-    io::{self, stdout, Write},
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -50,22 +48,6 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
 }
 
 // ── Path output ───────────────────────────────────────────────────────────────
-
-/// Write `path` to stdout followed by either a newline (`\n`) or a NUL byte
-/// (`\0`), then flush.
-///
-/// Pass `null = true` to emit a NUL-terminated record, which is safe to pipe
-/// into `xargs -0` even when paths contain spaces or newlines.
-///
-/// # Errors
-///
-/// Returns an [`io::Error`] if the write or flush fails.
-pub fn emit_path(path: &Path, null: bool) -> io::Result<()> {
-    let mut out = stdout().lock();
-    write!(out, "{}", path.display())?;
-    out.write_all(if null { b"\0" } else { b"\n" })?;
-    out.flush()
-}
 
 /// Resolve the output path from a selected path and the `--print-dir` flag.
 ///
