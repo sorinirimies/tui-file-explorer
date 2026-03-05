@@ -280,28 +280,20 @@ impl FileExplorer {
             }
 
             // ── Ascend (go to parent) ─────────────────────────────────────────
-            // Left arrow scrolls up without ascending; only Backspace / h ascend.
-            KeyCode::Backspace | KeyCode::Char('h') => {
+            // Left arrow / Backspace / h all ascend to the parent directory.
+            KeyCode::Left | KeyCode::Backspace | KeyCode::Char('h') => {
                 self.ascend();
                 ExplorerOutcome::Pending
             }
 
-            // ── Scroll with arrow keys (no navigation side-effects) ───────────
-            // Left / Right arrows move the cursor without entering or leaving
-            // a directory.  They clamp at the top / bottom and never dismiss.
-            KeyCode::Left => {
-                self.move_up();
-                ExplorerOutcome::Pending
-            }
-
-            KeyCode::Right => {
-                self.move_down();
-                ExplorerOutcome::Pending
-            }
+            // ── Navigate right (pure navigation, never exits) ─────────────────
+            // Right arrow descends into a directory; on a file it just moves
+            // the cursor down so the user can keep browsing.
+            KeyCode::Right => self.navigate(),
 
             // ── Confirm / descend ─────────────────────────────────────────────
-            // Enter and l are the only keys that descend into a directory or
-            // confirm a file selection.
+            // Enter / l descend into a directory or confirm (select) a file,
+            // which signals the caller to exit the TUI.
             KeyCode::Enter | KeyCode::Char('l') => self.confirm(),
 
             // ── Toggle hidden files ───────────────────────────────────────────
@@ -528,6 +520,28 @@ impl FileExplorer {
             // Already at root — stay put, do nothing.
             self.status = "Already at the filesystem root.".to_string();
         }
+    }
+
+    /// Navigate into the highlighted entry without ever exiting the TUI.
+    ///
+    /// - **Directory** → descend (same as `confirm` on a dir).
+    /// - **File** → move the cursor down one step so the user can keep
+    ///   browsing without accidentally triggering a selection/exit.
+    fn navigate(&mut self) -> ExplorerOutcome {
+        let Some(entry) = self.entries.get(self.cursor) else {
+            return ExplorerOutcome::Pending;
+        };
+
+        if entry.is_dir {
+            let path = entry.path.clone();
+            self.search_active = false;
+            self.search_query.clear();
+            self.marked.clear();
+            self.navigate_to(path);
+        } else {
+            self.move_down();
+        }
+        ExplorerOutcome::Pending
     }
 
     fn confirm(&mut self) -> ExplorerOutcome {
@@ -1408,50 +1422,154 @@ mod tests {
     }
 
     #[test]
-    fn right_arrow_scrolls_down_not_confirms() {
+    fn right_arrow_descends_into_dir() {
         let tmp = temp_dir_with_files();
         let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
-        // Put cursor on the first file entry.
-        let file_idx = explorer.entries.iter().position(|e| !e.is_dir).unwrap();
-        explorer.cursor = file_idx;
-        // Right arrow must scroll down (Pending), never confirm (Selected).
+        let dir_idx = explorer.entries.iter().position(|e| e.is_dir).unwrap();
+        explorer.cursor = dir_idx;
+        let expected = explorer.entries[dir_idx].path.clone();
         let outcome = explorer.handle_key(key(KeyCode::Right));
         assert_eq!(
             outcome,
             ExplorerOutcome::Pending,
-            "Right arrow should scroll, not confirm"
+            "Right arrow should descend into directory"
+        );
+        assert_eq!(
+            explorer.current_dir, expected,
+            "Right arrow should change into the selected directory"
         );
     }
 
     #[test]
-    fn left_arrow_scrolls_up_not_ascends() {
+    fn right_arrow_on_file_moves_down_not_exits() {
         let tmp = temp_dir_with_files();
         let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        // Pick the first file entry that is not the last entry so cursor can advance.
+        let file_idx = explorer.entries.iter().position(|e| !e.is_dir).unwrap();
+        // Ensure there is an entry after it to move to.
+        assert!(
+            file_idx + 1 < explorer.entries.len(),
+            "fixture must have an entry after the first file"
+        );
+        explorer.cursor = file_idx;
         let original_dir = explorer.current_dir.clone();
-        explorer.cursor = 1;
-        // Left arrow must scroll up (Pending), never ascend.
-        let outcome = explorer.handle_key(key(KeyCode::Left));
+        let outcome = explorer.handle_key(key(KeyCode::Right));
         assert_eq!(
             outcome,
             ExplorerOutcome::Pending,
-            "Left arrow should scroll, not ascend"
+            "Right arrow on a file must never exit (always Pending)"
         );
         assert_eq!(
             explorer.current_dir, original_dir,
-            "Left arrow must not change directory"
+            "Right arrow on a file must not change directory"
         );
-        assert_eq!(explorer.cursor, 0, "Left arrow should move cursor up by 1");
+        assert_eq!(
+            explorer.cursor,
+            file_idx + 1,
+            "Right arrow on a file must advance the cursor by one"
+        );
     }
 
     #[test]
-    fn enter_still_confirms_file() {
+    fn right_arrow_on_file_at_last_entry_does_not_overflow() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let last = explorer.entries.len() - 1;
+        // Force cursor onto the last entry (guaranteed to exist in the fixture).
+        explorer.cursor = last;
+        explorer.handle_key(key(KeyCode::Right));
+        assert_eq!(
+            explorer.cursor, last,
+            "Right arrow at the last entry must not overflow past it"
+        );
+    }
+
+    #[test]
+    fn enter_on_file_still_confirms_and_exits() {
         let tmp = temp_dir_with_files();
         let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
         let file_idx = explorer.entries.iter().position(|e| !e.is_dir).unwrap();
         explorer.cursor = file_idx;
         let expected = explorer.entries[file_idx].path.clone();
         let outcome = explorer.handle_key(key(KeyCode::Enter));
-        assert_eq!(outcome, ExplorerOutcome::Selected(expected));
+        assert_eq!(
+            outcome,
+            ExplorerOutcome::Selected(expected),
+            "Enter on a file should confirm (select) it and exit"
+        );
+    }
+
+    #[test]
+    fn left_arrow_ascends_to_parent() {
+        let tmp = temp_dir_with_files();
+        let subdir = tmp.path().join("subdir");
+        let mut explorer = FileExplorer::new(subdir, vec![]);
+        let outcome = explorer.handle_key(key(KeyCode::Left));
+        assert_eq!(
+            outcome,
+            ExplorerOutcome::Pending,
+            "Left arrow should return Pending after ascending"
+        );
+        assert_eq!(
+            explorer.current_dir,
+            tmp.path(),
+            "Left arrow should ascend to the parent directory"
+        );
+    }
+
+    #[test]
+    fn right_arrow_clears_search_on_dir_descend() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        // Activate search so we can verify navigate() clears it.
+        explorer.search_active = true;
+        explorer.search_query = "sub".to_string();
+        explorer.reload();
+        // The search should have narrowed entries to the subdir.
+        let dir_idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.is_dir)
+            .expect("fixture subdir must match 'sub'");
+        explorer.cursor = dir_idx;
+        explorer.handle_key(key(KeyCode::Right));
+        assert!(
+            !explorer.search_active,
+            "navigate() must deactivate search on directory descend"
+        );
+        assert!(
+            explorer.search_query.is_empty(),
+            "navigate() must clear search query on directory descend"
+        );
+    }
+
+    #[test]
+    fn right_arrow_clears_marks_on_dir_descend() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let dir_idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.is_dir)
+            .expect("fixture has a subdir");
+        // Mark an entry before descending.
+        explorer.toggle_mark();
+        assert!(
+            !explorer.marked.is_empty(),
+            "should have a mark before descend"
+        );
+        // Reset cursor back to the directory entry.
+        explorer.cursor = explorer
+            .entries
+            .iter()
+            .position(|e| e.is_dir)
+            .expect("fixture has a subdir");
+        explorer.handle_key(key(KeyCode::Right));
+        assert!(
+            explorer.marked.is_empty(),
+            "navigate() must clear marks on directory descend"
+        );
+        let _ = dir_idx;
     }
 
     #[test]

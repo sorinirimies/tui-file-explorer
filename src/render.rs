@@ -373,14 +373,8 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: &Theme) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(0), Constraint::Length(46)])
-        .split(area);
-
-    // ── Left panel: hints or active search input ──────────────────────────────
+    // ── Search input (shown instead of status bar while search is active) ─────
     if explorer.search_active {
-        // Show the live search query with a blinking-cursor marker.
         let left_line = Line::from(vec![
             Span::styled(
                 " / ",
@@ -406,21 +400,11 @@ fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.brand)),
         );
-        frame.render_widget(search_para, chunks[0]);
-    } else {
-        let hints =
-            " \u{2191}/\u{2190}/k Up  \u{2193}/\u{2192}/j Down  Enter/l Confirm  Bksp/h Ascend  \
-                     / Search  s Sort  . Hidden  Esc Dismiss";
-        let hints_para = Paragraph::new(Span::styled(hints, Style::default().fg(theme.dim))).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(theme.dim)),
-        );
-        frame.render_widget(hints_para, chunks[0]);
+        frame.render_widget(search_para, area);
+        return;
     }
 
-    // ── Right panel: sort mode + filter info ──────────────────────────────────
+    // ── Sort / filter status (full width) ─────────────────────────────────────
     let status = if explorer.status.is_empty() {
         let filter = if explorer.extension_filter.is_empty() {
             "all".to_string()
@@ -451,5 +435,5 @@ fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.dim)),
         );
-    frame.render_widget(status_para, chunks[1]);
+    frame.render_widget(status_para, area);
 }

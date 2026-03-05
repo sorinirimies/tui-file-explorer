@@ -34,14 +34,22 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     let theme = app.theme().clone();
     let full = frame.area();
 
-    // Vertical split: main area | action bar (3 rows tall).
+    // Vertical split: main area | action bar (6 rows = nav-hints row + status row).
     let v_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(3)])
+        .constraints([Constraint::Min(0), Constraint::Length(6)])
         .split(full);
 
     let main_area = v_chunks[0];
     let action_area = v_chunks[1];
+
+    // Split the action bar vertically into: nav hints (top) | status+shortcuts (bottom).
+    let action_rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Length(3)])
+        .split(action_area);
+    let nav_area = action_rows[0];
+    let status_area = action_rows[1];
 
     // Horizontal split: left pane | [right pane] | [theme panel].
     let mut h_constraints = vec![];
@@ -81,7 +89,8 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     }
 
     // ── Action bar ────────────────────────────────────────────────────────────
-    render_action_bar(frame, action_area, app, &theme);
+    render_nav_hints(frame, nav_area, &theme);
+    render_action_bar(frame, status_area, app, &theme);
 
     // ── Modal overlay ─────────────────────────────────────────────────────────
     if let Some(modal) = &app.modal {
@@ -198,7 +207,57 @@ pub fn render_theme_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 // ── Action bar ────────────────────────────────────────────────────────────────
 
-/// Render the bottom action bar occupying `area`.
+/// Render the full-width navigation hint row (top half of the action bar).
+pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
+    let k = |s: &'static str| {
+        Span::styled(
+            s,
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
+    let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
+    let hints = Line::from(vec![
+        k("↑"),
+        d("/"),
+        k("k"),
+        d(" up  "),
+        k("↓"),
+        d("/"),
+        k("j"),
+        d(" down  "),
+        k("→"),
+        d("/"),
+        k("l"),
+        d("/"),
+        k("Enter"),
+        d(" confirm  "),
+        k("←"),
+        d("/"),
+        k("h"),
+        d("/"),
+        k("Bksp"),
+        d(" ascend  "),
+        k("/"),
+        d(" search  "),
+        k("s"),
+        d(" sort  "),
+        k("."),
+        d(" hidden  "),
+        k("Esc"),
+        d(" dismiss"),
+    ]);
+    let nav_bar = Paragraph::new(hints).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.dim)),
+    );
+    frame.render_widget(nav_bar, area);
+}
+
+/// Render the bottom status/shortcut bar occupying `area`.
 ///
 /// The bar is split into two halves:
 /// - **Left** — clipboard info when something is yanked, otherwise the current
@@ -526,6 +585,20 @@ mod tests {
             18,
             "span count changed — update this test if the action bar was intentionally modified"
         );
+    }
+
+    #[test]
+    fn nav_hints_spans_contain_expected_keys() {
+        // Smoke-test: render_nav_hints must not panic and the global shortcuts
+        // row must still carry the expected labels.
+        let theme = Theme::default();
+        let spans = render_action_bar_spans(&theme);
+        let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        // Navigation keys live in the nav bar, not the shortcuts row — make
+        // sure the shortcuts row still contains its own labels.
+        assert!(text.contains("Tab"), "missing Tab");
+        assert!(text.contains("Spc"), "missing Spc");
+        assert!(text.contains('w'), "missing w (split)");
     }
 
     #[test]

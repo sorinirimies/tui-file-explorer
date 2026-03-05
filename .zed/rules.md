@@ -179,8 +179,10 @@ Every key binding that produces a non-trivial state change needs a test:
 | `d` (with marks) | Raise `Modal::MultiDelete` for all marked paths | `app.rs` |
 | `y` in modal | Confirm delete / multi-delete / overwrite | `app.rs` |
 | any other key in modal | Cancel, set status message | `app.rs` |
-| `Backspace` / `h` | Ascend, clear marks | `explorer.rs` |
-| `Enter` / `l` on dir | Descend, clear marks | `explorer.rs` |
+| `Backspace` / `h` / `←` | Ascend, clear marks | `explorer.rs` |
+| `Enter` / `l` on dir | Descend, clear marks, confirm file (exits TUI) | `explorer.rs` |
+| `→` on dir | Descend, clear search + marks (never exits TUI) | `explorer.rs` |
+| `→` on file | Move cursor down, never exits TUI | `explorer.rs` |
 
 ---
 
