@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-03-05
+
+### Features
+- Cd to browsed directory on dismiss
+
 ## [0.3.0] - 2026-03-05
 
 ### Documentation
@@ -8,6 +13,9 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 - Miller-columns navigation and split action bar
+
+### Miscellaneous
+- Bump version to 0.3.0
 
 ## [0.2.3] - 2026-03-05
 
