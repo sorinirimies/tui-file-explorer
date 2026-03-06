@@ -1,11 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-03-06
+
+### Features
+- Auto-install shell wrapper on first run
+
 ## [0.3.9] - 2026-03-06
 
 ### Bug Fixes
 - Detect hand-written tfe wrappers to prevent duplicate installs
 - Resolve zsh rc file from ZDOTDIR, .zshrc, and .zshenv fallback
+
+### Miscellaneous
+- Bump version to 0.3.9
 
 ## [0.3.8] - 2026-03-06
 
