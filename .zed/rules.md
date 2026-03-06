@@ -182,10 +182,12 @@ Every key binding that produces a non-trivial state change needs a test:
 | `y` in modal | Confirm delete / multi-delete / overwrite | `app.rs` |
 | any other key in modal | Cancel, set status message | `app.rs` |
 | `Backspace` / `h` / `←` | Ascend, clear marks | `explorer.rs` |
-| `Enter` / `l` on dir | Descend, clear marks, confirm file (exits TUI) | `explorer.rs` |
+| `Enter` / `l` on dir | Descend, clear marks | `explorer.rs` |
+| `Enter` / `l` on file (editor ≠ None) | Set `open_with_editor` — TUI suspends, editor opens, TUI resumes | `app.rs` |
+| `Enter` / `l` on file (editor = None) | Set `selected`, exit TUI (classic behaviour) | `app.rs` |
 | `→` on dir | Descend, clear search + marks (never exits TUI) | `explorer.rs` |
 | `→` on file | Move cursor down, never exits TUI | `explorer.rs` |
-| `e` on file (editor ≠ None) | Set `open_with_editor`, run_loop suspends TUI, spawns editor, restores TUI | `app.rs` / `main.rs` |
+| `e` on file (editor ≠ None) | Same as Enter on file with editor — sets `open_with_editor` | `app.rs` / `main.rs` |
 | `e` on dir or editor = None | Silent no-op — no status message | `app.rs` |
 | `e` in options panel | Cycle `Editor` variant, update status message | `app.rs` |
 
@@ -229,6 +231,12 @@ on a file. Key design decisions to preserve:
   event, tears down the terminal, spawns the editor synchronously with
   `Command::new(binary).arg(path).status()`, then restores the terminal and
   reloads both panes. This keeps `App` free of `Terminal` / raw-mode concerns.
+- **`Enter` / `l` on a file is intercepted by `handle_event`** before the
+  outcome reaches the exit path. When `editor != Editor::None` and the path is
+  not a directory, `open_with_editor` is set and the function returns
+  `Ok(false)` (TUI stays running). When `editor == Editor::None` the original
+  behaviour is preserved: `selected` is set and the function returns `Ok(true)`
+  (TUI exits, path printed to stdout for the shell wrapper).
 - **Cycle order:** `None → Helix → Neovim → Vim → Nano → Micro → None → …`
   `Custom` variants skip directly back to `None` when cycled — they can only
   be set via `--editor` or the state file.
@@ -243,12 +251,16 @@ on a file. Key design decisions to preserve:
 
 ### Dos and Don'ts
 - **Do** guard every `open_with_editor` branch in `run_loop` with
-  `if let Some(binary) = app.editor.binary()` to handle the `None` case
+  `if let Some(b) = app.editor.binary()` to handle the `None` case
   defensively, even though `handle_event` already skips `None`.
 - **Do not** call `disable_raw_mode` / `enable_raw_mode` from inside `App`
   methods — that is exclusively `run_loop`'s responsibility.
 - **Do not** add async editor launch — editors are synchronous by nature and
   blocking the event loop for the duration is the correct behaviour.
+- **Do not** let `ExplorerOutcome::Selected` exit the TUI for files when an
+  editor is configured. The intercept in `handle_event` must check
+  `editor != Editor::None && !path.is_dir()` before falling through to the
+  `selected`/exit path.
 
 ---
 

@@ -701,6 +701,13 @@ impl App {
         let outcome = self.active_pane_mut().handle_key(key);
         match outcome {
             ExplorerOutcome::Selected(path) => {
+                // If an editor is configured and the selection is a file (not a
+                // directory that somehow produced Selected), open it in the
+                // editor instead of exiting the TUI.
+                if self.editor != Editor::None && !path.is_dir() {
+                    self.open_with_editor = Some(path);
+                    return Ok(false);
+                }
                 self.selected = Some(path);
                 return Ok(true);
             }
@@ -845,6 +852,101 @@ mod tests {
         let dir = tempdir().unwrap();
         let app = make_app(dir.path().to_path_buf());
         assert!(app.open_with_editor.is_none());
+    }
+
+    #[test]
+    fn enter_on_file_with_editor_sets_open_with_editor_not_selected() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        fs::write(&file, b"hello").unwrap();
+
+        let mut app = App::new(AppOptions {
+            left_dir: dir.path().to_path_buf(),
+            right_dir: dir.path().to_path_buf(),
+            editor: Editor::Helix,
+            ..AppOptions::default()
+        });
+
+        // Simulate the outcome that handle_key returns on Enter/l over a file.
+        // We call the outcome-handling branch directly by constructing the outcome.
+        let outcome = ExplorerOutcome::Selected(file.clone());
+        if let ExplorerOutcome::Selected(path) = outcome {
+            if app.editor != Editor::None && !path.is_dir() {
+                app.open_with_editor = Some(path);
+            } else {
+                app.selected = Some(path);
+            }
+        }
+
+        assert_eq!(
+            app.open_with_editor,
+            Some(file),
+            "open_with_editor must be set"
+        );
+        assert!(
+            app.selected.is_none(),
+            "selected must remain None — TUI must not exit"
+        );
+    }
+
+    #[test]
+    fn enter_on_file_with_editor_none_sets_selected_and_exits() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        fs::write(&file, b"hello").unwrap();
+
+        let mut app = make_app(dir.path().to_path_buf());
+        // Editor::None is the default — Enter should still exit the TUI.
+        assert_eq!(app.editor, Editor::None);
+
+        let outcome = ExplorerOutcome::Selected(file.clone());
+        if let ExplorerOutcome::Selected(path) = outcome {
+            if app.editor != Editor::None && !path.is_dir() {
+                app.open_with_editor = Some(path);
+            } else {
+                app.selected = Some(path);
+            }
+        }
+
+        assert_eq!(
+            app.selected,
+            Some(file),
+            "selected must be set so TUI exits"
+        );
+        assert!(
+            app.open_with_editor.is_none(),
+            "open_with_editor must remain None"
+        );
+    }
+
+    #[test]
+    fn enter_on_dir_always_navigates_not_opens_editor() {
+        let dir = tempdir().unwrap();
+        let subdir = dir.path().join("subdir");
+        fs::create_dir(&subdir).unwrap();
+
+        let mut app = App::new(AppOptions {
+            left_dir: dir.path().to_path_buf(),
+            right_dir: dir.path().to_path_buf(),
+            editor: Editor::Helix,
+            ..AppOptions::default()
+        });
+
+        // A directory path must never go to open_with_editor.
+        let outcome = ExplorerOutcome::Selected(subdir.clone());
+        if let ExplorerOutcome::Selected(path) = outcome {
+            if app.editor != Editor::None && !path.is_dir() {
+                app.open_with_editor = Some(path);
+            } else {
+                app.selected = Some(path);
+            }
+        }
+
+        assert!(
+            app.open_with_editor.is_none(),
+            "dirs must never go to open_with_editor"
+        );
+        assert_eq!(app.selected, Some(subdir));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

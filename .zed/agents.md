@@ -112,6 +112,15 @@ update
 - Persistence key strings: `none`, `helix`, `nvim`, `vim`, `nano`, `micro`,
   `custom:<binary>`.
 - `Custom` variants jump back to `None` on cycle.
+- **`Enter` / `l` on a file is intercepted in `handle_event`** before the
+  outcome reaches the TUI-exit path:
+  - `editor != Editor::None && !path.is_dir()` → set `open_with_editor`, return
+    `Ok(false)` (TUI stays running, editor opens, TUI resumes).
+  - Otherwise → set `selected`, return `Ok(true)` (classic exit behaviour,
+    path printed to stdout for the shell wrapper).
+- **Never** let `ExplorerOutcome::Selected` exit the TUI for a file when an
+  editor is configured. Always check `editor != Editor::None && !path.is_dir()`
+  before falling through to the `selected`/exit path.
 
 ### Hermetic tests for shell/env code
 - Every function that reads `$SHELL`, `$HOME`, `$ZDOTDIR`, or `$XDG_CONFIG_HOME`
