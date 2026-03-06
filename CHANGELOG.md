@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-03-06
+
+### Features
+- Show version label in header bottom-right of active pane
+
 ## [0.4.1] - 2026-03-06
 
 ### Bug Fixes
 - Default cd_on_exit to true now that wrapper is auto-installed
+
+### Miscellaneous
+- Bump version to 0.4.1
 
 ## [0.4.0] - 2026-03-06
 
