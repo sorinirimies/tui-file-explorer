@@ -275,7 +275,7 @@ fn run() -> io::Result<()> {
     } else if cli.no_cd {
         false
     } else {
-        saved.cd_on_exit.unwrap_or(false)
+        saved.cd_on_exit.unwrap_or(true)
     };
 
     // Resolve editor: CLI flag > persisted value > compiled-in default (Helix).
