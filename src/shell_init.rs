@@ -327,6 +327,7 @@ pub fn install(shell: Shell, rc: &Path) -> io::Result<()> {
 ///   prints one line to stderr.
 pub fn auto_install() {
     auto_install_with(
+        None,
         home().as_deref(),
         xdg_config_home().as_deref(),
         zdotdir().as_deref(),
@@ -335,15 +336,19 @@ pub fn auto_install() {
     );
 }
 
-/// Like [`auto_install`] but with explicit path overrides for hermetic testing.
+/// Like [`auto_install`] but with explicit overrides for hermetic testing.
+///
+/// `shell` — pass `Some(Shell::Zsh)` etc. to skip `$SHELL` detection;
+/// `None` falls back to [`detect_shell`] (production behaviour).
 pub(crate) fn auto_install_with(
+    shell: Option<Shell>,
     home: Option<&Path>,
     xdg_config_home: Option<&Path>,
     zdotdir: Option<&Path>,
     bash_profile: Option<&Path>,
     zshenv: Option<&Path>,
 ) {
-    let shell = match detect_shell() {
+    let shell = match shell.or_else(detect_shell) {
         Some(s) => s,
         None => return, // unrecognised shell — do nothing silently
     };
@@ -1050,7 +1055,7 @@ mod tests {
         // Simulate $SHELL=zsh by using auto_install_with directly.
         // Before: wrapper absent.
         assert!(!is_installed(&rc));
-        auto_install_with(Some(dir.path()), None, None, None, None);
+        auto_install_with(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
         // After: wrapper present.
         assert!(
             is_installed(&rc),
@@ -1066,7 +1071,7 @@ mod tests {
         install(Shell::Zsh, &rc).unwrap();
         let before = fs::read_to_string(&rc).unwrap();
         // Run auto_install — must be a no-op.
-        auto_install_with(Some(dir.path()), None, None, None, None);
+        auto_install_with(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
         let after = fs::read_to_string(&rc).unwrap();
         assert_eq!(
             before, after,
@@ -1081,7 +1086,14 @@ mod tests {
         // Install the wrapper into .zshenv (no .zshrc present).
         install(Shell::Zsh, &zshenv).unwrap();
         // auto_install should detect it in .zshenv and not create .zshrc.
-        auto_install_with(Some(dir.path()), None, None, None, Some(&zshenv));
+        auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            Some(&zshenv),
+        );
         let zshrc = dir.path().join(".zshrc");
         assert!(
             !zshrc.exists(),
@@ -1097,7 +1109,7 @@ mod tests {
         fs::write(&zprofile, format!("{SENTINEL}\ntfe() {{}}\n")).unwrap();
         // auto_install_with checks .zprofile as a candidate — should skip.
         // We pass zshenv=None so it won't find it there.
-        auto_install_with(Some(dir.path()), None, None, None, None);
+        auto_install_with(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
         // .zshrc should not have been created (wrapper found in .zprofile).
         // Note: auto_install_with checks .zprofile via the candidates list
         // but rc_path_with would still pick .zshrc — the key invariant is
@@ -1119,7 +1131,14 @@ mod tests {
         let zdotdir = dir.path().join("zdotdir");
         fs::create_dir(&zdotdir).unwrap();
         let rc = zdotdir.join(".zshrc");
-        auto_install_with(Some(dir.path()), None, Some(&zdotdir), None, None);
+        auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            Some(&zdotdir),
+            None,
+            None,
+        );
         assert!(
             is_installed(&rc),
             "auto_install must write to $ZDOTDIR/.zshrc when ZDOTDIR is set"
@@ -1138,7 +1157,14 @@ mod tests {
         let zshenv = dir.path().join(".zshenv");
         fs::write(&zshenv, b"# existing zshenv\n").unwrap();
         // No .zshrc — should fall back to .zshenv.
-        auto_install_with(Some(dir.path()), None, None, None, Some(&zshenv));
+        auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            Some(&zshenv),
+        );
         assert!(
             is_installed(&zshenv),
             "auto_install must install into .zshenv when .zshrc is absent"
@@ -1151,7 +1177,7 @@ mod tests {
         // We can't safely mutate $SHELL in a parallel test, so we verify the
         // None-home path (unresolvable rc) is handled without panic instead.
         // The real unrecognised-shell path is covered by detect_shell tests.
-        auto_install_with(None, None, None, None, None);
+        auto_install_with(None, None, None, None, None, None);
         // Must not panic — that is the assertion.
     }
 }
