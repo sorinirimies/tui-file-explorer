@@ -189,12 +189,43 @@ fn xdg_config_home() -> Option<PathBuf> {
 
 /// Return `true` when the `tfe` wrapper snippet is already present in `path`.
 ///
-/// Detection is based on the [`SENTINEL`] string, not full shell parsing.
+/// Two signatures are recognised so that manually-added wrappers (without the
+/// sentinel) are never duplicated alongside a sentinel-based install:
+///
+/// 1. The [`SENTINEL`] comment `# tfe-shell-init` — present in all wrappers
+///    written by `--init`.
+/// 2. The bare function signatures `tfe()` (bash/zsh) and `function tfe`
+///    (fish) preceded by `command tfe` on any nearby line — catches wrappers
+///    that were copy-pasted by hand before `--init` existed.
+///
 /// Returns `false` when `path` does not exist or cannot be read.
 pub fn is_installed(path: &Path) -> bool {
-    fs::read_to_string(path)
-        .map(|content| content.contains(SENTINEL))
-        .unwrap_or(false)
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    // Fast path: sentinel present.
+    if content.contains(SENTINEL) {
+        return true;
+    }
+    // Slow path: detect a hand-written wrapper by looking for the tfe function
+    // body pattern — the function declaration followed by `command tfe` within
+    // a short window of lines.
+    let lines: Vec<&str> = content.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed == "tfe() {" || trimmed == "function tfe" {
+            // Check the next 6 lines for `command tfe`.
+            let window_end = (i + 7).min(lines.len());
+            if lines[i..window_end]
+                .iter()
+                .any(|l| l.contains("command tfe"))
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 // ── Install ───────────────────────────────────────────────────────────────────
@@ -488,6 +519,54 @@ mod tests {
     }
 
     // ── is_installed ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn is_installed_detects_sentinel_based_wrapper() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join(".zshrc");
+        install(Shell::Zsh, &rc).unwrap();
+        assert!(is_installed(&rc));
+    }
+
+    #[test]
+    fn is_installed_detects_hand_written_bash_wrapper() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join(".zshrc");
+        fs::write(
+            &rc,
+            "# tfe — cd to the directory browsed when dismissing the file explorer\n\
+             tfe() {\n\
+             \x20   local dir\n\
+             \x20   dir=$(command tfe \"$@\")\n\
+             \x20   [ -n \"$dir\" ] && cd \"$dir\"\n\
+             }\n",
+        )
+        .unwrap();
+        assert!(
+            is_installed(&rc),
+            "hand-written bash wrapper must be detected"
+        );
+    }
+
+    #[test]
+    fn is_installed_detects_hand_written_fish_wrapper() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join("tfe.fish");
+        fs::write(
+            &rc,
+            "function tfe\n\
+             \x20   set dir (command tfe $argv)\n\
+             \x20   if test -n \"$dir\"\n\
+             \x20       cd $dir\n\
+             \x20   end\n\
+             end\n",
+        )
+        .unwrap();
+        assert!(
+            is_installed(&rc),
+            "hand-written fish wrapper must be detected"
+        );
+    }
 
     #[test]
     fn is_installed_returns_false_for_missing_file() {
