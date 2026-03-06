@@ -406,26 +406,75 @@ fn run_loop<W: io::Write>(
         }
 
         // ── Editor launch ─────────────────────────────────────────────────────
-        // `handle_event` sets `open_with_editor` when the user presses `e` on
-        // a file.  We handle it here (in run_loop) because we need access to
-        // the Terminal to tear it down and restore it.
+        // `handle_event` sets `open_with_editor` when the user presses `e` or
+        // Enter on a file.  We handle it here (in run_loop) because we need
+        // access to the Terminal to tear it down and restore it.
         if let Some(path) = app.open_with_editor.take() {
             // Defensive guard: Editor::None should never set open_with_editor,
             // but if it somehow does, silently discard and move on.
-            if let Some(binary) = app.editor.binary() {
-                let binary = binary.to_string();
+            if let Some(binary_str) = app.editor.binary() {
                 let editor_label = app.editor.label().to_string();
 
+                // Shell-split the binary string so that Custom("code --wait")
+                // is correctly parsed into binary="code" + extra_arg="--wait".
+                // We do a minimal whitespace split — no shell quoting needed
+                // since the user-supplied value is already a single token or
+                // was quoted by the shell before reaching us.
+                let mut parts = binary_str.split_whitespace();
+                let binary = parts.next().unwrap_or(binary_str).to_string();
+                let extra_args: Vec<&str> = parts.collect();
+
                 // 1. Tear down the TUI so the editor gets a clean terminal.
+                //    Write to the terminal backend (same handle as the TUI) so
+                //    we don't accidentally open a second stderr file descriptor.
                 let _ = disable_raw_mode();
-                let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture);
+                let _ = execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                );
 
                 // 2. Spawn the editor synchronously and wait for it to exit.
-                let status = std::process::Command::new(&binary).arg(&path).status();
+                //
+                //    Cross-platform notes:
+                //    - macOS / Linux: Command::new(binary) works for any binary
+                //      on $PATH. Shell functions and aliases are NOT available
+                //      (Command bypasses the shell), but that is fine — editors
+                //      are always real executables.
+                //    - Windows: Many editors (code, nvim via scoop/winget,
+                //      micro) are installed as `.cmd` or `.bat` shell scripts.
+                //      Command::new("code") will NOT find them because Windows
+                //      only runs `.cmd` files through cmd.exe. We therefore
+                //      route all launches through `cmd /C` on Windows so that
+                //      PATH resolution and .cmd shims work correctly.
+                let status = {
+                    #[cfg(windows)]
+                    {
+                        // cmd /C <binary> [extra_args…] <file>
+                        let mut cmd = std::process::Command::new("cmd");
+                        cmd.arg("/C").arg(&binary);
+                        for a in &extra_args {
+                            cmd.arg(a);
+                        }
+                        cmd.arg(&path).status()
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        let mut cmd = std::process::Command::new(&binary);
+                        for a in &extra_args {
+                            cmd.arg(a);
+                        }
+                        cmd.arg(&path).status()
+                    }
+                };
 
                 // 3. Restore the TUI regardless of whether the editor succeeded.
                 let _ = enable_raw_mode();
-                let _ = execute!(io::stderr(), EnterAlternateScreen, EnableMouseCapture);
+                let _ = execute!(
+                    terminal.backend_mut(),
+                    EnterAlternateScreen,
+                    EnableMouseCapture
+                );
                 let _ = terminal.clear();
 
                 // 4. Reload both panes so any on-disk changes are visible.

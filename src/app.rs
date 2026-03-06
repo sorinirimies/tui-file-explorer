@@ -53,9 +53,14 @@ pub enum Editor {
 }
 
 impl Editor {
-    /// Return the binary name used to launch this editor.
+    /// Return the launch string for this editor.
     ///
     /// Returns `None` for `Editor::None` — the caller should skip the launch.
+    ///
+    /// For `Custom` variants the returned string may contain embedded
+    /// arguments (e.g. `"code --wait"`).  The caller is responsible for
+    /// splitting on whitespace to separate the binary from its arguments
+    /// before passing them to `std::process::Command`.
     pub fn binary(&self) -> Option<&str> {
         match self {
             Editor::None => Option::None,
