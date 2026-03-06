@@ -223,10 +223,14 @@ pub fn render_theme_panel(frame: &mut Frame, area: Rect, app: &App) {
 pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
 
-    // Two-row vertical layout: header | options list.
+    // Three-row vertical layout: header | boolean toggles | editor section.
     let v = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(5), // 3 boolean rows + top/bottom border
+            Constraint::Length(4), // separator row + 1 editor row + top/bottom border
+        ])
         .split(area);
 
     // Header.
@@ -260,7 +264,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     );
     frame.render_widget(header, v[0]);
 
-    // Options list — each row: key | name | value.
+    // Boolean toggles list — each row: key | name | value.
     let on_style = Style::default()
         .fg(theme.success)
         .add_modifier(Modifier::BOLD);
@@ -276,7 +280,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
         ("T", "theme panel", app.show_theme_panel),
     ];
 
-    let items: Vec<ListItem> = opts
+    let bool_items: Vec<ListItem> = opts
         .iter()
         .map(|(key, label, enabled)| {
             let (indicator, val_style) = if *enabled {
@@ -294,13 +298,41 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
         })
         .collect();
 
-    let list = List::new(items).block(
+    let bool_list = List::new(bool_items).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.accent)),
     );
-    frame.render_widget(list, v[1]);
+    frame.render_widget(bool_list, v[1]);
+
+    // Editor section — shows the active editor and lets the user cycle it with e.
+    // When no editor is configured the label is rendered in dim so it reads as
+    // "inactive", matching how boolean toggles look when they are off.
+    let editor_label = app.editor.label().to_string();
+    let editor_val_style = if app.editor == crate::app::Editor::None {
+        off_style
+    } else {
+        Style::default()
+            .fg(theme.success)
+            .add_modifier(Modifier::BOLD)
+    };
+    let editor_item = ListItem::new(Line::from(vec![
+        Span::raw(" "),
+        Span::styled("e ", key_style),
+        Span::raw("  "),
+        Span::styled(format!("{:<14}", "cycle"), label_style),
+        Span::styled(editor_label, editor_val_style),
+    ]));
+
+    let editor_list = List::new(vec![editor_item]).block(
+        Block::default()
+            .title(Span::styled(" Editor ", Style::default().fg(theme.dim)))
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.accent)),
+    );
+    frame.render_widget(editor_list, v[2]);
 }
 
 // ── Action bar ────────────────────────────────────────────────────────────────
@@ -461,6 +493,8 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
         d(" paste  "),
         k("d"),
         d(" del  "),
+        k("e"),
+        d(" edit  "),
         k("["),
         d("/"),
         k("t"),
@@ -686,10 +720,10 @@ mod tests {
     fn action_bar_spans_count_is_stable() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        // 10 key spans + 10 description spans = 20 total.
+        // 11 key spans + 11 description spans = 22 total.
         assert_eq!(
             spans.len(),
-            20,
+            22,
             "span count changed — update this test if the action bar was intentionally modified"
         );
     }
@@ -699,7 +733,7 @@ mod tests {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
         // Key spans are the ones whose content matches a known key label.
-        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w", "O"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "e", "[", "t", "w", "O"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -716,8 +750,8 @@ mod tests {
     fn action_bar_spans_description_spans_are_not_bold() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w", "O"];
-        // Every span that is NOT a key label should not carry BOLD.
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "e", "[", "t", "w", "O"];
+        // Every span
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
                 assert!(
@@ -733,7 +767,7 @@ mod tests {
     fn action_bar_spans_key_spans_use_accent_colour() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w", "O"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "e", "[", "t", "w", "O"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -751,7 +785,7 @@ mod tests {
     fn action_bar_spans_description_spans_use_dim_colour() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "[", "t", "w", "O"];
+        let key_labels = ["Tab", "Spc", "y", "x", "p", "d", "e", "[", "t", "w", "O"];
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
                 assert_eq!(

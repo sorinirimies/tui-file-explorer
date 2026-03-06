@@ -7,6 +7,7 @@
 //! * [`ClipOp`]        — whether a yanked entry is being copied or cut.
 //! * [`ClipboardItem`] — what is currently in the clipboard.
 //! * [`Modal`]         — an optional blocking confirmation dialog.
+//! * [`Editor`]        — which editor to launch when `e` is pressed on a file.
 //! * [`App`]           — the top-level state struct that drives the event loop.
 
 use std::{
@@ -31,6 +32,128 @@ use std::{
 ///     ..AppOptions::default()
 /// });
 /// ```
+// ── Editor ────────────────────────────────────────────────────────────────────
+
+/// The editor that is launched when the user presses `e` on a file.
+///
+/// # Persistence
+///
+/// Serialised to/from a short key string in the `tfe` state file:
+///
+/// | Variant            | Key string        |
+/// |--------------------|-------------------|
+/// | `None`             | `none`            |
+/// | `Helix`            | `helix`           |
+/// | `Neovim`           | `nvim`            |
+/// | `Vim`              | `vim`             |
+/// | `Nano`             | `nano`            |
+/// | `Micro`            | `micro`           |
+/// | `Custom(s)`        | `custom:<s>`      |
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Editor {
+    /// No editor — pressing `e` on a file is a silent no-op.
+    None,
+    /// [Helix](https://helix-editor.com/) — `hx`
+    Helix,
+    /// [Neovim](https://neovim.io/) — `nvim`
+    Neovim,
+    /// [Vim](https://www.vim.org/) — `vim`
+    Vim,
+    /// [Nano](https://www.nano-editor.org/) — `nano`
+    Nano,
+    /// [Micro](https://micro-editor.github.io/) — `micro`
+    Micro,
+    /// A user-supplied binary name or path.
+    Custom(String),
+}
+
+impl Default for Editor {
+    fn default() -> Self {
+        Editor::None
+    }
+}
+
+impl Editor {
+    /// Return the binary name used to launch this editor.
+    ///
+    /// Returns `None` for `Editor::None` — the caller should skip the launch.
+    pub fn binary(&self) -> Option<&str> {
+        match self {
+            Editor::None => Option::None,
+            Editor::Helix => Some("hx"),
+            Editor::Neovim => Some("nvim"),
+            Editor::Vim => Some("vim"),
+            Editor::Nano => Some("nano"),
+            Editor::Micro => Some("micro"),
+            Editor::Custom(s) => Some(s.as_str()),
+        }
+    }
+
+    /// Return a short human-readable label (shown in the options panel).
+    pub fn label(&self) -> &str {
+        match self {
+            Editor::None => "none",
+            Editor::Helix => "helix",
+            Editor::Neovim => "nvim",
+            Editor::Vim => "vim",
+            Editor::Nano => "nano",
+            Editor::Micro => "micro",
+            Editor::Custom(s) => s.as_str(),
+        }
+    }
+
+    /// Cycle to the next editor in the fixed rotation.
+    ///
+    /// Order: None → Helix → Neovim → Vim → Nano → Micro → None → …
+    ///
+    /// `Custom` variants skip back to `None` — the user must set them via
+    /// `--editor` or direct persistence editing.
+    pub fn cycle(&self) -> Editor {
+        match self {
+            Editor::None => Editor::Helix,
+            Editor::Helix => Editor::Neovim,
+            Editor::Neovim => Editor::Vim,
+            Editor::Vim => Editor::Nano,
+            Editor::Nano => Editor::Micro,
+            Editor::Micro => Editor::None,
+            Editor::Custom(_) => Editor::None,
+        }
+    }
+
+    /// Serialise to the on-disk key string.
+    pub fn to_key(&self) -> String {
+        match self {
+            Editor::None => "none".to_string(),
+            Editor::Helix => "helix".to_string(),
+            Editor::Neovim => "nvim".to_string(),
+            Editor::Vim => "vim".to_string(),
+            Editor::Nano => "nano".to_string(),
+            Editor::Micro => "micro".to_string(),
+            Editor::Custom(s) => format!("custom:{s}"),
+        }
+    }
+
+    /// Deserialise from the on-disk key string.
+    ///
+    /// Returns `None` (the Rust `Option`) for an empty string; unknown values
+    /// are treated as `Custom` so that third-party editors survive round-trips.
+    pub fn from_key(s: &str) -> Option<Editor> {
+        if s.is_empty() {
+            return Option::None;
+        }
+        Some(match s {
+            "none" => Editor::None,
+            "helix" => Editor::Helix,
+            "nvim" => Editor::Neovim,
+            "vim" => Editor::Vim,
+            "nano" => Editor::Nano,
+            "micro" => Editor::Micro,
+            _ if s.starts_with("custom:") => Editor::Custom(s["custom:".len()..].to_string()),
+            other => Editor::Custom(other.to_string()),
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AppOptions {
     /// Starting directory for the left pane.
@@ -51,6 +174,8 @@ pub struct AppOptions {
     pub sort_mode: SortMode,
     /// Whether cd-on-exit is enabled.
     pub cd_on_exit: bool,
+    /// Which editor to open when the user presses `e` on a file.
+    pub editor: Editor,
 }
 
 impl Default for AppOptions {
@@ -65,6 +190,7 @@ impl Default for AppOptions {
             single_pane: false,
             sort_mode: SortMode::default(),
             cd_on_exit: false,
+            editor: Editor::default(),
         }
     }
 }
@@ -191,6 +317,12 @@ pub struct App {
     pub status_msg: String,
     /// Whether cd-on-exit is enabled (dismiss prints cwd to stdout).
     pub cd_on_exit: bool,
+    /// Which editor to open when the user presses `e` on a file.
+    pub editor: Editor,
+    /// When `Some`, the run-loop should suspend the TUI, open this path in
+    /// `self.editor`, then restore the TUI.  Set by the `e` key handler;
+    /// cleared by `run_loop` after the editor exits.
+    pub open_with_editor: Option<PathBuf>,
 }
 
 impl App {
@@ -220,6 +352,8 @@ impl App {
             selected: None,
             status_msg: String::new(),
             cd_on_exit: opts.cd_on_exit,
+            editor: opts.editor,
+            open_with_editor: None,
         }
     }
 
@@ -547,6 +681,23 @@ impl App {
                 self.prompt_delete();
                 return Ok(false);
             }
+            // Open in editor — when options panel is open, cycle the editor;
+            // otherwise open the highlighted file in the configured editor.
+            KeyCode::Char('e') if key.modifiers.is_empty() => {
+                if self.show_options_panel {
+                    self.editor = self.editor.cycle();
+                    self.status_msg = format!("Editor: {}", self.editor.label());
+                } else if self.editor != Editor::None {
+                    if let Some(entry) = self.active_pane().current_entry() {
+                        if !entry.path.is_dir() {
+                            self.open_with_editor = Some(entry.path.clone());
+                        }
+                        // Silently ignore dirs — no status message per spec.
+                    }
+                }
+                // Editor::None on a file is also a silent no-op.
+                return Ok(false);
+            }
             _ => {}
         }
 
@@ -580,6 +731,126 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    // ── Editor tests ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn editor_default_is_none() {
+        assert_eq!(Editor::default(), Editor::None);
+    }
+
+    #[test]
+    fn editor_binary_none_returns_option_none() {
+        assert_eq!(Editor::None.binary(), Option::None);
+    }
+
+    #[test]
+    fn editor_binary_names() {
+        assert_eq!(Editor::Helix.binary(), Some("hx"));
+        assert_eq!(Editor::Neovim.binary(), Some("nvim"));
+        assert_eq!(Editor::Vim.binary(), Some("vim"));
+        assert_eq!(Editor::Nano.binary(), Some("nano"));
+        assert_eq!(Editor::Micro.binary(), Some("micro"));
+        assert_eq!(Editor::Custom("code".into()).binary(), Some("code"));
+    }
+
+    #[test]
+    fn editor_label_names() {
+        assert_eq!(Editor::None.label(), "none");
+        assert_eq!(Editor::Helix.label(), "helix");
+        assert_eq!(Editor::Neovim.label(), "nvim");
+        assert_eq!(Editor::Vim.label(), "vim");
+        assert_eq!(Editor::Nano.label(), "nano");
+        assert_eq!(Editor::Micro.label(), "micro");
+        assert_eq!(Editor::Custom("code".into()).label(), "code");
+    }
+
+    #[test]
+    fn editor_cycle_order() {
+        assert_eq!(Editor::None.cycle(), Editor::Helix);
+        assert_eq!(Editor::Helix.cycle(), Editor::Neovim);
+        assert_eq!(Editor::Neovim.cycle(), Editor::Vim);
+        assert_eq!(Editor::Vim.cycle(), Editor::Nano);
+        assert_eq!(Editor::Nano.cycle(), Editor::Micro);
+        assert_eq!(Editor::Micro.cycle(), Editor::None);
+    }
+
+    #[test]
+    fn editor_custom_cycle_resets_to_none() {
+        assert_eq!(Editor::Custom("code".into()).cycle(), Editor::None);
+    }
+
+    #[test]
+    fn editor_cycle_full_loop_returns_to_start() {
+        let mut e = Editor::None;
+        // 6 steps through the fixed variants should wrap back to None.
+        for _ in 0..6 {
+            e = e.cycle();
+        }
+        assert_eq!(e, Editor::None);
+    }
+
+    #[test]
+    fn editor_to_key_round_trips() {
+        for e in [
+            Editor::None,
+            Editor::Helix,
+            Editor::Neovim,
+            Editor::Vim,
+            Editor::Nano,
+            Editor::Micro,
+            Editor::Custom("code".into()),
+        ] {
+            let key = e.to_key();
+            assert_eq!(Editor::from_key(&key), Some(e));
+        }
+    }
+
+    #[test]
+    fn editor_none_serialises_as_none_key() {
+        assert_eq!(Editor::None.to_key(), "none");
+        assert_eq!(Editor::from_key("none"), Some(Editor::None));
+    }
+
+    #[test]
+    fn editor_from_key_empty_returns_none() {
+        assert_eq!(Editor::from_key(""), None);
+    }
+
+    #[test]
+    fn editor_from_key_unknown_is_custom() {
+        assert_eq!(
+            Editor::from_key("emacs"),
+            Some(Editor::Custom("emacs".into()))
+        );
+    }
+
+    #[test]
+    fn editor_from_key_custom_prefix_strips_prefix() {
+        assert_eq!(
+            Editor::from_key("custom:code"),
+            Some(Editor::Custom("code".into()))
+        );
+    }
+
+    #[test]
+    fn app_options_default_editor_is_none() {
+        assert_eq!(AppOptions::default().editor, Editor::None);
+    }
+
+    #[test]
+    fn app_new_editor_field_is_from_options() {
+        let dir = tempdir().unwrap();
+        let app = make_app(dir.path().to_path_buf());
+        assert_eq!(app.editor, Editor::None);
+    }
+
+    #[test]
+    fn app_new_open_with_editor_is_none() {
+        let dir = tempdir().unwrap();
+        let app = make_app(dir.path().to_path_buf());
+        assert!(app.open_with_editor.is_none());
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

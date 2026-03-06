@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.3.7] - 2026-03-06
+
+### Features
+- Add `Editor` enum (`None`, `Helix`, `Neovim`, `Vim`, `Nano`, `Micro`, `Custom(String)`) to control which editor is launched when pressing `e` on a file
+- `Editor::None` is the default — the feature is fully opt-in; pressing `e` is a silent no-op until an editor is selected
+- Press `e` in the options panel (`O`) to cycle through editors: None → Helix → Neovim → Vim → Nano → Micro → None → …
+- Press `e` on a file in the explorer to suspend the TUI, open the file in the configured editor, then automatically restore the TUI and reload both panes
+- Add `--editor <EDITOR>` CLI flag to override the persisted editor for a session (e.g. `tfe --editor nvim`, `tfe --editor "code --wait"`)
+- Persist the selected editor in the state file (`editor=helix`, `editor=nvim`, `editor=custom:code`, etc.)
+- Options panel grows a new **Editor** section showing the active editor; label is dim when `none`, green+bold when an editor is selected
+- Action bar gains `e edit` hint between `d del` and `[ / t theme`
+
+### Testing
+- 15 new unit tests covering `Editor` enum methods (`binary`, `label`, `cycle`, `to_key`, `from_key`), full cycle loop invariant, `AppOptions`/`App` default fields, and persistence round-trips
+
 ## [0.3.6] - 2026-03-05
 
 ### Bug Fixes

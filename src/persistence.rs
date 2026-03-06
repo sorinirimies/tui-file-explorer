@@ -39,6 +39,7 @@ const KEY_SORT_MODE: &str = "sort_mode";
 const KEY_SHOW_HIDDEN: &str = "show_hidden";
 const KEY_SINGLE_PANE: &str = "single_pane";
 const KEY_CD_ON_EXIT: &str = "cd_on_exit";
+const KEY_EDITOR: &str = "editor";
 
 // ── AppState ──────────────────────────────────────────────────────────────────
 
@@ -91,6 +92,12 @@ pub struct AppState {
     /// on dismiss so the shell wrapper can `cd` to it.  When `false` (default),
     /// dismissing without a selection prints nothing and exits with code 1.
     pub cd_on_exit: Option<bool>,
+
+    /// The editor to use when the user presses `e` on a file.
+    ///
+    /// Serialised as a short key string (e.g. `"helix"`, `"nvim"`,
+    /// `"custom:code"`).  `None` means "use the compiled-in default" (Helix).
+    pub editor: Option<String>,
 }
 
 // ── Config-dir helpers ────────────────────────────────────────────────────────
@@ -203,6 +210,9 @@ pub(crate) fn load_state_from(path: &Path) -> AppState {
             KEY_CD_ON_EXIT => {
                 state.cd_on_exit = value.parse::<bool>().ok();
             }
+            KEY_EDITOR if !value.is_empty() => {
+                state.editor = Some(value.to_string());
+            }
             _ => {
                 // Forward-compatible: unknown keys are silently ignored.
             }
@@ -243,6 +253,9 @@ pub(crate) fn save_state_to(path: &Path, state: &AppState) -> io::Result<()> {
     }
     if let Some(cd) = state.cd_on_exit {
         out.push_str(&format!("{KEY_CD_ON_EXIT}={cd}\n"));
+    }
+    if let Some(ref editor) = state.editor {
+        out.push_str(&format!("{KEY_EDITOR}={editor}\n"));
     }
 
     fs::write(path, out)
@@ -430,6 +443,7 @@ mod tests {
             show_hidden: Some(true),
             single_pane: Some(false),
             cd_on_exit: Some(true),
+            editor: Some("nvim".into()),
         };
         save_state_to(&path, &original).unwrap();
         let loaded = load_state_from(&path);

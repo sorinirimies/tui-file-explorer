@@ -35,6 +35,8 @@
 //! tfe --single-pane                # start in single-pane mode
 //! tfe --show-themes                # open theme panel on startup
 //! tfe --list-themes                # list all themes and exit
+//! tfe --editor nvim                # set editor for the e key
+//! tfe --editor "code --wait"       # custom editor (quoted)
 //! ```
 //!
 //! Exit codes:
@@ -46,6 +48,8 @@ mod fs;
 mod persistence;
 mod shell_init;
 mod ui;
+
+use app::Editor;
 
 use std::{
     io::{self, stdout, Write},
@@ -145,6 +149,18 @@ struct Cli {
     /// print nothing and exit with code 1.
     #[arg(long = "no-cd", overrides_with = "cd_on_exit")]
     no_cd: bool,
+
+    /// Editor to open when pressing `e` on a file.
+    ///
+    /// Accepted values: helix (hx), nvim, vim, nano, micro, or any binary
+    /// name / path.  Overrides the persisted setting for this session only.
+    ///
+    /// Examples:
+    ///   tfe --editor nvim
+    ///   tfe --editor vim
+    ///   tfe --editor "code --wait"
+    #[arg(long, value_name = "EDITOR")]
+    editor: Option<String>,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -258,17 +274,26 @@ fn run() -> io::Result<()> {
         saved.cd_on_exit.unwrap_or(false)
     };
 
+    // Resolve editor: CLI flag > persisted value > compiled-in default (Helix).
+    let editor = if let Some(ref raw) = cli.editor {
+        Editor::from_key(raw).unwrap_or_else(|| Editor::Custom(raw.clone()))
+    } else if let Some(ref raw) = saved.editor {
+        Editor::from_key(raw).unwrap_or_default()
+    } else {
+        Editor::default()
+    };
+
     // Terminal setup.
     //
     // Render the TUI on stderr rather than stdout.  This works on all
     // platforms (Unix, macOS, Windows) without any platform-specific code:
     //
-    // • The shell wrapper captures stdout with `dir=$(command tfe)`.
+    // * The shell wrapper captures stdout with `dir=$(command tfe)`.
     //   stderr is never captured by $() so the TUI renders correctly.
-    // • On Windows, stderr is connected to the console just like stdout,
+    // * On Windows, stderr is connected to the console just like stdout,
     //   so crossterm's raw-mode and alternate-screen work without needing
     //   CONOUT$ or any other Windows-specific console API.
-    // • The final directory/file path is written to real stdout after the
+    // * The final directory/file path is written to real stdout after the
     //   TUI exits, where the shell wrapper's $() captures it correctly.
     let backend = CrosstermBackend::new(io::stderr());
 
@@ -287,6 +312,7 @@ fn run() -> io::Result<()> {
         single_pane,
         sort_mode,
         cd_on_exit,
+        editor,
     });
 
     let result = run_loop(&mut terminal, &mut app);
@@ -330,15 +356,18 @@ fn run() -> io::Result<()> {
         // Always persist the final value from app — this captures both CLI
         // flags (--cd / --no-cd) and any in-TUI toggle via the O panel / C key.
         cd_on_exit: Some(app.cd_on_exit),
+        // Persist whichever editor the user ended up on (including any cycling
+        // done through the options panel).
+        editor: Some(app.editor.to_key()),
     });
 
     // Emit a path to stdout so a shell wrapper can act on it (e.g. `cd`).
     //
-    // • File selected            → always emit the selected path (or its parent
-    //                              with --print-dir), exit 0.
-    // • Dismissed + cd_on_exit   → emit the active pane's current directory so
-    //                              the shell wrapper can `cd` there, exit 0.
-    // • Dismissed + !cd_on_exit  → print nothing, exit 1 (classic behaviour).
+    // * File selected            -> always emit the selected path (or its parent
+    //                               with --print-dir), exit 0.
+    // * Dismissed + cd_on_exit   -> emit the active pane's current directory so
+    //                               the shell wrapper can `cd` there, exit 0.
+    // * Dismissed + !cd_on_exit  -> print nothing, exit 1 (classic behaviour).
     match app.selected {
         Some(path) => {
             let output = resolve_output_path(path, cli.print_dir);
@@ -367,8 +396,57 @@ fn run_loop<W: io::Write>(
 ) -> io::Result<()> {
     loop {
         terminal.draw(|frame| draw(app, frame))?;
+
         if app.handle_event()? {
             break;
+        }
+
+        // ── Editor launch ─────────────────────────────────────────────────────
+        // `handle_event` sets `open_with_editor` when the user presses `e` on
+        // a file.  We handle it here (in run_loop) because we need access to
+        // the Terminal to tear it down and restore it.
+        if let Some(path) = app.open_with_editor.take() {
+            // Defensive guard: Editor::None should never set open_with_editor,
+            // but if it somehow does, silently discard and move on.
+            if let Some(binary) = app.editor.binary() {
+                let binary = binary.to_string();
+                let editor_label = app.editor.label().to_string();
+
+                // 1. Tear down the TUI so the editor gets a clean terminal.
+                let _ = disable_raw_mode();
+                let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture);
+
+                // 2. Spawn the editor synchronously and wait for it to exit.
+                let status = std::process::Command::new(&binary).arg(&path).status();
+
+                // 3. Restore the TUI regardless of whether the editor succeeded.
+                let _ = enable_raw_mode();
+                let _ = execute!(io::stderr(), EnterAlternateScreen, EnableMouseCapture);
+                let _ = terminal.clear();
+
+                // 4. Reload both panes so any on-disk changes are visible.
+                app.left.reload();
+                app.right.reload();
+
+                // 5. Set a status message.
+                match status {
+                    Ok(s) if s.success() => {
+                        let fname = path
+                            .file_name()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .into_owned();
+                        app.status_msg = format!("Returned from {editor_label} \u{2014} {fname}");
+                    }
+                    Ok(s) => {
+                        app.status_msg =
+                            format!("Editor exited with status {}", s.code().unwrap_or(-1));
+                    }
+                    Err(e) => {
+                        app.status_msg = format!("Error launching '{binary}': {e}");
+                    }
+                }
+            }
         }
     }
     Ok(())
