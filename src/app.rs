@@ -16,22 +16,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// ── AppOptions ────────────────────────────────────────────────────────────────
-
-/// Startup configuration passed to [`App::new`].
-///
-/// Grouping all constructor parameters into a single struct keeps the call
-/// sites readable and avoids the `clippy::too_many_arguments` limit.
-///
-/// # Example
-///
-/// ```rust,ignore
-/// let app = App::new(AppOptions {
-///     left_dir: PathBuf::from("/home/user"),
-///     right_dir: PathBuf::from("/tmp"),
-///     ..AppOptions::default()
-/// });
-/// ```
 // ── Editor ────────────────────────────────────────────────────────────────────
 
 /// The editor that is launched when the user presses `e` on a file.
@@ -49,9 +33,10 @@ use std::{
 /// | `Nano`             | `nano`            |
 /// | `Micro`            | `micro`           |
 /// | `Custom(s)`        | `custom:<s>`      |
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Editor {
     /// No editor — pressing `e` on a file is a silent no-op.
+    #[default]
     None,
     /// [Helix](https://helix-editor.com/) — `hx`
     Helix,
@@ -65,12 +50,6 @@ pub enum Editor {
     Micro,
     /// A user-supplied binary name or path.
     Custom(String),
-}
-
-impl Default for Editor {
-    fn default() -> Self {
-        Editor::None
-    }
 }
 
 impl Editor {
@@ -154,6 +133,22 @@ impl Editor {
     }
 }
 
+// ── AppOptions ────────────────────────────────────────────────────────────────
+
+/// Startup configuration passed to [`App::new`].
+///
+/// Grouping all constructor parameters into a single struct keeps the call
+/// sites readable and avoids the `clippy::too_many_arguments` limit.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let app = App::new(AppOptions {
+///     left_dir: PathBuf::from("/home/user"),
+///     right_dir: PathBuf::from("/tmp"),
+///     ..AppOptions::default()
+/// });
+/// ```
 #[derive(Debug, Clone)]
 pub struct AppOptions {
     /// Starting directory for the left pane.
