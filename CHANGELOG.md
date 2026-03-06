@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2026-03-06
+
+### Bug Fixes
+- Make auto_install_with shell-independent for hermetic tests
+
 ## [0.4.2] - 2026-03-06
 
 ### Features
 - Show version label in header bottom-right of active pane
+
+### Miscellaneous
+- Bump version to 0.4.2
 
 ## [0.4.1] - 2026-03-06
 
@@ -33,11 +41,6 @@ All notable changes to this project will be documented in this file.
 
 ## [0.3.8] - 2026-03-06
 
-### Miscellaneous
-- Bump version to 0.3.8
-
-## [0.3.7] - 2026-03-06
-
 ### Bug Fixes
 - Silence clippy empty_line_after_doc_comments and derivable_impls
 
@@ -46,6 +49,9 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 - Editor launch via e key (v0.3.7)
+
+### Miscellaneous
+- Bump version to 0.3.8
 
 ## [0.3.6] - 2026-03-05
 
