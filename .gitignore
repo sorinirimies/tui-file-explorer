@@ -91,9 +91,10 @@ deny.lock
 Session.vim
 .netrwhist
 
-# ZED — ignore workspace settings but keep the shared rules file
+# ZED — ignore workspace settings but keep the shared rules files
 .zed/*
 !.zed/rules.md
+!.zed/agents.md
 
 # Emacs
 *#

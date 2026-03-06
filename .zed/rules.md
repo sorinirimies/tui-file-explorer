@@ -21,7 +21,7 @@ tui-file-explorer/
 │   ├── app.rs          # App state: two-pane layout, clipboard, Modal, multi-delete, event handling
 │   ├── ui.rs           # Binary-specific TUI drawing: action bar, theme panel, modal overlay
 │   ├── fs.rs           # fs helpers for the binary: copy_dir_all, resolve_output_path, emit_path
-│   └── persistence.rs  # State persistence: load/save last dir, theme, sort mode, hidden flag
+│   └── persistence.rs  # State persistence: load/save last dir, theme, sort mode, hidden flag, editor
 ├── scripts/
 │   ├── bump_version.sh   # Interactive version bump — runs checks before tagging
 │   └── check_publish.sh  # Pre-publish gate — fmt, clippy, tests, doc, dry-run
@@ -39,6 +39,8 @@ tui-file-explorer/
 - New public types go in `types.rs`; new colour tokens go in `palette.rs`.
 - Binary-only logic (two-pane app state, CLI flags, persistence) stays in the
   binary modules and must not leak into the library crate.
+- `Editor` enum lives in `app.rs` (binary-only). It is never exposed through
+  the library crate.
 
 ---
 
@@ -183,6 +185,9 @@ Every key binding that produces a non-trivial state change needs a test:
 | `Enter` / `l` on dir | Descend, clear marks, confirm file (exits TUI) | `explorer.rs` |
 | `→` on dir | Descend, clear search + marks (never exits TUI) | `explorer.rs` |
 | `→` on file | Move cursor down, never exits TUI | `explorer.rs` |
+| `e` on file (editor ≠ None) | Set `open_with_editor`, run_loop suspends TUI, spawns editor, restores TUI | `app.rs` / `main.rs` |
+| `e` on dir or editor = None | Silent no-op — no status message | `app.rs` |
+| `e` in options panel | Cycle `Editor` variant, update status message | `app.rs` |
 
 ---
 
@@ -206,7 +211,94 @@ Every key binding that produces a non-trivial state change needs a test:
 
 ---
 
-## 8. Dependencies
+## 8. Editor Launch Pattern
+
+The `Editor` enum (`None`, `Helix`, `Neovim`, `Vim`, `Nano`, `Micro`,
+`Custom(String)`) controls which editor is opened when the user presses `e`
+on a file. Key design decisions to preserve:
+
+- **`Editor::None` is the default.** The feature is fully opt-in. A fresh
+  install never launches an editor unless the user cycles to one or passes
+  `--editor` on the CLI.
+- **`binary()` returns `Option<&str>`.** `Editor::None` yields `Option::None`.
+  Callers must unwrap with `if let Some(binary) = app.editor.binary()` — never
+  `.unwrap()` directly.
+- **TUI teardown/restore lives in `run_loop` (`main.rs`), not in
+  `handle_event` (`app.rs`).** `handle_event` only sets
+  `app.open_with_editor = Some(path)`. `run_loop` checks this field after every
+  event, tears down the terminal, spawns the editor synchronously with
+  `Command::new(binary).arg(path).status()`, then restores the terminal and
+  reloads both panes. This keeps `App` free of `Terminal` / raw-mode concerns.
+- **Cycle order:** `None → Helix → Neovim → Vim → Nano → Micro → None → …`
+  `Custom` variants skip directly back to `None` when cycled — they can only
+  be set via `--editor` or the state file.
+- **Persistence key:** `editor=<key>` in the state file. Key strings:
+  `none`, `helix`, `nvim`, `vim`, `nano`, `micro`, `custom:<binary>`.
+- **`--editor <EDITOR>` CLI flag** overrides the persisted value for the
+  session only. Unknown values are treated as `Custom(value)`.
+- **Options panel** shows the editor name in `success` colour + bold when an
+  editor is selected, dim when `None` — mirroring the on/off style of boolean
+  toggles.
+- **Action bar** shows `e edit` between `d del` and `[ / t theme`.
+
+### Dos and Don'ts
+- **Do** guard every `open_with_editor` branch in `run_loop` with
+  `if let Some(binary) = app.editor.binary()` to handle the `None` case
+  defensively, even though `handle_event` already skips `None`.
+- **Do not** call `disable_raw_mode` / `enable_raw_mode` from inside `App`
+  methods — that is exclusively `run_loop`'s responsibility.
+- **Do not** add async editor launch — editors are synchronous by nature and
+  blocking the event loop for the duration is the correct behaviour.
+
+---
+
+## 9. Hermetic Test Pattern for Shell-Detection Code
+
+Any function that reads environment variables (`$SHELL`, `$HOME`, `$ZDOTDIR`,
+`$XDG_CONFIG_HOME`) **must** have a `_with(…)` twin that accepts explicit path
+overrides so tests never depend on the real environment.
+
+### Pattern
+```rust
+// Production entry-point — reads real env vars, calls the _with twin.
+pub fn auto_install() {
+    auto_install_with(
+        None,                          // shell: None = detect from $SHELL
+        home().as_deref(),
+        xdg_config_home().as_deref(),
+        zdotdir().as_deref(),
+        bash_profile(home().as_deref()).as_deref(),
+        zshenv(home().as_deref()).as_deref(),
+    );
+}
+
+// Testable twin — every env-derived value is an explicit parameter.
+pub(crate) fn auto_install_with(
+    shell: Option<Shell>,              // None = detect; Some(s) = use directly
+    home: Option<&Path>,
+    xdg_config_home: Option<&Path>,
+    zdotdir: Option<&Path>,
+    bash_profile: Option<&Path>,
+    zshenv: Option<&Path>,
+) { … }
+```
+
+### Rules
+- The `_with` twin is `pub(crate)` — never `pub`. Tests call it directly;
+  external callers use the public wrapper.
+- The `shell` parameter must come **first** and be `Option<Shell>`:
+  `None` → fall back to `detect_shell()`; `Some(s)` → use `s` directly.
+  This pattern is already used by `install_or_print_to`.
+- Tests that exercise zsh-specific behaviour must pass `Some(Shell::Zsh)`.
+  Tests that exercise bash-specific behaviour must pass `Some(Shell::Bash)`.
+  **Never rely on `$SHELL` being a particular value in a test** — CI runners
+  may have any shell set.
+- Use `tempfile::tempdir()` for all path arguments. Never pass a real `$HOME`
+  path into a `_with` function in tests.
+
+---
+
+## 10. Dependencies
 
 - **Minimise dependencies.** The only `[dependencies]` should be `ratatui` and
   `crossterm`. Any new dependency requires justification in the PR description.
@@ -219,7 +311,7 @@ Every key binding that produces a non-trivial state change needs a test:
 
 ---
 
-## 9. Features
+## 11. Features
 
 ```toml
 [features]
@@ -236,7 +328,7 @@ cli     = ["dep:clap"]     # enables the `tfe` binary
 
 ---
 
-## 14. Commit & Release After Every Change
+## 12. Commit & Release After Every Change
 
 **Every completed implementation + test cycle must end with a commit and a new
 release.** There is no such thing as "I'll release later" — if the code is
@@ -284,7 +376,7 @@ just release 0.1.X                       # bumps, tags, pushes
 
 ---
 
-## 10. Versioning & Release Workflow
+## 13. Versioning & Release Workflow
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/)
 and [git-cliff](https://git-cliff.org/) for automated changelogs.
@@ -326,7 +418,7 @@ just publish-dry     # cargo publish --dry-run
 
 ---
 
-## 11. Git Hygiene
+## 14. Git Hygiene
 
 - Commits on `main` must pass `just check-all` (fmt + clippy + test).
 - PRs should be squash-merged with a conventional commit message.
@@ -339,7 +431,7 @@ just publish-dry     # cargo publish --dry-run
 
 ---
 
-## 12. Performance Hints
+## 15. Performance Hints
 
 - `load_entries` allocates two `Vec<FsEntry>` per directory read — acceptable
   since it only runs on navigation events, never in the hot draw loop.
@@ -352,7 +444,7 @@ just publish-dry     # cargo publish --dry-run
 
 ---
 
-## 13. Checklist Before Opening a PR
+## 16. Checklist Before Opening a PR
 
 - [ ] `just check-all` passes locally (fmt + clippy + test)
 - [ ] New public items have `///` doc comments
