@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.4] - 2026-03-06
+
+### Documentation
+- Add agents.md and expand rules.md with Editor and hermetic-test patterns
+
 ## [0.4.3] - 2026-03-06
 
 ### Bug Fixes
 - Make auto_install_with shell-independent for hermetic tests
+
+### Miscellaneous
+- Bump version to 0.4.3
 
 ## [0.4.2] - 2026-03-06
 
