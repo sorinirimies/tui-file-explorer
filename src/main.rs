@@ -203,6 +203,10 @@ fn run() -> io::Result<()> {
         return Ok(());
     }
 
+    // Auto-install the shell wrapper on first run if not already present.
+    // Runs before terminal setup so the message prints cleanly to stderr.
+    shell_init::auto_install();
+
     let themes = Theme::all_presets();
 
     // --list-themes: print catalogue and exit.

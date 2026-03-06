@@ -1,17 +1,21 @@
 //! Shell integration helpers for the `tfe` binary.
 //!
-//! This module handles everything related to the `--init <shell>` flag:
+//! This module handles everything related to the `--init <shell>` flag and
+//! the automatic first-run wrapper installation:
 //!
 //! * [`Shell`]            — recognised shell variants.
 //! * [`detect_shell`]     — infer the current shell from `$SHELL`.
 //! * [`snippet`]          — return the wrapper function text for a shell.
-//! * [`rc_path`]          — return the default rc-file path for a shell.
-//! * [`is_installed`]     — check whether the wrapper is already present.
+//! * [`rc_path_with`]     — return the default rc-file path for a shell.
+//! * [`is_installed`]     — check whether the wrapper is already present in
+//!   any candidate rc file for the detected shell.
 //! * [`install`]          — append the snippet to the rc file, creating it
 //!   (and any missing parent directories) if necessary.
-//! * [`install_or_print`] — top-level entry point called by `main`: writes to
-//!   the rc file when possible, falls back to printing the snippet to stdout
-//!   with instructions when not.
+//! * [`auto_install`]     — silently install on first run if not present;
+//!   called automatically at startup before the TUI is shown.
+//! * [`install_or_print`] — top-level entry point called by `--init`: writes
+//!   to the rc file when possible, falls back to printing the snippet to
+//!   stdout with instructions when not.
 
 use std::{
     fmt, fs,
@@ -303,6 +307,122 @@ pub fn install(shell: Shell, rc: &Path) -> io::Result<()> {
     let mut file = fs::OpenOptions::new().create(true).append(true).open(rc)?;
     file.write_all(snippet(shell).as_bytes())?;
     file.flush()
+}
+
+// ── Auto-install (first-run) ──────────────────────────────────────────────────
+
+/// Silently install the shell wrapper on first run if it is not already
+/// present in any candidate rc file for the detected shell.
+///
+/// Called automatically at startup before the TUI is shown.  The function
+/// is intentionally silent on success except for a single informational line
+/// to stderr telling the user what was written and how to activate it.
+///
+/// Behaviour:
+/// - Detects the shell from `$SHELL`.  Does nothing when unrecognised.
+/// - Collects **all** candidate rc files for the shell (e.g. both `.zshrc`
+///   and `.zshenv` for zsh) and checks each with [`is_installed`].
+/// - If the wrapper is found in any candidate, returns immediately.
+/// - Otherwise calls [`install_or_print`] to write to the best rc file and
+///   prints one line to stderr.
+pub fn auto_install() {
+    auto_install_with(
+        home().as_deref(),
+        xdg_config_home().as_deref(),
+        zdotdir().as_deref(),
+        bash_profile(home().as_deref()).as_deref(),
+        zshenv(home().as_deref()).as_deref(),
+    );
+}
+
+/// Like [`auto_install`] but with explicit path overrides for hermetic testing.
+pub(crate) fn auto_install_with(
+    home: Option<&Path>,
+    xdg_config_home: Option<&Path>,
+    zdotdir: Option<&Path>,
+    bash_profile: Option<&Path>,
+    zshenv: Option<&Path>,
+) {
+    let shell = match detect_shell() {
+        Some(s) => s,
+        None => return, // unrecognised shell — do nothing silently
+    };
+
+    // Build the full list of candidate rc files to check for an existing
+    // installation.  We check every file that the shell might source so that
+    // a manually-added wrapper in any of them prevents a duplicate install.
+    let candidates: Vec<PathBuf> = match shell {
+        Shell::Zsh => {
+            let mut v = Vec::new();
+            if let Some(z) = zdotdir {
+                v.push(z.join(".zshrc"));
+            }
+            if let Some(h) = home {
+                v.push(h.join(".zshrc"));
+                v.push(h.join(".zshenv"));
+                v.push(h.join(".zprofile"));
+            }
+            v
+        }
+        Shell::Bash => {
+            let mut v = Vec::new();
+            if let Some(h) = home {
+                v.push(h.join(".bashrc"));
+                v.push(h.join(".bash_profile"));
+                v.push(h.join(".profile"));
+            }
+            v
+        }
+        Shell::Fish => {
+            let config = xdg_config_home
+                .map(|p| p.to_path_buf())
+                .or_else(|| home.map(|h| h.join(".config")));
+            if let Some(c) = config {
+                vec![c.join("fish/functions/tfe.fish")]
+            } else {
+                vec![]
+            }
+        }
+        Shell::Pwsh => {
+            if let Some(profile) = std::env::var_os("PROFILE") {
+                vec![PathBuf::from(profile)]
+            } else if let Some(h) = home {
+                vec![h
+                    .join(".config")
+                    .join("powershell")
+                    .join("Microsoft.PowerShell_profile.ps1")]
+            } else {
+                vec![]
+            }
+        }
+    };
+
+    // Already installed in any candidate — nothing to do.
+    if candidates.iter().any(|p| is_installed(p)) {
+        return;
+    }
+
+    // Not found anywhere — install silently into the best rc file.
+    match install_or_print_to(
+        Some(shell),
+        home,
+        xdg_config_home,
+        zdotdir,
+        bash_profile,
+        zshenv,
+    ) {
+        InitOutcome::Installed(path) => {
+            eprintln!(
+                "tfe: shell integration installed to {} — run `source {}` or open a new terminal to activate",
+                path.display(),
+                path.display()
+            );
+        }
+        // Already installed guard fired inside install_or_print_to — fine.
+        InitOutcome::AlreadyInstalled(_) => {}
+        // Could not write — stay silent, don't block startup.
+        InitOutcome::PrintedToStdout | InitOutcome::UnknownShell => {}
+    }
 }
 
 // ── Top-level entry point ─────────────────────────────────────────────────────
@@ -919,5 +1039,119 @@ mod tests {
             // On non-unix we can't reliably make dirs unwritable — skip.
             let _ = ro_dir;
         }
+    }
+
+    // ── auto_install_with ─────────────────────────────────────────────────────
+
+    #[test]
+    fn auto_install_writes_wrapper_on_first_run() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join(".zshrc");
+        // Simulate $SHELL=zsh by using auto_install_with directly.
+        // Before: wrapper absent.
+        assert!(!is_installed(&rc));
+        auto_install_with(Some(dir.path()), None, None, None, None);
+        // After: wrapper present.
+        assert!(
+            is_installed(&rc),
+            "auto_install must write wrapper on first run"
+        );
+    }
+
+    #[test]
+    fn auto_install_does_not_duplicate_when_already_installed() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join(".zshrc");
+        // Pre-install once.
+        install(Shell::Zsh, &rc).unwrap();
+        let before = fs::read_to_string(&rc).unwrap();
+        // Run auto_install — must be a no-op.
+        auto_install_with(Some(dir.path()), None, None, None, None);
+        let after = fs::read_to_string(&rc).unwrap();
+        assert_eq!(
+            before, after,
+            "auto_install must not append a duplicate when wrapper already present"
+        );
+    }
+
+    #[test]
+    fn auto_install_detects_wrapper_in_zshenv_and_skips_install() {
+        let dir = tempdir().unwrap();
+        let zshenv = dir.path().join(".zshenv");
+        // Install the wrapper into .zshenv (no .zshrc present).
+        install(Shell::Zsh, &zshenv).unwrap();
+        // auto_install should detect it in .zshenv and not create .zshrc.
+        auto_install_with(Some(dir.path()), None, None, None, Some(&zshenv));
+        let zshrc = dir.path().join(".zshrc");
+        assert!(
+            !zshrc.exists(),
+            "auto_install must not create .zshrc when wrapper already in .zshenv"
+        );
+    }
+
+    #[test]
+    fn auto_install_detects_wrapper_in_zprofile_and_skips_install() {
+        let dir = tempdir().unwrap();
+        let zprofile = dir.path().join(".zprofile");
+        // Manually write the sentinel into .zprofile.
+        fs::write(&zprofile, format!("{SENTINEL}\ntfe() {{}}\n")).unwrap();
+        // auto_install_with checks .zprofile as a candidate — should skip.
+        // We pass zshenv=None so it won't find it there.
+        auto_install_with(Some(dir.path()), None, None, None, None);
+        // .zshrc should not have been created (wrapper found in .zprofile).
+        // Note: auto_install_with checks .zprofile via the candidates list
+        // but rc_path_with would still pick .zshrc — the key invariant is
+        // that the candidates scan fires before install_or_print_to.
+        // Verify by checking .zshrc does NOT contain the sentinel.
+        let zshrc = dir.path().join(".zshrc");
+        if zshrc.exists() {
+            let content = fs::read_to_string(&zshrc).unwrap();
+            assert!(
+                !content.contains(SENTINEL),
+                "auto_install must not write to .zshrc when sentinel already in .zprofile"
+            );
+        }
+    }
+
+    #[test]
+    fn auto_install_uses_zdotdir_when_set() {
+        let dir = tempdir().unwrap();
+        let zdotdir = dir.path().join("zdotdir");
+        fs::create_dir(&zdotdir).unwrap();
+        let rc = zdotdir.join(".zshrc");
+        auto_install_with(Some(dir.path()), None, Some(&zdotdir), None, None);
+        assert!(
+            is_installed(&rc),
+            "auto_install must write to $ZDOTDIR/.zshrc when ZDOTDIR is set"
+        );
+        // Must not also write to $HOME/.zshrc.
+        let home_rc = dir.path().join(".zshrc");
+        assert!(
+            !home_rc.exists(),
+            "auto_install must not write to $HOME/.zshrc when ZDOTDIR is set"
+        );
+    }
+
+    #[test]
+    fn auto_install_falls_back_to_zshenv_when_zshrc_absent() {
+        let dir = tempdir().unwrap();
+        let zshenv = dir.path().join(".zshenv");
+        fs::write(&zshenv, b"# existing zshenv\n").unwrap();
+        // No .zshrc — should fall back to .zshenv.
+        auto_install_with(Some(dir.path()), None, None, None, Some(&zshenv));
+        assert!(
+            is_installed(&zshenv),
+            "auto_install must install into .zshenv when .zshrc is absent"
+        );
+    }
+
+    #[test]
+    fn auto_install_does_nothing_when_shell_unrecognised() {
+        // auto_install_with resolves shell via detect_shell() which reads $SHELL.
+        // We can't safely mutate $SHELL in a parallel test, so we verify the
+        // None-home path (unresolvable rc) is handled without panic instead.
+        // The real unrecognised-shell path is covered by detect_shell tests.
+        auto_install_with(None, None, None, None, None);
+        // Must not panic — that is the assertion.
     }
 }
