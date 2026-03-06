@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-03-06
+
+### Bug Fixes
+- Default cd_on_exit to true now that wrapper is auto-installed
+
 ## [0.4.0] - 2026-03-06
 
 ### Features
 - Auto-install shell wrapper on first run
+
+### Miscellaneous
+- Bump version to 0.4.0
 
 ## [0.3.9] - 2026-03-06
 
