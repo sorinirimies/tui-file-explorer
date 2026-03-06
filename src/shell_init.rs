@@ -136,19 +136,64 @@ pub fn snippet(shell: Shell) -> String {
 
 /// Return the default rc-file path for `shell`.
 ///
-/// Uses `$HOME` for bash/zsh and `$XDG_CONFIG_HOME` (falling back to
-/// `$HOME/.config`) for fish.  Returns `None` when neither variable is set.
+/// Alternative locations are checked in priority order before falling back to
+/// the conventional path:
 ///
-/// Pass explicit `home` and `xdg_config_home` overrides to keep tests hermetic
-/// without mutating global environment variables.
+/// - **zsh**: `$ZDOTDIR/.zshrc` → `~/.zshrc` → `~/.zshenv` (if it exists)
+///   → `~/.zshrc` (created fresh)
+/// - **bash**: `$HOME/.bash_profile` (if it exists) → `$HOME/.bashrc`
+/// - **fish**: `$XDG_CONFIG_HOME/fish/functions/tfe.fish` → `$HOME/.config/…`
+///
+/// Pass explicit overrides (`home`, `xdg_config_home`, `zdotdir`,
+/// `bash_profile`, `zshenv`) to keep tests hermetic without mutating global
+/// env vars.
 pub fn rc_path_with(
     shell: Shell,
     home: Option<&Path>,
     xdg_config_home: Option<&Path>,
+    zdotdir: Option<&Path>,
+    bash_profile: Option<&Path>,
+    zshenv: Option<&Path>,
 ) -> Option<PathBuf> {
     match shell {
-        Shell::Bash => home.map(|h| h.join(".bashrc")),
-        Shell::Zsh => home.map(|h| h.join(".zshrc")),
+        // bash: prefer ~/.bash_profile when it already exists (common on macOS),
+        // because bash reads it for interactive login shells and skips .bashrc.
+        Shell::Bash => {
+            if let Some(bp) = bash_profile {
+                if bp.exists() {
+                    return Some(bp.to_path_buf());
+                }
+            }
+            home.map(|h| h.join(".bashrc"))
+        }
+        // zsh startup order: .zshenv (all sessions) → .zprofile (login) →
+        // .zshrc (interactive) → .zlogin (login).
+        //
+        // Priority for writing the wrapper:
+        //   1. $ZDOTDIR/.zshrc  — when ZDOTDIR is set this is the interactive rc
+        //   2. ~/.zshrc         — standard location when it already exists
+        //   3. ~/.zshenv        — colleague uses this instead of .zshrc; write
+        //                         there if it exists and .zshrc does not
+        //   4. ~/.zshrc         — default: create it fresh
+        Shell::Zsh => {
+            if let Some(z) = zdotdir {
+                return Some(z.join(".zshrc"));
+            }
+            if let Some(h) = home {
+                let zshrc = h.join(".zshrc");
+                if zshrc.exists() {
+                    return Some(zshrc);
+                }
+                if let Some(env) = zshenv {
+                    if env.exists() {
+                        return Some(env.to_path_buf());
+                    }
+                }
+                // Neither exists — create .zshrc fresh.
+                return Some(zshrc);
+            }
+            None
+        }
         Shell::Fish => {
             let config = xdg_config_home
                 .map(|p| p.to_path_buf())
@@ -183,6 +228,18 @@ fn home() -> Option<PathBuf> {
 
 fn xdg_config_home() -> Option<PathBuf> {
     std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
+}
+
+fn zdotdir() -> Option<PathBuf> {
+    std::env::var_os("ZDOTDIR").map(PathBuf::from)
+}
+
+fn bash_profile(home: Option<&Path>) -> Option<PathBuf> {
+    home.map(|h| h.join(".bash_profile"))
+}
+
+fn zshenv(home: Option<&Path>) -> Option<PathBuf> {
+    home.map(|h| h.join(".zshenv"))
 }
 
 // ── Already-installed check ───────────────────────────────────────────────────
@@ -276,16 +333,28 @@ pub enum InitOutcome {
 /// 5. On failure, print the snippet to stdout so the user can install it
 ///    manually, and return [`InitOutcome::PrintedToStdout`].
 pub fn install_or_print(shell: Option<Shell>) -> InitOutcome {
-    install_or_print_to(shell, home().as_deref(), xdg_config_home().as_deref())
+    let h = home();
+    install_or_print_to(
+        shell,
+        h.as_deref(),
+        xdg_config_home().as_deref(),
+        zdotdir().as_deref(),
+        bash_profile(h.as_deref()).as_deref(),
+        zshenv(h.as_deref()).as_deref(),
+    )
 }
 
-/// Like [`install_or_print`] but with explicit `home` and `xdg` path overrides.
+/// Like [`install_or_print`] but with explicit path overrides for every
+/// environment variable that influences rc-file resolution.
 ///
 /// Used in tests to avoid mutating global environment variables.
 pub(crate) fn install_or_print_to(
     shell: Option<Shell>,
     home: Option<&Path>,
     xdg_config_home: Option<&Path>,
+    zdotdir: Option<&Path>,
+    bash_profile: Option<&Path>,
+    zshenv: Option<&Path>,
 ) -> InitOutcome {
     // On Windows, only PowerShell is supported for --init.
     // CMD has no equivalent of shell functions. WSL users should run the
@@ -317,7 +386,14 @@ pub(crate) fn install_or_print_to(
     };
 
     // Step 2 — resolve rc path.
-    let rc = match rc_path_with(resolved, home, xdg_config_home) {
+    let rc = match rc_path_with(
+        resolved,
+        home,
+        xdg_config_home,
+        zdotdir,
+        bash_profile,
+        zshenv,
+    ) {
         Some(p) => p,
         None => {
             eprintln!(
@@ -468,21 +544,83 @@ mod tests {
 
     #[test]
     fn rc_path_bash_ends_with_bashrc() {
-        let p = rc_path_with(Shell::Bash, Some(Path::new("/test/home")), None).unwrap();
+        let p = rc_path_with(
+            Shell::Bash,
+            Some(Path::new("/test/home")),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(p, PathBuf::from("/test/home/.bashrc"));
     }
 
     #[test]
-    fn rc_path_zsh_ends_with_zshrc() {
-        let p = rc_path_with(Shell::Zsh, Some(Path::new("/test/home")), None).unwrap();
+    fn rc_path_zsh_defaults_to_zshrc() {
+        // Neither .zshrc nor .zshenv exist on disk — should default to .zshrc.
+        let p = rc_path_with(
+            Shell::Zsh,
+            Some(Path::new("/test/home")),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(p, PathBuf::from("/test/home/.zshrc"));
+    }
+
+    #[test]
+    fn rc_path_zsh_prefers_zdotdir() {
+        let p = rc_path_with(
+            Shell::Zsh,
+            Some(Path::new("/home/user")),
+            None,
+            Some(Path::new("/custom/zdotdir")),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(p, PathBuf::from("/custom/zdotdir/.zshrc"));
+    }
+
+    #[test]
+    fn rc_path_zsh_falls_back_to_zshenv_when_it_exists() {
+        let dir = tempdir().unwrap();
+        let home = dir.path();
+        // Create .zshenv but NOT .zshrc — colleague's setup.
+        let zshenv = home.join(".zshenv");
+        fs::write(&zshenv, b"# existing zshenv\n").unwrap();
+        let p = rc_path_with(Shell::Zsh, Some(home), None, None, None, Some(&zshenv)).unwrap();
+        assert_eq!(p, zshenv, "must write to .zshenv when .zshrc absent");
+    }
+
+    #[test]
+    fn rc_path_zsh_prefers_zshrc_over_zshenv_when_both_exist() {
+        let dir = tempdir().unwrap();
+        let home = dir.path();
+        let zshrc = home.join(".zshrc");
+        let zshenv = home.join(".zshenv");
+        fs::write(&zshrc, b"# existing zshrc\n").unwrap();
+        fs::write(&zshenv, b"# existing zshenv\n").unwrap();
+        let p = rc_path_with(Shell::Zsh, Some(home), None, None, None, Some(&zshenv)).unwrap();
+        assert_eq!(p, zshrc, "must prefer .zshrc over .zshenv when both exist");
     }
 
     #[test]
     #[cfg(not(windows))]
     fn rc_path_powershell_falls_back_to_home_config_on_unix() {
         std::env::remove_var("PROFILE");
-        let p = rc_path_with(Shell::Pwsh, Some(Path::new("/test/home")), None).unwrap();
+        let p = rc_path_with(
+            Shell::Pwsh,
+            Some(Path::new("/test/home")),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(
             p,
             PathBuf::from("/test/home/.config/powershell/Microsoft.PowerShell_profile.ps1")
@@ -495,6 +633,9 @@ mod tests {
             Shell::Fish,
             Some(Path::new("/test/home")),
             Some(Path::new("/custom/config")),
+            None,
+            None,
+            None,
         )
         .unwrap();
         assert_eq!(p, PathBuf::from("/custom/config/fish/functions/tfe.fish"));
@@ -502,7 +643,15 @@ mod tests {
 
     #[test]
     fn rc_path_fish_falls_back_to_home_config() {
-        let p = rc_path_with(Shell::Fish, Some(Path::new("/test/home")), None).unwrap();
+        let p = rc_path_with(
+            Shell::Fish,
+            Some(Path::new("/test/home")),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
         assert_eq!(
             p,
             PathBuf::from("/test/home/.config/fish/functions/tfe.fish")
@@ -512,10 +661,10 @@ mod tests {
     #[test]
     fn rc_path_returns_none_when_home_unset() {
         std::env::remove_var("PROFILE");
-        assert!(rc_path_with(Shell::Bash, None, None).is_none());
-        assert!(rc_path_with(Shell::Zsh, None, None).is_none());
-        assert!(rc_path_with(Shell::Fish, None, None).is_none());
-        assert!(rc_path_with(Shell::Pwsh, None, None).is_none());
+        assert!(rc_path_with(Shell::Bash, None, None, None, None, None).is_none());
+        assert!(rc_path_with(Shell::Zsh, None, None, None, None, None).is_none());
+        assert!(rc_path_with(Shell::Fish, None, None, None, None, None).is_none());
+        assert!(rc_path_with(Shell::Pwsh, None, None, None, None, None).is_none());
     }
 
     // ── is_installed ──────────────────────────────────────────────────────────
@@ -662,7 +811,8 @@ mod tests {
     fn install_or_print_installs_when_rc_writable() {
         let dir = tempdir().unwrap();
         let rc = dir.path().join(".zshrc");
-        let outcome = install_or_print_to(Some(Shell::Zsh), Some(dir.path()), None);
+        let outcome =
+            install_or_print_to(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
         assert_eq!(outcome, InitOutcome::Installed(rc.clone()));
         assert!(is_installed(&rc));
     }
@@ -673,8 +823,75 @@ mod tests {
         let rc = dir.path().join(".zshrc");
         // Pre-install the snippet.
         install(Shell::Zsh, &rc).unwrap();
-        let outcome = install_or_print_to(Some(Shell::Zsh), Some(dir.path()), None);
+        let outcome =
+            install_or_print_to(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
         assert_eq!(outcome, InitOutcome::AlreadyInstalled(rc));
+    }
+
+    #[test]
+    fn install_or_print_zsh_uses_zdotdir() {
+        let dir = tempdir().unwrap();
+        let zdotdir = dir.path().join("zdotdir");
+        fs::create_dir(&zdotdir).unwrap();
+        let rc = zdotdir.join(".zshrc");
+        let outcome = install_or_print_to(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            Some(&zdotdir),
+            None,
+            None,
+        );
+        assert_eq!(
+            outcome,
+            InitOutcome::Installed(rc.clone()),
+            "must install into $ZDOTDIR/.zshrc not $HOME/.zshrc"
+        );
+        assert!(is_installed(&rc));
+    }
+
+    #[test]
+    fn install_or_print_zsh_falls_back_to_zshenv_when_zshrc_absent() {
+        let dir = tempdir().unwrap();
+        let home = dir.path();
+        let zshenv = home.join(".zshenv");
+        fs::write(&zshenv, b"# existing zshenv\n").unwrap();
+        // No .zshrc present — should write to .zshenv.
+        let outcome = install_or_print_to(
+            Some(Shell::Zsh),
+            Some(home),
+            None,
+            None,
+            None,
+            Some(&zshenv),
+        );
+        assert_eq!(
+            outcome,
+            InitOutcome::Installed(zshenv.clone()),
+            "must install into .zshenv when .zshrc is absent"
+        );
+        assert!(is_installed(&zshenv));
+    }
+
+    #[test]
+    fn install_or_print_bash_uses_bash_profile_when_present() {
+        let dir = tempdir().unwrap();
+        let bp = dir.path().join(".bash_profile");
+        fs::write(&bp, b"# existing profile\n").unwrap();
+        let outcome = install_or_print_to(
+            Some(Shell::Bash),
+            Some(dir.path()),
+            None,
+            None,
+            Some(&bp),
+            None,
+        );
+        assert_eq!(
+            outcome,
+            InitOutcome::Installed(bp.clone()),
+            "must install into .bash_profile when it exists"
+        );
+        assert!(is_installed(&bp));
     }
 
     #[test]
@@ -689,7 +906,8 @@ mod tests {
             let mut perms = fs::metadata(&ro_dir).unwrap().permissions();
             perms.set_mode(0o444);
             fs::set_permissions(&ro_dir, perms).unwrap();
-            let outcome = install_or_print_to(Some(Shell::Zsh), Some(&ro_dir), None);
+            let outcome =
+                install_or_print_to(Some(Shell::Zsh), Some(&ro_dir), None, None, None, None);
             assert_eq!(
                 outcome,
                 InitOutcome::PrintedToStdout,
