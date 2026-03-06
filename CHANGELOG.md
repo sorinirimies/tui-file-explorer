@@ -3,40 +3,27 @@ All notable changes to this project will be documented in this file.
 
 ## [0.3.7] - 2026-03-06
 
-### Features
-- Add `Editor` enum (`None`, `Helix`, `Neovim`, `Vim`, `Nano`, `Micro`, `Custom(String)`) to control which editor is launched when pressing `e` on a file
-- `Editor::None` is the default — the feature is fully opt-in; pressing `e` is a silent no-op until an editor is selected
-- Press `e` in the options panel (`O`) to cycle through editors: None → Helix → Neovim → Vim → Nano → Micro → None → …
-- Press `e` on a file in the explorer to suspend the TUI, open the file in the configured editor, then automatically restore the TUI and reload both panes
-- Add `--editor <EDITOR>` CLI flag to override the persisted editor for a session (e.g. `tfe --editor nvim`, `tfe --editor "code --wait"`)
-- Persist the selected editor in the state file (`editor=helix`, `editor=nvim`, `editor=custom:code`, etc.)
-- Options panel grows a new **Editor** section showing the active editor; label is dim when `none`, green+bold when an editor is selected
-- Action bar gains `e edit` hint between `d del` and `[ / t theme`
+### Bug Fixes
+- Silence clippy empty_line_after_doc_comments and derivable_impls
 
-### Testing
-- 15 new unit tests covering `Editor` enum methods (`binary`, `label`, `cycle`, `to_key`, `from_key`), full cycle loop invariant, `AppOptions`/`App` default fields, and persistence round-trips
+### Documentation
+- Update README/lib docs and add dual_pane.tape
+
+### Features
+- Editor launch via e key (v0.3.7)
 
 ## [0.3.6] - 2026-03-05
 
-### Bug Fixes
-- Remove dead `Theme::new()` (identical to `Default::default()`, never called)
-- Remove stray `theme_switcher.rs` from repository root (already present in `examples/`)
-- Extract `render_nav_hints_spans` helper for testability, mirroring `render_action_bar_spans`
-
-### Testing
-- Add 310 new unit tests across all modules (475 total, up from 165)
-- `types` — full coverage of `SortMode::next` cycle, `FsEntry` construction, `ExplorerOutcome` variants
-- `palette` — palette constants match `Theme::default()`, all builder setters, `all_presets` catalogue invariants
-- `explorer` — extended `entry_icon` coverage (22 extensions), `fmt_size` full boundary suite, `navigate_to` with `&str`/`&Path`, `is_searching` accessor, `status` cleared on reload, `load_entries` directly
-- `dual_pane` — `DualPaneActive::default()`, focus round-trips, inactive accessor, `DualPaneOutcome` variants, `active_mut` for right pane, `toggle_single_pane` idempotency
-- `persistence` — `sort_mode_to_key`/`sort_mode_from_key` internal helpers, `AppState::default` all-None invariant
-- `ui` — `render_nav_hints_spans` content, bold/accent/dim style assertions, stable span count
-- `app` — Tab pane switching, `themes` list non-empty, `theme_idx` from options, next/prev theme bounds, `do_paste` success status, `active_pane_mut`, `AppOptions::default` fields
+### Miscellaneous
+- Cleanup dead code, add 310 new tests, bump to v0.3.6
 
 ## [0.3.5] - 2026-03-05
 
 ### Features
 - Make cd-on-exit opt-in via --cd / --no-cd flags
+
+### Miscellaneous
+- Bump version to 0.3.5
 
 ## [0.3.4] - 2026-03-05
 
