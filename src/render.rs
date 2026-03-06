@@ -218,6 +218,8 @@ fn render_header(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
         path_str.to_string()
     };
 
+    let version = concat!(" v", env!("CARGO_PKG_VERSION"), " ");
+
     let header = Paragraph::new(Span::styled(
         display_path,
         Style::default()
@@ -232,6 +234,10 @@ fn render_header(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
                     .fg(theme.brand)
                     .add_modifier(Modifier::BOLD),
             ))
+            .title_bottom(
+                ratatui::text::Line::from(Span::styled(version, Style::default().fg(theme.dim)))
+                    .right_aligned(),
+            )
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.accent))
