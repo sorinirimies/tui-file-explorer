@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.5] - 2026-03-06
+
+### Bug Fixes
+- Enter/l on a file opens editor instead of exiting TUI when editor is configured
+
 ## [0.4.4] - 2026-03-06
 
 ### Documentation
 - Add agents.md and expand rules.md with Editor and hermetic-test patterns
+
+### Miscellaneous
+- Bump version to 0.4.4
 
 ## [0.4.3] - 2026-03-06
 
