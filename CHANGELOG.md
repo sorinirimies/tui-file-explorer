@@ -1,10 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.6] - 2026-03-06
+
+### Bug Fixes
+- Cross-platform editor launch (Windows .cmd shims, Custom arg splitting)
+
 ## [0.4.5] - 2026-03-06
 
 ### Bug Fixes
 - Enter/l on a file opens editor instead of exiting TUI when editor is configured
+
+### Miscellaneous
+- Bump version to 0.4.5
 
 ## [0.4.4] - 2026-03-06
 
