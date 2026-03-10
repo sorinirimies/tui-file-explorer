@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 - Cross-platform editor launch (Windows .cmd shims, Custom arg splitting)
 
+### Miscellaneous
+- Bump version to 0.4.6
+
 ## [0.4.5] - 2026-03-06
 
 ### Bug Fixes
