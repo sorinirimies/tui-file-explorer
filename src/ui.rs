@@ -321,7 +321,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
         Span::raw(" "),
         Span::styled("e ", key_style),
         Span::raw("  "),
-        Span::styled(format!("{:<14}", "cycle"), label_style),
+        Span::styled(format!("{:<14}", "open with"), label_style),
         Span::styled(editor_label, editor_val_style),
     ]));
 
