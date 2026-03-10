@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.8] - 2026-03-10
+
+### Bug Fixes
+- Rename options panel editor label from 'cycle' to 'open with'
+
+## [0.4.7] - 2026-03-10
+
+### Miscellaneous
+- Bump version to 0.4.7
+
 ## [0.4.6] - 2026-03-06
 
 ### Bug Fixes
