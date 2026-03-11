@@ -108,7 +108,7 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
 
     // ── Snackbar overlay ──────────────────────────────────────────────────────
     // Expire stale snackbars first, then render if one is still active.
-    if app.snackbar.as_ref().map_or(false, |s| s.is_expired()) {
+    if app.snackbar.as_ref().is_some_and(|s| s.is_expired()) {
         app.snackbar = None;
     }
     if let Some(snackbar) = &app.snackbar {

@@ -287,10 +287,10 @@ pub enum Modal {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-/// Top-level application state for the `tfe` binary.
-///
-/// Owns both [`FileExplorer`] panes, the clipboard, the active modal, theme
-/// state, and the final selected path (set when the user confirms a file).
+// Top-level application state for the `tfe` binary.
+//
+// Owns both [`FileExplorer`] panes, the clipboard, the active modal, theme
+// state, and the final selected path (set when the user confirms a file).
 // ── Snackbar ──────────────────────────────────────────────────────────────────
 
 /// A short-lived notification that floats over the UI and auto-expires.
