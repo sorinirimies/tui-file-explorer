@@ -460,11 +460,33 @@ fn run_loop<W: io::Write>(
                     }
                     #[cfg(not(windows))]
                     {
+                        // Open /dev/tty explicitly so that the editor always
+                        // gets the real terminal even when tfe's stdout is a
+                        // pipe (e.g. inside the `dir=$(command tfe)` wrapper).
+                        let tty = std::fs::OpenOptions::new()
+                            .read(true)
+                            .write(true)
+                            .open("/dev/tty");
                         let mut cmd = std::process::Command::new(&binary);
                         for a in &extra_args {
                             cmd.arg(a);
                         }
-                        cmd.arg(&path).status()
+                        cmd.arg(&path);
+                        if let Ok(tty_file) = tty {
+                            use std::os::unix::io::IntoRawFd;
+                            let tty_fd = tty_file.into_raw_fd();
+                            // SAFETY: tty_fd is a valid, open file descriptor
+                            // for the terminal device.  We dup it for each of
+                            // stdin/stdout/stderr so each gets its own fd.
+                            unsafe {
+                                use std::os::unix::io::FromRawFd;
+                                let stdin_tty = std::fs::File::from_raw_fd(libc::dup(tty_fd));
+                                let stdout_tty = std::fs::File::from_raw_fd(libc::dup(tty_fd));
+                                let stderr_tty = std::fs::File::from_raw_fd(tty_fd);
+                                cmd.stdin(stdin_tty).stdout(stdout_tty).stderr(stderr_tty);
+                            }
+                        }
+                        cmd.status()
                     }
                 };
 

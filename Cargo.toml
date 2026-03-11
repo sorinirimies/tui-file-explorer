@@ -1,6 +1,6 @@
 [package]
 name         = "tui-file-explorer"
-version      = "0.4.8"
+version      = "0.4.9"
 edition      = "2021"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
@@ -39,6 +39,9 @@ ratatui   = "0.30"
 crossterm = "0.29"
 clap      = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
 
@@ -62,3 +65,15 @@ path = "examples/theme_switcher.rs"
 [[example]]
 name = "dual_pane"
 path = "examples/dual_pane.rs"
+
+[[example]]
+name = "options"
+path = "examples/options.rs"
+
+[[example]]
+name = "open_file"
+path = "examples/open_file.rs"
+
+[[example]]
+name = "full"
+path = "examples/full.rs"

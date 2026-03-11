@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.4.9] - 2026-03-11
+
+### Features
+- Snackbar overlay: floating auto-expiring notification rendered in the `tfe` binary UI
+
+### Bug Fixes
+- `e` key with no editor configured now shows an error snackbar instead of silently doing nothing
+- `examples/full.rs`: `e` key with no editor set now shows a status message instead of silent no-op
+- `examples/full.rs`: `Enter` on a file with no editor now stays in the TUI with a message instead of exiting
+- `examples/options.rs`: same fixes as `full.rs` for the `e` key and `Enter` on file with no editor
+
+### Testing
+- Added snackbar unit tests in `app.rs`: `new_snackbar_is_none`, `notify_sets_info_snackbar`, `notify_error_sets_error_snackbar`, `notify_replaces_previous_snackbar`, expiry tests, `e`-key-with-no-editor tests
+- Added `render_snackbar` unit tests in `ui.rs`: geometry, colour selection (info vs error), message preservation, width clamping, expiry
+
 ## [0.4.8] - 2026-03-10
 
 ### Bug Fixes

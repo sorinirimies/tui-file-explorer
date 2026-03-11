@@ -116,7 +116,7 @@ vhs name:
 vhs-all:
     @command -v vhs >/dev/null 2>&1 || { echo "❌ vhs not found. Install: brew install vhs"; exit 1; }
     @echo "Building examples..."
-    cargo build --example basic --example theme_switcher --example dual_pane
+    cargo build --example basic --example theme_switcher --example dual_pane --example options --bin tfe
     @echo "Recording all tapes..."
     vhs examples/vhs/basic.tape
     vhs examples/vhs/search.tape
@@ -126,6 +126,7 @@ vhs-all:
     vhs examples/vhs/theme_switcher.tape
     vhs examples/vhs/pane_toggle.tape
     vhs examples/vhs/dual_pane.tape
+    vhs examples/vhs/options.tape
     @echo "✅ All GIFs generated in examples/vhs/generated/"
 
 # Show current version

@@ -30,6 +30,10 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 
 ![DualPane library widget](examples/vhs/generated/dual_pane.gif)
 
+**Options Panel & Snackbar** — editor picker, toggles, error notification · `cargo run --bin tfe` then `Shift+O`
+
+![Options panel and snackbar](examples/vhs/generated/options.gif)
+
 ---
 
 ## Features
@@ -521,6 +525,54 @@ cargo run --example theme_switcher
 
 ---
 
+### `options`
+
+[`examples/options.rs`](examples/options.rs) — dual-pane explorer with a fully interactive options panel:
+
+- Editor picker: cycle through `none → helix → nvim → vim → nano → micro` with `e` (while panel is open)
+- Error snackbar when `e` is pressed outside the panel with no editor configured
+- Toggle `cd-on-exit`, single-pane mode, and hidden-file visibility from the panel
+- Selecting a file with `Enter` stays in the TUI and shows a helpful message when no editor is set
+
+| Key | Action |
+|-----|--------|
+| `O` | Toggle options panel |
+| `e` (panel open) | Cycle editor |
+| `e` (panel closed) | Open current file in editor (or show snackbar if none set) |
+| `Shift+C` | Toggle cd-on-exit |
+| `w` | Toggle single-pane mode |
+| `h` | Toggle hidden files |
+| `s` | Cycle sort mode |
+| `t` | Cycle theme |
+| `Tab` | Switch active pane |
+| `Esc` / `q` | Quit |
+
+```bash
+cargo run --example options
+```
+
+---
+
+### `open_file`
+
+[`examples/open_file.rs`](examples/open_file.rs) — single-pane explorer that opens files in your editor and resumes browsing:
+
+- Resolves editor from CLI arg → `$VISUAL` → `$EDITOR` → `vi`
+- Tears down the TUI, launches the editor synchronously, then restores the TUI
+- Status bar shows the last-opened filename and editor used
+- Supports multi-word editor strings like `"code --wait"`
+
+```bash
+# Uses $VISUAL / $EDITOR
+cargo run --example open_file
+
+# Explicit editor
+cargo run --example open_file -- hx
+cargo run --example open_file -- "code --wait"
+```
+
+---
+
 ## Example Demos
 
 ### Navigation & Search
@@ -597,6 +649,23 @@ Demonstrates the three layout controls in sequence:
 
 ---
 
+### Options Panel & Snackbar
+
+**Run:** `cargo run --bin tfe` then press `Shift+O`
+
+![Options panel and snackbar](examples/vhs/generated/options.gif)
+
+Demonstrates the full options panel workflow:
+
+- **`Shift+O`** — open and close the options side panel
+- **`e`** (panel open) — cycle the editor: `none → helix → nvim → vim → nano → micro → none`
+- **`e`** (panel closed, no editor set) — triggers the **error snackbar** floating above the action bar, auto-dismissing after 4 seconds
+- **`Shift+C`** — toggle `cd-on-exit` on/off with live indicator
+- **`w`** — toggle single-pane mode from inside the panel
+- **`T`** — open the theme panel (closes the options panel); both panels cannot be open simultaneously
+
+---
+
 ### DualPane Library Widget
 
 **Run:** `cargo run --example dual_pane`
@@ -628,6 +697,7 @@ A complete two-pane file manager built entirely on the **library API** — no bi
 | File operations | `cargo run --bin tfe` | Copy, cut, paste, delete, overwrite modal |
 | Theme switcher | `cargo run --example theme_switcher` | 27 live themes, sidebar catalogue |
 | Pane toggle | `cargo run --bin tfe` | Tab focus-switch, `w` single/two-pane, `T` theme panel |
+| **Options panel** | `cargo run --bin tfe` then `Shift+O` | Editor picker, toggles, error snackbar |
 | **Dual-pane GIF** | `vhs examples/vhs/dual_pane.tape` | Full `dual_pane` example recorded end-to-end |
 
 ---
@@ -784,7 +854,7 @@ Because rendering is fully decoupled from state, you can slot either widget into
 |--------|----------|
 | `main` | `Cli` struct (argument parsing), `run()`, `run_loop()` — thin entry-point only |
 | `app` | `App` state, `Pane`, `ClipOp`, `ClipboardItem`, `Modal`, `handle_event` |
-| `ui` | `draw()`, `render_theme_panel()`, `render_options_panel()`, `render_nav_hints()`, `render_nav_hints_spans()`, `render_action_bar()`, `render_action_bar_spans()`, `render_modal()` |
+| `ui` | `draw()`, `render_theme_panel()`, `render_options_panel()`, `render_nav_hints()`, `render_nav_hints_spans()`, `render_action_bar()`, `render_action_bar_spans()`, `render_modal()`, `render_snackbar()` |
 | `fs` | `copy_dir_all()`, `resolve_output_path()` |
 | `persistence` | `AppState`, `load_state()`, `save_state()`, `resolve_theme_idx()` |
 | `shell_init` | `Shell`, `detect_shell()`, `snippet()`, `rc_path_with()`, `is_installed()`, `install()`, `install_or_print()` |
@@ -808,6 +878,7 @@ vhs examples/vhs/file_ops.tape
 vhs examples/vhs/theme_switcher.tape
 vhs examples/vhs/pane_toggle.tape
 vhs examples/vhs/dual_pane.tape
+vhs examples/vhs/options.tape
 ```
 
 GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
@@ -822,6 +893,7 @@ GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
 | `theme_switcher.tape` | Live cycling of all 27 themes with sidebar | `cargo run --example theme_switcher` |
 | `pane_toggle.tape` | Tab focus-switch, `w` single/dual, `T` theme panel | `cargo run --bin tfe` |
 | `dual_pane.tape` | `DualPane` library widget — Tab, `w`, status bar | `cargo run --example dual_pane` |
+| `options.tape` | Options panel, editor picker, toggles, error snackbar | `cargo run --bin tfe` |
 
 ---
 
