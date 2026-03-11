@@ -63,7 +63,7 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         h_constraints.push(Constraint::Length(32));
     }
     if app.show_options_panel {
-        h_constraints.push(Constraint::Length(36));
+        h_constraints.push(Constraint::Length(42));
     }
     let h_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -223,48 +223,6 @@ pub fn render_theme_panel(frame: &mut Frame, area: Rect, app: &App) {
 pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     let theme = app.theme();
 
-    // Three-row vertical layout: header | boolean toggles | editor section.
-    let v = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(5), // 3 boolean rows + top/bottom border
-            Constraint::Length(4), // separator row + 1 editor row + top/bottom border
-        ])
-        .split(area);
-
-    // Header.
-    let header = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " O ",
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("close  ", Style::default().fg(theme.dim)),
-        Span::styled(
-            "C ",
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("toggle cd", Style::default().fg(theme.dim)),
-    ]))
-    .block(
-        Block::default()
-            .title(Span::styled(
-                " ⚙ Options ",
-                Style::default()
-                    .fg(theme.brand)
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.accent)),
-    );
-    frame.render_widget(header, v[0]);
-
-    // Boolean toggles list — each row: key | name | value.
     let on_style = Style::default()
         .fg(theme.success)
         .add_modifier(Modifier::BOLD);
@@ -273,42 +231,39 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
         .fg(theme.accent)
         .add_modifier(Modifier::BOLD);
     let label_style = Style::default().fg(theme.fg);
+    let subtitle_style = Style::default().fg(theme.dim);
 
-    let opts: &[(&str, &str, bool)] = &[
-        ("C", "cd on exit", app.cd_on_exit),
-        ("w", "single pane", app.single_pane),
-        ("T", "theme panel", app.show_theme_panel),
-    ];
+    // ── Helper: section separator row ────────────────────────────────────────
+    // Renders as "─ Title ──────" using the dim colour, visually dividing the
+    // unified list into labelled sections without nested borders.
+    let spacer_row = || -> ListItem { ListItem::new(Line::from("")) };
 
-    let bool_items: Vec<ListItem> = opts
-        .iter()
-        .map(|(key, label, enabled)| {
-            let (indicator, val_style) = if *enabled {
-                ("● on ", on_style)
-            } else {
-                ("○ off", off_style)
-            };
-            ListItem::new(Line::from(vec![
-                Span::raw(" "),
-                Span::styled(format!("{key:<2}"), key_style),
-                Span::raw("  "),
-                Span::styled(format!("{label:<14}"), label_style),
-                Span::styled(indicator, val_style),
-            ]))
-        })
-        .collect();
+    let section_row = |title: &str| -> ListItem {
+        ListItem::new(Line::from(vec![
+            Span::styled(format!(" ─ {title} "), subtitle_style),
+            Span::styled(
+                "─".repeat(22usize.saturating_sub(title.len())),
+                subtitle_style,
+            ),
+        ]))
+    };
 
-    let bool_list = List::new(bool_items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.accent)),
-    );
-    frame.render_widget(bool_list, v[1]);
+    // ── Row builder: boolean toggle ───────────────────────────────────────────
+    let bool_row = |key: &str, label: &str, enabled: bool| -> ListItem {
+        let (indicator, val_style) = if enabled {
+            ("● on ", on_style)
+        } else {
+            ("○ off", off_style)
+        };
+        ListItem::new(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(format!("{key:<10}"), key_style),
+            Span::styled(format!("{label:<14}"), label_style),
+            Span::styled(indicator, val_style),
+        ]))
+    };
 
-    // Editor section — shows the active editor and lets the user cycle it with e.
-    // When no editor is configured the label is rendered in dim so it reads as
-    // "inactive", matching how boolean toggles look when they are off.
+    // ── All rows in order ─────────────────────────────────────────────────────
     let editor_label = app.editor.label().to_string();
     let editor_val_style = if app.editor == crate::app::Editor::None {
         off_style
@@ -317,22 +272,47 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             .fg(theme.success)
             .add_modifier(Modifier::BOLD)
     };
-    let editor_item = ListItem::new(Line::from(vec![
-        Span::raw(" "),
-        Span::styled("e ", key_style),
-        Span::raw("  "),
-        Span::styled(format!("{:<14}", "open with"), label_style),
-        Span::styled(editor_label, editor_val_style),
-    ]));
 
-    let editor_list = List::new(vec![editor_item]).block(
+    let items: Vec<ListItem> = vec![
+        // ── Toggles section ───────────────────────────────────────────────────
+        spacer_row(),
+        section_row("Toggles"),
+        spacer_row(),
+        bool_row("Shift+C", "cd on exit", app.cd_on_exit),
+        bool_row("w", "single pane", app.single_pane),
+        bool_row("Shift+T", "theme panel", app.show_theme_panel),
+        // ── Editor section ────────────────────────────────────────────────────
+        spacer_row(),
+        section_row("Editor"),
+        spacer_row(),
+        ListItem::new(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(format!("{:<10}", "e"), key_style),
+            Span::styled(format!("{:<14}", "open with"), label_style),
+            Span::styled(editor_label, editor_val_style),
+        ])),
+        spacer_row(),
+    ];
+
+    let list = List::new(items).block(
         Block::default()
-            .title(Span::styled(" Editor ", Style::default().fg(theme.dim)))
+            .title(Span::styled(
+                " ⚙ Options ",
+                Style::default()
+                    .fg(theme.brand)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .title_bottom(Line::from(vec![
+                Span::styled(" Shift+O ", key_style),
+                Span::styled("close  ", subtitle_style),
+                Span::styled(" Shift+C ", key_style),
+                Span::styled("toggle cd ", subtitle_style),
+            ]))
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.accent)),
     );
-    frame.render_widget(editor_list, v[2]);
+    frame.render_widget(list, area);
 }
 
 // ── Action bar ────────────────────────────────────────────────────────────────
