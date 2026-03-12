@@ -253,7 +253,10 @@ fn event_loop(
                 app.last_opened = Some(path);
             }
             ExplorerOutcome::Dismissed => return Ok(()),
-            ExplorerOutcome::Pending | ExplorerOutcome::Unhandled => {}
+            ExplorerOutcome::MkdirCreated(_)
+            | ExplorerOutcome::TouchCreated(_)
+            | ExplorerOutcome::Pending
+            | ExplorerOutcome::Unhandled => {}
         }
     }
 }

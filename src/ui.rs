@@ -308,7 +308,10 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     //   [4]  gap                      — 1 row
     //   [5]  "Editor" section title   — 1 row
     //   [6]  Editor group cell        — 3 rows  (border + 1 row + border)
-    //   [7]  remainder (absorbs slack)
+    //   [7]  gap                      — 1 row
+    //   [8]  "File Ops" section title — 1 row
+    //   [9]  File Ops group cell      — 4 rows  (border + 2 rows + border)
+    //   [10] remainder (absorbs slack)
     let slots = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -319,7 +322,10 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(1), // [4] gap
             Constraint::Length(1), // [5] "Editor" title
             Constraint::Length(3), // [6] Editor group (1 option row)
-            Constraint::Min(0),    // [7] slack
+            Constraint::Length(1), // [7] gap
+            Constraint::Length(1), // [8] "File Ops" title
+            Constraint::Length(4), // [9] File Ops group (2 option rows)
+            Constraint::Min(0),    // [10] slack
         ])
         .split(area);
 
@@ -409,6 +415,29 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             .border_style(Style::default().fg(theme.dim)),
     );
     frame.render_widget(editor_cell, slots[6]);
+
+    // ── File Ops group ────────────────────────────────────────────────────────
+    section_title(frame, slots[8], "File Ops");
+
+    let fileops_rows = vec![
+        option_row(
+            "n",
+            "new folder",
+            Span::styled("mkdir", Style::default().fg(theme.accent)),
+        ),
+        option_row(
+            "N",
+            "new file",
+            Span::styled("touch", Style::default().fg(theme.accent)),
+        ),
+    ];
+    let fileops_cell = Paragraph::new(fileops_rows).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.dim)),
+    );
+    frame.render_widget(fileops_cell, slots[9]);
 }
 
 // ── Action bar ────────────────────────────────────────────────────────────────
@@ -465,6 +494,10 @@ pub fn render_nav_hints_spans(theme: &Theme) -> Vec<Span<'_>> {
         d(" sort  "),
         k("."),
         d(" hidden  "),
+        k("n"),
+        d(" mkdir  "),
+        k("N"),
+        d(" touch  "),
         k("Esc"),
         d(" dismiss"),
     ]
@@ -571,6 +604,10 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
         d(" del  "),
         k("e"),
         d(" edit  "),
+        k("n"),
+        d(" mkdir  "),
+        k("N"),
+        d(" touch  "),
         k("["),
         d("/"),
         k("t"),
@@ -796,10 +833,10 @@ mod tests {
     fn action_bar_spans_count_is_stable() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        // 11 key spans + 11 description spans = 22 total.
+        // 13 key spans + 13 description spans = 26 total.
         assert_eq!(
             spans.len(),
-            22,
+            26,
             "span count changed — update this test if the action bar was intentionally modified"
         );
     }
@@ -817,6 +854,8 @@ mod tests {
             "p",
             "d",
             "e",
+            "n",
+            "N",
             "[",
             "t",
             "w",
@@ -846,6 +885,8 @@ mod tests {
             "p",
             "d",
             "e",
+            "n",
+            "N",
             "[",
             "t",
             "w",
@@ -875,6 +916,8 @@ mod tests {
             "p",
             "d",
             "e",
+            "n",
+            "N",
             "[",
             "t",
             "w",
@@ -905,6 +948,8 @@ mod tests {
             "p",
             "d",
             "e",
+            "n",
+            "N",
             "[",
             "t",
             "w",
@@ -956,7 +1001,7 @@ mod tests {
         // the bold search-activation key.  Exclude it from the simple
         // "first match" check and verify it separately below.
         let key_labels = [
-            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "Esc",
+            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "n", "N", "Esc",
         ];
         for label in key_labels {
             let span = spans
@@ -981,7 +1026,9 @@ mod tests {
         let theme = Theme::default();
         let spans = render_nav_hints_spans(&theme);
         // Exclude '/' — it appears as both a dim separator and a bold accent key.
-        let key_labels = ["↑", "k", "↓", "j", "Enter", "Bksp", "s", ".", "Esc"];
+        let key_labels = [
+            "↑", "k", "↓", "j", "Enter", "Bksp", "s", ".", "n", "N", "Esc",
+        ];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -1012,7 +1059,7 @@ mod tests {
         // Bold key labels — spans carrying these as content must be accent-coloured.
         // '/' is excluded because it also appears as a dim separator between combos.
         let key_labels = [
-            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "Esc",
+            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "n", "N", "Esc",
         ];
         for span in &spans {
             let content = span.content.as_ref();
@@ -1033,10 +1080,10 @@ mod tests {
     fn nav_hints_span_count_is_stable() {
         let theme = Theme::default();
         let spans = render_nav_hints_spans(&theme);
-        // 14 key spans + 14 separator/description spans = 28 total.
+        // 16 key spans + 16 separator/description spans = 32 total.
         assert_eq!(
             spans.len(),
-            28,
+            32,
             "nav hint span count changed — update this test if the nav bar was intentionally modified"
         );
     }

@@ -14,7 +14,8 @@
 //!   always navigable.
 //! * **Keyboard-driven** — `↑`/`↓`/`←`/`→` scroll the list, `Enter` / `l`
 //!   to descend or confirm, `Backspace` / `h` to ascend, `/` to search,
-//!   `s` to cycle sort, `Esc` / `q` to dismiss.
+//!   `s` to cycle sort, `n` to create a new folder, `N` to create a new file,
+//!   `Esc` / `q` to dismiss.
 //! * **Searchable** — press `/` to enter incremental search; entries are
 //!   filtered live as you type.  `Esc` clears the query; a second `Esc`
 //!   dismisses the explorer.
@@ -162,8 +163,10 @@
 //! | `/` | Activate incremental search |
 //! | `s` | Cycle sort mode (`Name` → `Size ↓` → `Extension`) |
 //! | `.` | Toggle hidden (dot-file) entries |
-//! | `Esc` | Clear search (if active), then dismiss |
-//! | `q` | Dismiss (when search is not active) |
+//! | `n` | Create a new folder (type name → `Enter` confirm, `Esc` cancel) |
+//! | `N` | Create a new file   (type name → `Enter` confirm, `Esc` cancel) |
+//! | `Esc` | Clear search / cancel mkdir / cancel touch (if active), then dismiss |
+//! | `q` | Dismiss (when search / mkdir / touch is not active) |
 //!
 //! ## Dual-pane quick start
 //!
@@ -204,6 +207,37 @@
 //!
 //! All standard [`FileExplorer`] bindings continue to work on whichever pane
 //! is currently active.
+//!
+//! ## Folder and file creation
+//!
+//! ### New folder — `n`
+//!
+//! Press `n` to enter mkdir mode.  Type the new folder name, then press
+//! `Enter` to create it (using `fs::create_dir_all`, so nested paths like
+//! `a/b/c` work) or `Esc` to cancel without creating anything.  On success
+//! [`ExplorerOutcome::MkdirCreated`] is returned and the cursor moves to the
+//! new directory.
+//!
+//! ### New file — `N`
+//!
+//! Press `N` (Shift+N) to enter touch mode.  Type the new file name (including
+//! extension), then press `Enter` to create it or `Esc` to cancel.  Parent
+//! directories are created automatically when the name contains `/`.  An
+//! existing file at the target path is left untouched (no truncation).  On
+//! success [`ExplorerOutcome::TouchCreated`] is returned and the cursor moves
+//! to the new file.
+//!
+//! Both modes are also accessible programmatically:
+//!
+//! ```no_run
+//! use tui_file_explorer::FileExplorer;
+//!
+//! let explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
+//! println!("mkdir active : {}", explorer.is_mkdir_active());
+//! println!("mkdir input  : {}", explorer.mkdir_input());
+//! println!("touch active : {}", explorer.is_touch_active());
+//! println!("touch input  : {}", explorer.touch_input());
+//! ```
 //!
 //! ## Module layout
 //!

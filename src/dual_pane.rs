@@ -220,6 +220,11 @@ impl DualPane {
             ExplorerOutcome::Dismissed => DualPaneOutcome::Dismissed,
             ExplorerOutcome::Pending => DualPaneOutcome::Pending,
             ExplorerOutcome::Unhandled => DualPaneOutcome::Unhandled,
+            // A new folder was created in the active pane — surface as Pending
+            // so the caller can react (e.g. reload the inactive pane) if needed.
+            ExplorerOutcome::MkdirCreated(_) => DualPaneOutcome::Pending,
+            // A new file was created in the active pane — surface as Pending.
+            ExplorerOutcome::TouchCreated(_) => DualPaneOutcome::Pending,
         }
     }
 

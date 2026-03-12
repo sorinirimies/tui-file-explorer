@@ -165,7 +165,10 @@ fn event_loop(
         match app.explorer.handle_key(key) {
             ExplorerOutcome::Selected(path) => return Ok(Some(path)),
             ExplorerOutcome::Dismissed => return Ok(None),
-            ExplorerOutcome::Pending | ExplorerOutcome::Unhandled => {}
+            ExplorerOutcome::MkdirCreated(_)
+            | ExplorerOutcome::TouchCreated(_)
+            | ExplorerOutcome::Pending
+            | ExplorerOutcome::Unhandled => {}
         }
     }
 }

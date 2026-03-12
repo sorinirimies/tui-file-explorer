@@ -91,6 +91,14 @@ pub struct FileExplorer {
     pub search_active: bool,
     /// Paths that have been space-marked for a multi-item operation.
     pub marked: HashSet<PathBuf>,
+    /// Whether the explorer is currently capturing keystrokes for a new folder name.
+    pub mkdir_active: bool,
+    /// The folder name being typed when `mkdir_active` is true.
+    pub mkdir_input: String,
+    /// Whether the explorer is currently capturing keystrokes for a new file name.
+    pub touch_active: bool,
+    /// The file name being typed when `touch_active` is true.
+    pub touch_input: String,
 }
 
 impl FileExplorer {
@@ -116,6 +124,10 @@ impl FileExplorer {
             search_query: String::new(),
             search_active: false,
             marked: HashSet::new(),
+            mkdir_active: false,
+            mkdir_input: String::new(),
+            touch_active: false,
+            touch_input: String::new(),
         };
         explorer.reload();
         explorer
@@ -189,6 +201,118 @@ impl FileExplorer {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
+        // ── Touch-mode interception ───────────────────────────────────────────
+        // When touch mode is active every printable character feeds the new
+        // file name.  Enter confirms creation; Esc cancels.
+        if self.touch_active {
+            match key.code {
+                KeyCode::Char(c)
+                    if key.modifiers.is_empty()
+                        || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
+                {
+                    self.touch_input.push(c);
+                    return ExplorerOutcome::Pending;
+                }
+                KeyCode::Backspace => {
+                    self.touch_input.pop();
+                    return ExplorerOutcome::Pending;
+                }
+                KeyCode::Enter => {
+                    let name = self.touch_input.trim().to_string();
+                    self.touch_active = false;
+                    self.touch_input.clear();
+                    if name.is_empty() {
+                        return ExplorerOutcome::Pending;
+                    }
+                    let new_file = self.current_dir.join(&name);
+                    // Create parent dirs if the name contains path separators,
+                    // then create (or truncate-to-zero) the file itself.
+                    let create_result = (|| -> std::io::Result<()> {
+                        if let Some(parent) = new_file.parent() {
+                            std::fs::create_dir_all(parent)?;
+                        }
+                        // OpenOptions::create(true) + write(true) creates the
+                        // file if absent and leaves an existing one untouched.
+                        std::fs::OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(false)
+                            .open(&new_file)?;
+                        Ok(())
+                    })();
+                    match create_result {
+                        Ok(()) => {
+                            self.reload();
+                            // Move cursor to the newly created file.
+                            if let Some(idx) = self.entries.iter().position(|e| e.path == new_file)
+                            {
+                                self.cursor = idx;
+                            }
+                            return ExplorerOutcome::TouchCreated(new_file);
+                        }
+                        Err(e) => {
+                            self.status = format!("touch failed: {e}");
+                            return ExplorerOutcome::Pending;
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    self.touch_active = false;
+                    self.touch_input.clear();
+                    return ExplorerOutcome::Pending;
+                }
+                _ => return ExplorerOutcome::Pending,
+            }
+        }
+
+        // ── Mkdir-mode interception ───────────────────────────────────────────
+        // When mkdir mode is active every printable character feeds the new
+        // folder name.  Enter confirms creation; Esc cancels.
+        if self.mkdir_active {
+            match key.code {
+                KeyCode::Char(c)
+                    if key.modifiers.is_empty()
+                        || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
+                {
+                    self.mkdir_input.push(c);
+                    return ExplorerOutcome::Pending;
+                }
+                KeyCode::Backspace => {
+                    self.mkdir_input.pop();
+                    return ExplorerOutcome::Pending;
+                }
+                KeyCode::Enter => {
+                    let name = self.mkdir_input.trim().to_string();
+                    self.mkdir_active = false;
+                    self.mkdir_input.clear();
+                    if name.is_empty() {
+                        return ExplorerOutcome::Pending;
+                    }
+                    let new_dir = self.current_dir.join(&name);
+                    match std::fs::create_dir_all(&new_dir) {
+                        Ok(()) => {
+                            self.reload();
+                            // Move cursor to the newly created directory.
+                            if let Some(idx) = self.entries.iter().position(|e| e.path == new_dir) {
+                                self.cursor = idx;
+                            }
+                            return ExplorerOutcome::MkdirCreated(new_dir);
+                        }
+                        Err(e) => {
+                            self.status = format!("mkdir failed: {e}");
+                            return ExplorerOutcome::Pending;
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    self.mkdir_active = false;
+                    self.mkdir_input.clear();
+                    return ExplorerOutcome::Pending;
+                }
+                _ => return ExplorerOutcome::Pending,
+            }
+        }
+
         // ── Search-mode interception ──────────────────────────────────────────
         // When search is active, printable characters feed the query rather than
         // triggering navigation shortcuts.  Navigation keys (arrows, Enter, etc.)
@@ -326,6 +450,21 @@ impl FileExplorer {
                 ExplorerOutcome::Pending
             }
 
+            // ── Activate mkdir mode ───────────────────────────────────────────
+            KeyCode::Char('n') if key.modifiers.is_empty() => {
+                self.mkdir_active = true;
+                self.mkdir_input.clear();
+                ExplorerOutcome::Pending
+            }
+
+            // ── Activate touch (new file) mode ────────────────────────────────
+            // Shift+N — complement to `n` (mkdir).
+            KeyCode::Char('N') if key.modifiers.is_empty() => {
+                self.touch_active = true;
+                self.touch_input.clear();
+                ExplorerOutcome::Pending
+            }
+
             _ => ExplorerOutcome::Unhandled,
         }
     }
@@ -335,6 +474,26 @@ impl FileExplorer {
     /// The currently highlighted [`FsEntry`], or `None` if the list is empty.
     pub fn current_entry(&self) -> Option<&FsEntry> {
         self.entries.get(self.cursor)
+    }
+
+    /// Whether the explorer is in mkdir (new-folder input) mode.
+    pub fn is_mkdir_active(&self) -> bool {
+        self.mkdir_active
+    }
+
+    /// The folder name being typed when mkdir mode is active.
+    pub fn mkdir_input(&self) -> &str {
+        &self.mkdir_input
+    }
+
+    /// Whether the explorer is in touch (new-file input) mode.
+    pub fn is_touch_active(&self) -> bool {
+        self.touch_active
+    }
+
+    /// The file name being typed when touch mode is active.
+    pub fn touch_input(&self) -> &str {
+        &self.touch_input
     }
 
     // ── Inspectors ────────────────────────────────────────────────────────────
@@ -698,6 +857,10 @@ impl FileExplorerBuilder {
             search_query: String::new(),
             search_active: false,
             marked: HashSet::new(),
+            mkdir_active: false,
+            mkdir_input: String::new(),
+            touch_active: false,
+            touch_input: String::new(),
         };
         explorer.reload();
         explorer

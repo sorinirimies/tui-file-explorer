@@ -91,6 +91,10 @@ pub enum ExplorerOutcome {
     Pending,
     /// The key was not recognised / consumed by the explorer.
     Unhandled,
+    /// A new directory was successfully created at the given path.
+    MkdirCreated(PathBuf),
+    /// A new empty file was successfully created at the given path.
+    TouchCreated(PathBuf),
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

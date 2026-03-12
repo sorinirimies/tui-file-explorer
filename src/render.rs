@@ -379,6 +379,68 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: &Theme) {
+    // ── Mkdir input (shown instead of status bar while mkdir mode is active) ──
+    if explorer.mkdir_active {
+        let left_line = Line::from(vec![
+            Span::styled(
+                " \u{1F4C2} New folder: ",
+                Style::default()
+                    .fg(theme.success)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                explorer.mkdir_input(),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("\u{2588}", Style::default().fg(theme.accent)),
+            Span::styled(
+                "  Enter confirm  Esc cancel",
+                Style::default().fg(theme.dim),
+            ),
+        ]);
+        let mkdir_para = Paragraph::new(left_line).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme.success)),
+        );
+        frame.render_widget(mkdir_para, area);
+        return;
+    }
+
+    // ── Touch input (shown instead of status bar while touch mode is active) ──
+    if explorer.touch_active {
+        let left_line = Line::from(vec![
+            Span::styled(
+                " \u{1F4C4} New file: ",
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                explorer.touch_input(),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("\u{2588}", Style::default().fg(theme.accent)),
+            Span::styled(
+                "  Enter confirm  Esc cancel",
+                Style::default().fg(theme.dim),
+            ),
+        ]);
+        let touch_para = Paragraph::new(left_line).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme.accent)),
+        );
+        frame.render_widget(touch_para, area);
+        return;
+    }
+
     // ── Search input (shown instead of status bar while search is active) ─────
     if explorer.search_active {
         let left_line = Line::from(vec![
