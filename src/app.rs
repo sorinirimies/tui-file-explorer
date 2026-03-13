@@ -54,7 +54,7 @@ pub enum Editor {
 }
 
 impl Editor {
-    /// Return the launch string for this editor.
+    /// Return the launch binary (and optional arguments) for this editor.
     ///
     /// Returns `None` for `Editor::None` — the caller should skip the launch.
     ///
@@ -62,16 +62,38 @@ impl Editor {
     /// arguments (e.g. `"code --wait"`).  The caller is responsible for
     /// splitting on whitespace to separate the binary from its arguments
     /// before passing them to `std::process::Command`.
-    pub fn binary(&self) -> Option<&str> {
+    ///
+    /// For `Editor::Helix` the function probes `$PATH` at call time: it
+    /// tries `hx` first (the name used by the official release binaries and
+    /// Homebrew on macOS), then falls back to `helix` (the name used by most
+    /// Linux package managers such as pacman, apt, and dnf).  Whichever is
+    /// found first is returned; if neither is on `$PATH` the string `"hx"` is
+    /// returned as a best-effort fallback so the error message names a real
+    /// binary.
+    pub fn binary(&self) -> Option<String> {
         match self {
             Editor::None => Option::None,
-            Editor::Helix => Some("hx"),
-            Editor::Neovim => Some("nvim"),
-            Editor::Vim => Some("vim"),
-            Editor::Nano => Some("nano"),
-            Editor::Micro => Some("micro"),
-            Editor::Custom(s) => Some(s.as_str()),
+            Editor::Helix => Some(Self::resolve_helix()),
+            Editor::Neovim => Some("nvim".to_string()),
+            Editor::Vim => Some("vim".to_string()),
+            Editor::Nano => Some("nano".to_string()),
+            Editor::Micro => Some("micro".to_string()),
+            Editor::Custom(s) => Some(s.clone()),
         }
+    }
+
+    /// Probe `$PATH` for the Helix binary name.
+    ///
+    /// Returns `"hx"` when found, then tries `"helix"`, and finally falls
+    /// back to `"hx"` so callers always get a non-empty string.
+    fn resolve_helix() -> String {
+        for candidate in &["hx", "helix"] {
+            if which_on_path(candidate) {
+                return candidate.to_string();
+            }
+        }
+        // Neither found — return "hx" so the error message is predictable.
+        "hx".to_string()
     }
 
     /// Return a short human-readable label (shown in the options panel).
@@ -137,6 +159,36 @@ impl Editor {
             other => Editor::Custom(other.to_string()),
         })
     }
+}
+
+// ── PATH probe helper ─────────────────────────────────────────────────────────
+
+/// Returns `true` when `name` resolves to an executable on `$PATH`.
+///
+/// This is intentionally minimal — it only walks `$PATH` entries and checks
+/// for a regular (or symlinked) file with execute permission.  It does not
+/// handle Windows `.cmd` shims or `PATHEXT`, but that is fine because Helix
+/// does not ship as a `.cmd` wrapper.
+fn which_on_path(name: &str) -> bool {
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&path_var).any(|dir| {
+        let candidate = dir.join(name);
+        // `metadata` follows symlinks, so a symlink to an executable is OK.
+        candidate
+            .metadata()
+            .map(|m| {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    m.is_file() && (m.permissions().mode() & 0o111 != 0)
+                }
+                #[cfg(not(unix))]
+                {
+                    m.is_file()
+                }
+            })
+            .unwrap_or(false)
+    })
 }
 
 // ── AppOptions ────────────────────────────────────────────────────────────────
@@ -841,12 +893,64 @@ mod tests {
 
     #[test]
     fn editor_binary_names() {
-        assert_eq!(Editor::Helix.binary(), Some("hx"));
-        assert_eq!(Editor::Neovim.binary(), Some("nvim"));
-        assert_eq!(Editor::Vim.binary(), Some("vim"));
-        assert_eq!(Editor::Nano.binary(), Some("nano"));
-        assert_eq!(Editor::Micro.binary(), Some("micro"));
-        assert_eq!(Editor::Custom("code".into()).binary(), Some("code"));
+        // Helix resolves to whichever of "hx" / "helix" is on $PATH, or "hx"
+        // as a fallback — just verify it returns Some non-empty string.
+        let helix_bin = Editor::Helix.binary();
+        assert!(helix_bin.is_some(), "Helix binary should be Some");
+        assert!(
+            !helix_bin.unwrap().is_empty(),
+            "Helix binary string should not be empty"
+        );
+        assert_eq!(Editor::Neovim.binary(), Some("nvim".to_string()));
+        assert_eq!(Editor::Vim.binary(), Some("vim".to_string()));
+        assert_eq!(Editor::Nano.binary(), Some("nano".to_string()));
+        assert_eq!(Editor::Micro.binary(), Some("micro".to_string()));
+        assert_eq!(
+            Editor::Custom("code".into()).binary(),
+            Some("code".to_string())
+        );
+    }
+
+    #[test]
+    fn which_on_path_finds_existing_binary() {
+        // "sh" is guaranteed to exist on every Unix system we run tests on.
+        #[cfg(unix)]
+        assert!(
+            which_on_path("sh"),
+            "which_on_path should find 'sh' on Unix"
+        );
+        // On non-Unix just verify the function doesn't panic.
+        #[cfg(not(unix))]
+        let _ = which_on_path("cmd");
+    }
+
+    #[test]
+    fn which_on_path_returns_false_for_nonexistent_binary() {
+        assert!(
+            !which_on_path("__tfe_definitely_does_not_exist__"),
+            "which_on_path should return false for a binary that doesn't exist"
+        );
+    }
+
+    #[test]
+    fn helix_binary_returns_hx_or_helix() {
+        let bin = Editor::Helix.binary().expect("Helix binary should be Some");
+        assert!(
+            bin == "hx" || bin == "helix",
+            "Helix binary should be 'hx' or 'helix', got '{bin}'"
+        );
+    }
+
+    #[test]
+    fn helix_binary_matches_what_is_on_path() {
+        let bin = Editor::Helix.binary().expect("Helix binary should be Some");
+        // If either candidate is on $PATH the returned name must be on $PATH too.
+        if which_on_path("hx") || which_on_path("helix") {
+            assert!(
+                which_on_path(&bin),
+                "resolved helix binary '{bin}' should be found on $PATH"
+            );
+        }
     }
 
     #[test]

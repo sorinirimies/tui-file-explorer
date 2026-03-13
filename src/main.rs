@@ -421,7 +421,7 @@ fn run_loop<W: io::Write>(
                 // since the user-supplied value is already a single token or
                 // was quoted by the shell before reaching us.
                 let mut parts = binary_str.split_whitespace();
-                let binary = parts.next().unwrap_or(binary_str).to_string();
+                let binary = parts.next().unwrap_or(&binary_str).to_string();
                 let extra_args: Vec<&str> = parts.collect();
 
                 // 1. Tear down the TUI so the editor gets a clean terminal.
