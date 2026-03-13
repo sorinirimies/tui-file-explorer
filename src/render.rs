@@ -441,6 +441,37 @@ fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
         return;
     }
 
+    // ── Rename input (shown instead of status bar while rename mode is active) ─
+    if explorer.rename_active {
+        let left_line = Line::from(vec![
+            Span::styled(
+                " \u{270F}\u{FE0F}  Rename: ",
+                Style::default()
+                    .fg(theme.brand)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                explorer.rename_input(),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("\u{2588}", Style::default().fg(theme.accent)),
+            Span::styled(
+                "  Enter confirm  Esc cancel",
+                Style::default().fg(theme.dim),
+            ),
+        ]);
+        let rename_para = Paragraph::new(left_line).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme.brand)),
+        );
+        frame.render_widget(rename_para, area);
+        return;
+    }
+
     // ── Search input (shown instead of status bar while search is active) ─────
     if explorer.search_active {
         let left_line = Line::from(vec![

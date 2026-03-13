@@ -795,6 +795,16 @@ impl App {
                     .to_string();
                 self.notify(format!("Created file '{name}'"));
             }
+            ExplorerOutcome::RenameCompleted(path) => {
+                self.left.reload();
+                self.right.reload();
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                self.notify(format!("Renamed to '{name}'"));
+            }
             ExplorerOutcome::Pending => {
                 if self.status_msg.starts_with("Error") || self.status_msg.starts_with("Delete") {
                     // keep error messages visible

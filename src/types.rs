@@ -95,6 +95,8 @@ pub enum ExplorerOutcome {
     MkdirCreated(PathBuf),
     /// A new empty file was successfully created at the given path.
     TouchCreated(PathBuf),
+    /// An entry was successfully renamed; contains the new path.
+    RenameCompleted(PathBuf),
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -244,6 +246,29 @@ mod tests {
     #[test]
     fn explorer_outcome_is_clone() {
         let a = ExplorerOutcome::Pending;
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn explorer_outcome_rename_completed_carries_path() {
+        let path = PathBuf::from("/tmp/renamed.txt");
+        let outcome = ExplorerOutcome::RenameCompleted(path.clone());
+        assert_eq!(outcome, ExplorerOutcome::RenameCompleted(path));
+    }
+
+    #[test]
+    fn explorer_outcome_rename_completed_neq_touch_created() {
+        let path = PathBuf::from("/tmp/file.txt");
+        assert_ne!(
+            ExplorerOutcome::RenameCompleted(path.clone()),
+            ExplorerOutcome::TouchCreated(path),
+        );
+    }
+
+    #[test]
+    fn explorer_outcome_rename_completed_is_clone() {
+        let a = ExplorerOutcome::RenameCompleted(PathBuf::from("/tmp/x.txt"));
         let b = a.clone();
         assert_eq!(a, b);
     }

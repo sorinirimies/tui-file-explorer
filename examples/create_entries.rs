@@ -142,11 +142,21 @@ fn event_loop(
                 app.status = format!("📄 Created file '{name}'");
             }
 
+            ExplorerOutcome::RenameCompleted(path) => {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                app.status = format!("✏️  Renamed to '{name}'");
+            }
+
             ExplorerOutcome::Pending | ExplorerOutcome::Unhandled => {
                 // Clear the status when the user is actively typing a new name
                 // so the bar doesn't distract from the footer input prompt.
                 if app.explorer.is_mkdir_active()
                     || app.explorer.is_touch_active()
+                    || app.explorer.is_rename_active()
                     || app.explorer.is_searching()
                 {
                     // keep existing status — the footer already shows the input

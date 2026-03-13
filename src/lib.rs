@@ -165,8 +165,9 @@
 //! | `.` | Toggle hidden (dot-file) entries |
 //! | `n` | Create a new folder (type name → `Enter` confirm, `Esc` cancel) |
 //! | `N` | Create a new file   (type name → `Enter` confirm, `Esc` cancel) |
-//! | `Esc` | Clear search / cancel mkdir / cancel touch (if active), then dismiss |
-//! | `q` | Dismiss (when search / mkdir / touch is not active) |
+//! | `r` | Rename current entry (pre-filled with current name → `Enter` confirm, `Esc` cancel) |
+//! | `Esc` | Clear search / cancel mkdir / cancel touch / cancel rename (if active), then dismiss |
+//! | `q` | Dismiss (when search / mkdir / touch / rename is not active) |
 //!
 //! ## Dual-pane quick start
 //!
@@ -241,13 +242,13 @@
 //!
 //! ## Module layout
 //!
-//! | Module      | Contents                                                                                                          |
-//! |-------------|-------------------------------------------------------------------------------------------------------------------|
-//! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                                                    |
-//! | `palette`   | Palette constants (all `pub`) + [`Theme`] builder + 27 named presets                                             |
-//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`], `load_entries`                          |
-//! | `dual_pane` | [`DualPane`], [`DualPaneBuilder`], [`DualPaneActive`], [`DualPaneOutcome`]                                        |
-//! | `render`    | [`render`], [`render_themed`], [`render_dual_pane`], [`render_dual_pane_themed`] — pure rendering, no I/O        |
+//! | Module      | Contents                                                                                                                                        |
+//! |-------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+//! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                                                                                  |
+//! | `palette`   | Palette constants (all `pub`) + [`Theme`] builder + 27 named presets                                                                           |
+//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`], `load_entries`                                                         |
+//! | `dual_pane` | [`DualPane`], [`DualPaneBuilder`], [`DualPaneActive`], [`DualPaneOutcome`]                                                                      |
+//! | `render`    | [`render`], [`render_themed`], [`render_dual_pane`], [`render_dual_pane_themed`] — pure rendering, no I/O                                       |
 
 pub mod dual_pane;
 pub mod explorer;

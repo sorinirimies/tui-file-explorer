@@ -371,6 +371,30 @@ fn event_loop(
                     "No editor set — open Options (Shift+O) and press e to pick one".into();
                 continue;
             }
+            DualPaneOutcome::MkdirCreated(path) => {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                app.status = format!("📂 Created folder '{name}'");
+            }
+            DualPaneOutcome::TouchCreated(path) => {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                app.status = format!("📄 Created file '{name}'");
+            }
+            DualPaneOutcome::RenameCompleted(path) => {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                app.status = format!("✏️  Renamed to '{name}'");
+            }
             DualPaneOutcome::Dismissed => {
                 // cd-on-exit: print the active pane's current directory.
                 if app.cd_on_exit {

@@ -310,7 +310,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     //   [6]  Editor group cell        — 3 rows  (border + 1 row + border)
     //   [7]  gap                      — 1 row
     //   [8]  "File Ops" section title — 1 row
-    //   [9]  File Ops group cell      — 4 rows  (border + 2 rows + border)
+    //   [9]  File Ops group cell      — 5 rows  (border + 3 rows + border)
     //   [10] remainder (absorbs slack)
     let slots = Layout::default()
         .direction(Direction::Vertical)
@@ -324,7 +324,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(3), // [6] Editor group (1 option row)
             Constraint::Length(1), // [7] gap
             Constraint::Length(1), // [8] "File Ops" title
-            Constraint::Length(4), // [9] File Ops group (2 option rows)
+            Constraint::Length(5), // [9] File Ops group (3 option rows)
             Constraint::Min(0),    // [10] slack
         ])
         .split(area);
@@ -430,6 +430,11 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             "new file",
             Span::styled("touch", Style::default().fg(theme.accent)),
         ),
+        option_row(
+            "r",
+            "rename",
+            Span::styled("rename", Style::default().fg(theme.accent)),
+        ),
     ];
     let fileops_cell = Paragraph::new(fileops_rows).block(
         Block::default()
@@ -498,6 +503,8 @@ pub fn render_nav_hints_spans(theme: &Theme) -> Vec<Span<'_>> {
         d(" mkdir  "),
         k("N"),
         d(" touch  "),
+        k("r"),
+        d(" rename  "),
         k("Esc"),
         d(" dismiss"),
     ]
@@ -608,6 +615,8 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
         d(" mkdir  "),
         k("N"),
         d(" touch  "),
+        k("r"),
+        d(" rename  "),
         k("["),
         d("/"),
         k("t"),
@@ -833,10 +842,10 @@ mod tests {
     fn action_bar_spans_count_is_stable() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        // 13 key spans + 13 description spans = 26 total.
+        // 14 key spans + 14 description spans = 28 total.
         assert_eq!(
             spans.len(),
-            26,
+            28,
             "span count changed — update this test if the action bar was intentionally modified"
         );
     }
@@ -856,6 +865,7 @@ mod tests {
             "e",
             "n",
             "N",
+            "r",
             "[",
             "t",
             "w",
@@ -887,6 +897,7 @@ mod tests {
             "e",
             "n",
             "N",
+            "r",
             "[",
             "t",
             "w",
@@ -918,6 +929,7 @@ mod tests {
             "e",
             "n",
             "N",
+            "r",
             "[",
             "t",
             "w",
@@ -950,6 +962,7 @@ mod tests {
             "e",
             "n",
             "N",
+            "r",
             "[",
             "t",
             "w",
@@ -1059,7 +1072,7 @@ mod tests {
         // Bold key labels — spans carrying these as content must be accent-coloured.
         // '/' is excluded because it also appears as a dim separator between combos.
         let key_labels = [
-            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "n", "N", "Esc",
+            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "n", "N", "r", "Esc",
         ];
         for span in &spans {
             let content = span.content.as_ref();
@@ -1080,10 +1093,10 @@ mod tests {
     fn nav_hints_span_count_is_stable() {
         let theme = Theme::default();
         let spans = render_nav_hints_spans(&theme);
-        // 16 key spans + 16 separator/description spans = 32 total.
+        // 17 key spans + 17 separator/description spans = 34 total.
         assert_eq!(
             spans.len(),
-            32,
+            34,
             "nav hint span count changed — update this test if the nav bar was intentionally modified"
         );
     }

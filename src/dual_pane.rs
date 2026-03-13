@@ -100,6 +100,12 @@ pub enum DualPaneOutcome {
     /// The key was not recognised by either the `DualPane` layer or the
     /// active [`FileExplorer`].
     Unhandled,
+    /// A new directory was successfully created at the given path.
+    MkdirCreated(PathBuf),
+    /// A new empty file was successfully created at the given path.
+    TouchCreated(PathBuf),
+    /// An entry was successfully renamed; contains the new path.
+    RenameCompleted(PathBuf),
 }
 
 // ── DualPane ─────────────────────────────────────────────────────────────────
@@ -220,11 +226,12 @@ impl DualPane {
             ExplorerOutcome::Dismissed => DualPaneOutcome::Dismissed,
             ExplorerOutcome::Pending => DualPaneOutcome::Pending,
             ExplorerOutcome::Unhandled => DualPaneOutcome::Unhandled,
-            // A new folder was created in the active pane — surface as Pending
-            // so the caller can react (e.g. reload the inactive pane) if needed.
-            ExplorerOutcome::MkdirCreated(_) => DualPaneOutcome::Pending,
-            // A new file was created in the active pane — surface as Pending.
-            ExplorerOutcome::TouchCreated(_) => DualPaneOutcome::Pending,
+            // Filesystem-mutation outcomes are surfaced with their paths so
+            // callers can react (e.g. reload the inactive pane, show a status
+            // message, move focus to the new entry, etc.).
+            ExplorerOutcome::MkdirCreated(p) => DualPaneOutcome::MkdirCreated(p),
+            ExplorerOutcome::TouchCreated(p) => DualPaneOutcome::TouchCreated(p),
+            ExplorerOutcome::RenameCompleted(p) => DualPaneOutcome::RenameCompleted(p),
         }
     }
 
@@ -930,6 +937,107 @@ mod tests {
         assert!(
             dual.single_pane,
             "two toggles should restore original state"
+        );
+    }
+
+    // ── Rename / MkdirCreated / TouchCreated outcome surfacing ────────────────
+
+    #[test]
+    fn dual_pane_outcome_mkdir_created_carries_path() {
+        let path = std::path::PathBuf::from("/tmp/new_dir");
+        let outcome = DualPaneOutcome::MkdirCreated(path.clone());
+        assert_eq!(outcome, DualPaneOutcome::MkdirCreated(path));
+    }
+
+    #[test]
+    fn dual_pane_outcome_touch_created_carries_path() {
+        let path = std::path::PathBuf::from("/tmp/new_file.txt");
+        let outcome = DualPaneOutcome::TouchCreated(path.clone());
+        assert_eq!(outcome, DualPaneOutcome::TouchCreated(path));
+    }
+
+    #[test]
+    fn dual_pane_outcome_rename_completed_carries_path() {
+        let path = std::path::PathBuf::from("/tmp/renamed.txt");
+        let outcome = DualPaneOutcome::RenameCompleted(path.clone());
+        assert_eq!(outcome, DualPaneOutcome::RenameCompleted(path));
+    }
+
+    #[test]
+    fn r_key_surfaces_rename_completed_from_active_pane() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("file.txt"), b"x").expect("write");
+        let mut dual = DualPane::builder(dir.path().to_path_buf()).build();
+
+        // Activate rename mode.
+        dual.handle_key(key(KeyCode::Char('r')));
+        assert!(dual.active().is_rename_active());
+
+        // Clear the prefilled name and type a new one.
+        let prefill_len = dual.active().rename_input().len();
+        for _ in 0..prefill_len {
+            dual.handle_key(key(KeyCode::Backspace));
+        }
+        for c in "renamed.txt".chars() {
+            dual.handle_key(key(KeyCode::Char(c)));
+        }
+
+        let outcome = dual.handle_key(key(KeyCode::Enter));
+        assert!(
+            matches!(outcome, DualPaneOutcome::RenameCompleted(ref p) if p.file_name().unwrap() == "renamed.txt"),
+            "expected RenameCompleted, got {outcome:?}"
+        );
+        assert!(dir.path().join("renamed.txt").exists());
+        assert!(!dir.path().join("file.txt").exists());
+    }
+
+    #[test]
+    fn r_key_on_inactive_pane_does_not_activate_rename_there() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.txt"), b"a").expect("write");
+        let mut dual = DualPane::builder(dir.path().to_path_buf()).build();
+
+        // Active pane is left by default.
+        dual.handle_key(key(KeyCode::Char('r')));
+        assert!(dual.left.is_rename_active());
+        assert!(!dual.right.is_rename_active());
+    }
+
+    #[test]
+    fn mkdir_created_outcome_is_surfaced_not_collapsed() {
+        let dir = tempdir().expect("tempdir");
+        let mut dual = DualPane::builder(dir.path().to_path_buf()).build();
+
+        // Activate mkdir mode and confirm with a new folder name.
+        // Use only lowercase letters that don't trigger other key bindings.
+        dual.handle_key(key(KeyCode::Char('n')));
+        for c in "freshdir".chars() {
+            dual.handle_key(key(KeyCode::Char(c)));
+        }
+        let outcome = dual.handle_key(key(KeyCode::Enter));
+
+        assert!(
+            matches!(outcome, DualPaneOutcome::MkdirCreated(ref p) if p.file_name().unwrap() == "freshdir"),
+            "expected MkdirCreated, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn touch_created_outcome_is_surfaced_not_collapsed() {
+        let dir = tempdir().expect("tempdir");
+        let mut dual = DualPane::builder(dir.path().to_path_buf()).build();
+
+        // Activate touch mode (Shift+N) and confirm with a new file name.
+        // Use only lowercase letters/dots that don't trigger other key bindings.
+        dual.handle_key(key(KeyCode::Char('N')));
+        for c in "fresh.txt".chars() {
+            dual.handle_key(key(KeyCode::Char(c)));
+        }
+        let outcome = dual.handle_key(key(KeyCode::Enter));
+
+        assert!(
+            matches!(outcome, DualPaneOutcome::TouchCreated(ref p) if p.file_name().unwrap() == "fresh.txt"),
+            "expected TouchCreated, got {outcome:?}"
         );
     }
 }

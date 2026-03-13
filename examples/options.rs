@@ -333,6 +333,30 @@ fn event_loop(
                 return Ok(Some(path));
             }
             DualPaneOutcome::Dismissed => return Ok(None),
+            DualPaneOutcome::MkdirCreated(path) => {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                app.status = format!("📂 Created folder '{name}'");
+            }
+            DualPaneOutcome::TouchCreated(path) => {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                app.status = format!("📄 Created file '{name}'");
+            }
+            DualPaneOutcome::RenameCompleted(path) => {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned();
+                app.status = format!("✏️  Renamed to '{name}'");
+            }
             DualPaneOutcome::Pending | DualPaneOutcome::Unhandled => {}
         }
     }

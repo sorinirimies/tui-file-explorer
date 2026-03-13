@@ -99,6 +99,10 @@ pub struct FileExplorer {
     pub touch_active: bool,
     /// The file name being typed when `touch_active` is true.
     pub touch_input: String,
+    /// Whether the explorer is currently capturing keystrokes for a rename operation.
+    pub rename_active: bool,
+    /// The new name being typed when `rename_active` is true.
+    pub rename_input: String,
 }
 
 impl FileExplorer {
@@ -128,6 +132,8 @@ impl FileExplorer {
             mkdir_input: String::new(),
             touch_active: false,
             touch_input: String::new(),
+            rename_active: false,
+            rename_input: String::new(),
         };
         explorer.reload();
         explorer
@@ -201,6 +207,59 @@ impl FileExplorer {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
+        // ── Rename-mode interception ──────────────────────────────────────────
+        // When rename mode is active every printable character feeds the new
+        // name.  Enter confirms the rename; Esc cancels.
+        if self.rename_active {
+            match key.code {
+                KeyCode::Char(c)
+                    if key.modifiers.is_empty()
+                        || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
+                {
+                    self.rename_input.push(c);
+                    return ExplorerOutcome::Pending;
+                }
+                KeyCode::Backspace => {
+                    self.rename_input.pop();
+                    return ExplorerOutcome::Pending;
+                }
+                KeyCode::Enter => {
+                    let new_name = self.rename_input.trim().to_string();
+                    self.rename_active = false;
+                    self.rename_input.clear();
+                    if new_name.is_empty() {
+                        return ExplorerOutcome::Pending;
+                    }
+                    // Grab the source path before we reload.
+                    let src = match self.entries.get(self.cursor) {
+                        Some(e) => e.path.clone(),
+                        None => return ExplorerOutcome::Pending,
+                    };
+                    let dst = self.current_dir.join(&new_name);
+                    match std::fs::rename(&src, &dst) {
+                        Ok(()) => {
+                            self.reload();
+                            // Move cursor to the renamed entry.
+                            if let Some(idx) = self.entries.iter().position(|e| e.path == dst) {
+                                self.cursor = idx;
+                            }
+                            return ExplorerOutcome::RenameCompleted(dst);
+                        }
+                        Err(e) => {
+                            self.status = format!("rename failed: {e}");
+                            return ExplorerOutcome::Pending;
+                        }
+                    }
+                }
+                KeyCode::Esc => {
+                    self.rename_active = false;
+                    self.rename_input.clear();
+                    return ExplorerOutcome::Pending;
+                }
+                _ => return ExplorerOutcome::Pending,
+            }
+        }
+
         // ── Touch-mode interception ───────────────────────────────────────────
         // When touch mode is active every printable character feeds the new
         // file name.  Enter confirms creation; Esc cancels.
@@ -465,6 +524,17 @@ impl FileExplorer {
                 ExplorerOutcome::Pending
             }
 
+            // ── Activate rename mode ──────────────────────────────────────────
+            // `r` — pre-fills the input with the current entry's name so the
+            // user can edit it rather than type from scratch.
+            KeyCode::Char('r') if key.modifiers.is_empty() => {
+                if let Some(entry) = self.entries.get(self.cursor) {
+                    self.rename_input = entry.name.clone();
+                    self.rename_active = true;
+                }
+                ExplorerOutcome::Pending
+            }
+
             _ => ExplorerOutcome::Unhandled,
         }
     }
@@ -494,6 +564,16 @@ impl FileExplorer {
     /// The file name being typed when touch mode is active.
     pub fn touch_input(&self) -> &str {
         &self.touch_input
+    }
+
+    /// Whether the explorer is in rename (entry-rename input) mode.
+    pub fn is_rename_active(&self) -> bool {
+        self.rename_active
+    }
+
+    /// The new name being typed when rename mode is active.
+    pub fn rename_input(&self) -> &str {
+        &self.rename_input
     }
 
     // ── Inspectors ────────────────────────────────────────────────────────────
@@ -861,6 +941,8 @@ impl FileExplorerBuilder {
             mkdir_input: String::new(),
             touch_active: false,
             touch_input: String::new(),
+            rename_active: false,
+            rename_input: String::new(),
         };
         explorer.reload();
         explorer
@@ -2693,5 +2775,240 @@ mod tests {
         let entries = load_entries(dir.path(), false, &filter, crate::types::SortMode::Name, "");
         assert_eq!(entries.len(), 1);
         assert!(entries[0].is_dir);
+    }
+
+    // ── Rename mode ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn r_key_activates_rename_mode_with_prefilled_name() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        // Move cursor to a known file.
+        let idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.name == "readme.txt")
+            .expect("readme.txt present");
+        explorer.cursor = idx;
+
+        let outcome = explorer.handle_key(key(KeyCode::Char('r')));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(explorer.is_rename_active());
+        assert_eq!(explorer.rename_input(), "readme.txt");
+    }
+
+    #[test]
+    fn r_key_on_empty_dir_does_not_activate_rename() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        assert!(explorer.entries.is_empty());
+
+        let outcome = explorer.handle_key(key(KeyCode::Char('r')));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(!explorer.is_rename_active());
+    }
+
+    #[test]
+    fn rename_mode_chars_append_to_input() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.handle_key(key(KeyCode::Char('r')));
+        assert!(explorer.is_rename_active());
+
+        // Clear the prefilled name and type a fresh one.
+        let original_len = explorer.rename_input().len();
+        for _ in 0..original_len {
+            explorer.handle_key(key(KeyCode::Backspace));
+        }
+        explorer.handle_key(key(KeyCode::Char('n')));
+        explorer.handle_key(key(KeyCode::Char('e')));
+        explorer.handle_key(key(KeyCode::Char('w')));
+
+        assert_eq!(explorer.rename_input(), "new");
+        assert!(explorer.is_rename_active());
+    }
+
+    #[test]
+    fn rename_mode_backspace_pops_last_char() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.handle_key(key(KeyCode::Char('r')));
+
+        // Pop all chars then type "ab".
+        let original_len = explorer.rename_input().len();
+        for _ in 0..original_len {
+            explorer.handle_key(key(KeyCode::Backspace));
+        }
+        explorer.handle_key(key(KeyCode::Char('a')));
+        explorer.handle_key(key(KeyCode::Char('b')));
+        assert_eq!(explorer.rename_input(), "ab");
+
+        explorer.handle_key(key(KeyCode::Backspace));
+        assert_eq!(explorer.rename_input(), "a");
+    }
+
+    #[test]
+    fn rename_mode_esc_cancels_without_renaming() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.name == "readme.txt")
+            .expect("readme.txt present");
+        explorer.cursor = idx;
+
+        explorer.handle_key(key(KeyCode::Char('r')));
+        assert!(explorer.is_rename_active());
+
+        let outcome = explorer.handle_key(key(KeyCode::Esc));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(!explorer.is_rename_active());
+        assert_eq!(explorer.rename_input(), "");
+        // File must still exist under the old name.
+        assert!(tmp.path().join("readme.txt").exists());
+    }
+
+    #[test]
+    fn rename_mode_enter_renames_file_and_returns_rename_completed() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.name == "readme.txt")
+            .expect("readme.txt present");
+        explorer.cursor = idx;
+
+        // Activate rename, clear prefill, type new name.
+        explorer.handle_key(key(KeyCode::Char('r')));
+        let prefill_len = explorer.rename_input().len();
+        for _ in 0..prefill_len {
+            explorer.handle_key(key(KeyCode::Backspace));
+        }
+        for c in "notes.txt".chars() {
+            explorer.handle_key(key(KeyCode::Char(c)));
+        }
+
+        let outcome = explorer.handle_key(key(KeyCode::Enter));
+
+        assert!(!explorer.is_rename_active());
+        assert_eq!(explorer.rename_input(), "");
+        assert!(tmp.path().join("notes.txt").exists(), "new name must exist");
+        assert!(
+            !tmp.path().join("readme.txt").exists(),
+            "old name must be gone"
+        );
+        assert!(
+            matches!(outcome, ExplorerOutcome::RenameCompleted(p) if p.file_name().unwrap() == "notes.txt")
+        );
+    }
+
+    #[test]
+    fn rename_mode_cursor_moves_to_renamed_entry() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.name == "readme.txt")
+            .expect("readme.txt present");
+        explorer.cursor = idx;
+
+        explorer.handle_key(key(KeyCode::Char('r')));
+        let prefill_len = explorer.rename_input().len();
+        for _ in 0..prefill_len {
+            explorer.handle_key(key(KeyCode::Backspace));
+        }
+        for c in "zzz_last.txt".chars() {
+            explorer.handle_key(key(KeyCode::Char(c)));
+        }
+        explorer.handle_key(key(KeyCode::Enter));
+
+        let new_idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.name == "zzz_last.txt")
+            .expect("renamed entry in list");
+        assert_eq!(explorer.cursor, new_idx);
+    }
+
+    #[test]
+    fn rename_mode_enter_with_empty_input_is_noop() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.name == "readme.txt")
+            .expect("readme.txt present");
+        explorer.cursor = idx;
+
+        explorer.handle_key(key(KeyCode::Char('r')));
+        // Erase the prefilled name entirely, then confirm.
+        let prefill_len = explorer.rename_input().len();
+        for _ in 0..prefill_len {
+            explorer.handle_key(key(KeyCode::Backspace));
+        }
+        assert_eq!(explorer.rename_input(), "");
+
+        let outcome = explorer.handle_key(key(KeyCode::Enter));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(!explorer.is_rename_active());
+        // Original file must still exist.
+        assert!(tmp.path().join("readme.txt").exists());
+    }
+
+    #[test]
+    fn rename_mode_can_rename_directory() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let idx = explorer
+            .entries
+            .iter()
+            .position(|e| e.name == "subdir" && e.is_dir)
+            .expect("subdir present");
+        explorer.cursor = idx;
+
+        explorer.handle_key(key(KeyCode::Char('r')));
+        let prefill_len = explorer.rename_input().len();
+        for _ in 0..prefill_len {
+            explorer.handle_key(key(KeyCode::Backspace));
+        }
+        for c in "renamed_dir".chars() {
+            explorer.handle_key(key(KeyCode::Char(c)));
+        }
+        let outcome = explorer.handle_key(key(KeyCode::Enter));
+
+        assert!(tmp.path().join("renamed_dir").exists());
+        assert!(!tmp.path().join("subdir").exists());
+        assert!(matches!(outcome, ExplorerOutcome::RenameCompleted(_)));
+    }
+
+    #[test]
+    fn rename_mode_unrecognised_key_returns_pending_without_cancelling() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        explorer.handle_key(key(KeyCode::Char('r')));
+        assert!(explorer.is_rename_active());
+
+        // F1 is not handled inside rename mode.
+        let outcome = explorer.handle_key(key(KeyCode::F(1)));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(explorer.is_rename_active(), "rename mode must stay active");
+    }
+
+    #[test]
+    fn is_rename_active_false_by_default() {
+        let tmp = temp_dir_with_files();
+        let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert!(!explorer.is_rename_active());
+    }
+
+    #[test]
+    fn rename_input_empty_by_default() {
+        let tmp = temp_dir_with_files();
+        let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert_eq!(explorer.rename_input(), "");
     }
 }
