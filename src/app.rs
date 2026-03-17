@@ -816,15 +816,21 @@ impl App {
         let outcome = self.active_pane_mut().handle_key(key);
         match outcome {
             ExplorerOutcome::Selected(path) => {
-                // If an editor is configured and the selection is a file (not a
-                // directory that somehow produced Selected), open it in the
-                // editor instead of exiting the TUI.
-                if self.editor != Editor::None && !path.is_dir() {
+                if path.is_dir() {
+                    // A directory selection just navigates — exit normally.
+                    self.selected = Some(path);
+                    return Ok(true);
+                }
+                // File selected: need an editor to open it.
+                if self.editor != Editor::None {
                     self.open_with_editor = Some(path);
                     return Ok(false);
                 }
-                self.selected = Some(path);
-                return Ok(true);
+                // No editor configured — stay in the TUI and tell the user.
+                self.notify_error(
+                    "No editor set — open Options (Shift + O) and press e to pick one",
+                );
+                return Ok(false);
             }
             ExplorerOutcome::Dismissed => return Ok(true),
             ExplorerOutcome::MkdirCreated(path) => {
