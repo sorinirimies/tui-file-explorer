@@ -723,6 +723,21 @@ impl App {
         }
 
         // ── Global keys (always active) ───────────────────────────────────────
+        // ── Theme panel navigation (arrows / j / k steal focus when open) ────
+        if self.show_theme_panel {
+            match key.code {
+                KeyCode::Down | KeyCode::Char('j') if key.modifiers.is_empty() => {
+                    self.next_theme();
+                    return Ok(false);
+                }
+                KeyCode::Up | KeyCode::Char('k') if key.modifiers.is_empty() => {
+                    self.prev_theme();
+                    return Ok(false);
+                }
+                _ => {}
+            }
+        }
+
         match key.code {
             // Cycle theme forward
             KeyCode::Char('t') if key.modifiers.is_empty() => {

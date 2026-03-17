@@ -198,10 +198,10 @@ pub fn render_theme_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     // Controls header.
     let controls = Paragraph::new(Line::from(vec![
-        Span::styled(" [ ", Style::default().fg(theme.dim)),
+        Span::styled(" ↑ [ ", Style::default().fg(theme.dim)),
         Span::styled("prev", Style::default().fg(theme.accent)),
-        Span::styled("    ", Style::default().fg(theme.dim)),
-        Span::styled("t ", Style::default().fg(theme.accent)),
+        Span::styled("   ", Style::default().fg(theme.dim)),
+        Span::styled("↓ t ", Style::default().fg(theme.dim)),
         Span::styled("next", Style::default().fg(theme.accent)),
     ]))
     .block(
