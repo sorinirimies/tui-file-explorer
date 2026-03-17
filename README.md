@@ -721,7 +721,7 @@ tfe [OPTIONS] [PATH]
 | `-0, --null` | Terminate output with a NUL byte (for `xargs -0`) |
 | `--cd` | Enable cd-on-exit: on dismiss, print the active pane's directory to stdout (persisted) |
 | `--no-cd` | Disable cd-on-exit (persisted) |
-| `--init <SHELL>` | Install the shell wrapper for cd-on-exit and exit. Shells: `bash`, `zsh`, `fish`, `powershell` |
+| `--init <SHELL>` | Install the shell wrapper for cd-on-exit and exit. Shells: `bash`, `zsh`, `fish`, `powershell`, `nushell` |
 | `-h, --help` | Show help |
 | `-V, --version` | Show version |
 
@@ -738,44 +738,86 @@ tfe [OPTIONS] [PATH]
 
 The killer feature: press `Esc` or `q` to dismiss `tfe` and your terminal
 **automatically `cd`s** to whichever directory you were browsing.
-Works on **macOS, Linux, and Windows**.
+Works on **macOS, Linux, and Windows** with **bash, zsh, fish, PowerShell,
+and Nushell**.
 
-This is **opt-in** — two one-time steps to enable:
+**cd-on-exit is enabled by default.**  Run `tfe --no-cd` to turn it off,
+or `tfe --cd` to turn it back on.  The setting is persisted across sessions.
 
-**Step 1 — enable the feature** (persisted across sessions):
+#### How setup works
+
+**On the very first run**, `tfe` automatically:
+
+1. Detects your shell (`$NU_VERSION` for Nushell, `$SHELL` on Unix/macOS,
+   `$PSModulePath` for PowerShell on Windows).
+2. Writes the shell wrapper function to your rc file (e.g. `~/.zshrc`,
+   `~/.config/nushell/config.nu`).
+3. Emits a special `source:` directive to stdout that the wrapper — now
+   written but not yet active — cannot intercept yet.
+
+Because the wrapper isn't active in the current session until the rc file is
+sourced, you need to do **one of the following, once**:
 
 ```bash
-tfe --cd
+source ~/.zshrc          # bash / zsh — activate in the current session
+source ~/.config/fish/functions/tfe.fish  # fish
+. $PROFILE               # PowerShell
+source ~/.config/nushell/config.nu        # Nushell
 ```
 
-Run `tfe --no-cd` at any time to turn it off again.
+Or simply **open a new terminal tab/window** — the wrapper will be active
+automatically from that point on, forever.
 
-**Step 2 — install the shell wrapper** (once per shell):
+> **Why only once?**  A child process (like `tfe`) cannot modify its parent
+> shell's environment — that is a hard OS rule.  The shell wrapper exists
+> precisely to work around this: once it is active, it intercepts `tfe`'s
+> stdout, acts on `source:` directives and `cd` paths, and everything is
+> fully automatic with no further user action required.
+
+#### From the second session onward — fully automatic
+
+Once the wrapper is active, using `tfe` is completely seamless:
+
+- Dismiss with `Esc` or `q` → shell `cd`s to the directory you were browsing.
+- Select a file with `Enter` → path is printed to stdout for piping.
+- No flags, no commands, no thought required.
+
+#### Manual installation (`--init`)
+
+If you prefer to install the wrapper explicitly rather than waiting for the
+auto-install on first run:
 
 ```bash
-tfe --init bash        # writes to ~/.bashrc
-tfe --init zsh         # writes to ~/.zshrc
+tfe --init bash        # writes to ~/.bashrc (or ~/.bash_profile if it exists)
+tfe --init zsh         # writes to ~/.zshrc  (or $ZDOTDIR/.zshrc / ~/.zshenv)
 tfe --init fish        # writes to ~/.config/fish/functions/tfe.fish
 tfe --init powershell  # writes to $PROFILE  (Windows / cross-platform pwsh)
+tfe --init nushell     # writes to <config-dir>/nushell/config.nu
 ```
 
-`--init` appends the wrapper to your rc file (creating it and any missing
-parent directories if needed), is idempotent — running it twice will not
-duplicate the snippet — and tells you where it wrote.  Then restart your
-shell or `source` the rc file as instructed.
+`--init` is idempotent — running it twice will never duplicate the snippet.
+It tells you exactly where it wrote and reminds you to source the file.
 
-**How it works:**
+#### How it works under the hood
 
 | Situation | stdout | exit code |
 |---|---|---|
 | File selected (`Enter` / `l`) | selected file path | `0` |
-| Dismissed (`Esc` / `q`) + `--cd` enabled | active pane's directory | `0` |
-| Dismissed + `--cd` disabled (default) | *(nothing)* | `1` |
+| Dismissed (`Esc` / `q`) + cd-on-exit enabled | active pane's directory | `0` |
+| Dismissed + cd-on-exit disabled | *(nothing)* | `1` |
+| First run — wrapper just installed | `source:<rc-path>` then directory | `0` |
 
 The TUI renders on **stderr** so it is never swallowed by the shell's
-`$()` capture — the path on stdout is all the wrapper ever sees.
+`$()` capture.  The wrapper reads `tfe`'s stdout line by line: lines
+beginning with `source:` are sourced in the current shell; any other
+non-empty line is passed to `cd` / `Set-Location`.
 
-The installed wrapper captures whichever path was printed and calls `cd` on it.
+#### Windows
+
+- **PowerShell**: fully supported — `tfe --init powershell` or auto-detected.
+- **Nushell**: fully supported on Windows — `tfe --init nushell`.
+- **CMD**: not supported (CMD has no shell functions).  Use WSL and run
+  `tfe --init bash` or `tfe --init zsh` inside WSL.
 
 ```bash
 # Open the selected file in $EDITOR (bypasses the wrapper)

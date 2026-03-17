@@ -87,6 +87,7 @@ SHELL INTEGRATION (cd on exit):\n\
     tfe --init zsh         # ~/.zshrc\n\
     tfe --init fish        # ~/.config/fish/functions/tfe.fish\n\
     tfe --init powershell  # $PROFILE (Windows / cross-platform PowerShell)\n\
+    tfe --init nushell     # <config-dir>/nushell/config.nu\n\
 \n\
   After both steps, dismissing tfe with Esc/q cd's your terminal to the\n\
   directory you were browsing.  Works on macOS, Linux, and Windows.\n\
@@ -132,10 +133,11 @@ struct Cli {
     null: bool,
 
     /// Install the shell wrapper for cd-on-exit integration and exit.
+    /// Install the shell wrapper for `shell` (auto-detected when `None`).
     ///
     /// Appends the wrapper function to your rc file (creating it if needed)
-    /// and prints instructions.  Supported shells: bash, zsh, fish, powershell.
-    /// Examples: tfe --init zsh   tfe --init powershell
+    /// and prints instructions.  Supported shells: bash, zsh, fish, powershell, nushell.
+    /// Examples: tfe --init zsh   tfe --init nushell   tfe --init powershell
     #[arg(long, value_name = "SHELL")]
     init: Option<String>,
 
@@ -180,7 +182,10 @@ fn run() -> io::Result<()> {
         let shell = match shell_init::Shell::from_str(shell_name) {
             Some(s) => Some(s),
             None => {
-                eprintln!("tfe: unrecognised shell '{shell_name}'. Supported: bash, zsh, fish");
+                eprintln!(
+                    "tfe: unrecognised shell '{shell_name}'. \
+                     Supported: bash, zsh, fish, powershell, nushell"
+                );
                 process::exit(2);
             }
         };
@@ -188,7 +193,8 @@ fn run() -> io::Result<()> {
         match shell_init::install_or_print(shell) {
             InitOutcome::Installed(path) => {
                 eprintln!("tfe: shell integration installed to {}", path.display());
-                eprintln!("Restart your shell or run: source {}", path.display());
+                eprintln!("  Activate now : source {}", path.display());
+                eprintln!("  Or just open a new terminal window.");
             }
             InitOutcome::AlreadyInstalled(path) => {
                 eprintln!(
@@ -204,8 +210,14 @@ fn run() -> io::Result<()> {
     }
 
     // Auto-install the shell wrapper on first run if not already present.
-    // Runs before terminal setup so the message prints cleanly to stderr.
-    shell_init::auto_install();
+    // Runs before terminal setup so stderr is still connected to the terminal.
+    // We store the outcome and surface a notice *after* the TUI exits so that
+    // the message is not swallowed by the alternate screen.
+    //
+    // Note: shell_init::auto_install() internally calls nu_config_dir_default()
+    // to resolve the Nushell config path on all platforms, so no extra argument
+    // is needed at this call site.
+    let auto_install_outcome = shell_init::auto_install();
 
     let themes = Theme::all_presets();
 
@@ -334,6 +346,28 @@ fn run() -> io::Result<()> {
     drop(terminal);
 
     result?;
+
+    // If the shell wrapper was freshly installed during this run:
+    //
+    // 1. Emit a `source:<path>` directive to stdout BEFORE any cd path so
+    //    the shell wrapper (which reads our stdout line-by-line) sources the
+    //    rc file in the parent shell process.  This makes the newly-written
+    //    `tfe` function available immediately — the user does not need to
+    //    open a new terminal or run `source` manually.
+    //
+    // 2. Print a brief notice to stderr so the user knows what happened.
+    //    The notice no longer instructs them to run `source` themselves
+    //    because the wrapper already handled it.
+    //
+    // Note: emit_source_directive writes to stdout with a plain `\n`
+    // terminator regardless of --null, because it is a control message
+    // consumed by the wrapper, not a data path consumed by the caller.
+    if let shell_init::InitOutcome::Installed(ref rc_path) = auto_install_outcome {
+        shell_init::emit_source_directive(rc_path);
+        eprintln!("tfe: shell integration installed to {}", rc_path.display());
+        eprintln!("  The wrapper function has been sourced into this session automatically.");
+        eprintln!("  cd-on-exit is now active — no restart needed.");
+    }
 
     // Persist full application state on clean exit.
     //

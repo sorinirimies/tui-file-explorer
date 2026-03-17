@@ -105,6 +105,56 @@ pub struct FileExplorer {
     pub rename_input: String,
 }
 
+// ── handle_input_mode! ────────────────────────────────────────────────────────
+//
+// De-duplicates the character-input boilerplate shared by rename_active,
+// touch_active, and mkdir_active.
+//
+// Parameters
+// ----------
+// $self     – the `&mut self` receiver (ident)
+// $key      – the `KeyEvent` local (ident, taken by value in handle_key)
+// $active   – the boolean field name (e.g. `rename_active`)
+// $input    – the String field name  (e.g. `rename_input`)
+// $on_enter – an expression that is spliced in as the `KeyCode::Enter` arm
+//             body.  It must arrange for `$active` to be set to false,
+//             `$input` to be cleared, and for the function to return.
+//
+// The macro wraps the whole match in `if $self.$active { … }` so execution
+// falls through when the mode is inactive.
+
+macro_rules! handle_input_mode {
+    ($self:ident, $key:ident, $active:ident, $input:ident, $on_enter:expr) => {
+        if $self.$active {
+            match $key.code {
+                // Printable character (no modifiers, or Shift only) → append.
+                KeyCode::Char(c)
+                    if $key.modifiers.is_empty()
+                        || $key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
+                {
+                    $self.$input.push(c);
+                    return ExplorerOutcome::Pending;
+                }
+                // Backspace → pop last char.
+                KeyCode::Backspace => {
+                    $self.$input.pop();
+                    return ExplorerOutcome::Pending;
+                }
+                // Enter → caller-supplied logic.
+                KeyCode::Enter => $on_enter,
+                // Esc → cancel without committing.
+                KeyCode::Esc => {
+                    $self.$active = false;
+                    $self.$input.clear();
+                    return ExplorerOutcome::Pending;
+                }
+                // Any other key → stay in mode, consume the event.
+                _ => return ExplorerOutcome::Pending,
+            }
+        }
+    };
+}
+
 impl FileExplorer {
     // ── Construction ─────────────────────────────────────────────────────────
 
@@ -210,167 +260,103 @@ impl FileExplorer {
         // ── Rename-mode interception ──────────────────────────────────────────
         // When rename mode is active every printable character feeds the new
         // name.  Enter confirms the rename; Esc cancels.
-        if self.rename_active {
-            match key.code {
-                KeyCode::Char(c)
-                    if key.modifiers.is_empty()
-                        || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
-                {
-                    self.rename_input.push(c);
-                    return ExplorerOutcome::Pending;
-                }
-                KeyCode::Backspace => {
-                    self.rename_input.pop();
-                    return ExplorerOutcome::Pending;
-                }
-                KeyCode::Enter => {
-                    let new_name = self.rename_input.trim().to_string();
-                    self.rename_active = false;
-                    self.rename_input.clear();
-                    if new_name.is_empty() {
-                        return ExplorerOutcome::Pending;
-                    }
-                    // Grab the source path before we reload.
-                    let src = match self.entries.get(self.cursor) {
-                        Some(e) => e.path.clone(),
-                        None => return ExplorerOutcome::Pending,
-                    };
-                    let dst = self.current_dir.join(&new_name);
-                    match std::fs::rename(&src, &dst) {
-                        Ok(()) => {
-                            self.reload();
-                            // Move cursor to the renamed entry.
-                            if let Some(idx) = self.entries.iter().position(|e| e.path == dst) {
-                                self.cursor = idx;
-                            }
-                            return ExplorerOutcome::RenameCompleted(dst);
-                        }
-                        Err(e) => {
-                            self.status = format!("rename failed: {e}");
-                            return ExplorerOutcome::Pending;
-                        }
-                    }
-                }
-                KeyCode::Esc => {
-                    self.rename_active = false;
-                    self.rename_input.clear();
-                    return ExplorerOutcome::Pending;
-                }
-                _ => return ExplorerOutcome::Pending,
+        handle_input_mode!(self, key, rename_active, rename_input, {
+            let new_name = self.rename_input.trim().to_string();
+            self.rename_active = false;
+            self.rename_input.clear();
+            if new_name.is_empty() {
+                return ExplorerOutcome::Pending;
             }
-        }
+            // Grab the source path before we reload.
+            let src = match self.entries.get(self.cursor) {
+                Some(e) => e.path.clone(),
+                None => return ExplorerOutcome::Pending,
+            };
+            let dst = self.current_dir.join(&new_name);
+            match std::fs::rename(&src, &dst) {
+                Ok(()) => {
+                    self.reload();
+                    // Move cursor to the renamed entry.
+                    if let Some(idx) = self.entries.iter().position(|e| e.path == dst) {
+                        self.cursor = idx;
+                    }
+                    return ExplorerOutcome::RenameCompleted(dst);
+                }
+                Err(e) => {
+                    self.status = format!("rename failed: {e}");
+                    return ExplorerOutcome::Pending;
+                }
+            }
+        });
 
         // ── Touch-mode interception ───────────────────────────────────────────
         // When touch mode is active every printable character feeds the new
         // file name.  Enter confirms creation; Esc cancels.
-        if self.touch_active {
-            match key.code {
-                KeyCode::Char(c)
-                    if key.modifiers.is_empty()
-                        || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
-                {
-                    self.touch_input.push(c);
-                    return ExplorerOutcome::Pending;
-                }
-                KeyCode::Backspace => {
-                    self.touch_input.pop();
-                    return ExplorerOutcome::Pending;
-                }
-                KeyCode::Enter => {
-                    let name = self.touch_input.trim().to_string();
-                    self.touch_active = false;
-                    self.touch_input.clear();
-                    if name.is_empty() {
-                        return ExplorerOutcome::Pending;
-                    }
-                    let new_file = self.current_dir.join(&name);
-                    // Create parent dirs if the name contains path separators,
-                    // then create (or truncate-to-zero) the file itself.
-                    let create_result = (|| -> std::io::Result<()> {
-                        if let Some(parent) = new_file.parent() {
-                            std::fs::create_dir_all(parent)?;
-                        }
-                        // OpenOptions::create(true) + write(true) creates the
-                        // file if absent and leaves an existing one untouched.
-                        std::fs::OpenOptions::new()
-                            .write(true)
-                            .create(true)
-                            .truncate(false)
-                            .open(&new_file)?;
-                        Ok(())
-                    })();
-                    match create_result {
-                        Ok(()) => {
-                            self.reload();
-                            // Move cursor to the newly created file.
-                            if let Some(idx) = self.entries.iter().position(|e| e.path == new_file)
-                            {
-                                self.cursor = idx;
-                            }
-                            return ExplorerOutcome::TouchCreated(new_file);
-                        }
-                        Err(e) => {
-                            self.status = format!("touch failed: {e}");
-                            return ExplorerOutcome::Pending;
-                        }
-                    }
-                }
-                KeyCode::Esc => {
-                    self.touch_active = false;
-                    self.touch_input.clear();
-                    return ExplorerOutcome::Pending;
-                }
-                _ => return ExplorerOutcome::Pending,
+        handle_input_mode!(self, key, touch_active, touch_input, {
+            let name = self.touch_input.trim().to_string();
+            self.touch_active = false;
+            self.touch_input.clear();
+            if name.is_empty() {
+                return ExplorerOutcome::Pending;
             }
-        }
+            let new_file = self.current_dir.join(&name);
+            // Create parent dirs if the name contains path separators,
+            // then create (or truncate-to-zero) the file itself.
+            let create_result = (|| -> std::io::Result<()> {
+                if let Some(parent) = new_file.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                // OpenOptions::create(true) + write(true) creates the
+                // file if absent and leaves an existing one untouched.
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .truncate(false)
+                    .open(&new_file)?;
+                Ok(())
+            })();
+            match create_result {
+                Ok(()) => {
+                    self.reload();
+                    // Move cursor to the newly created file.
+                    if let Some(idx) = self.entries.iter().position(|e| e.path == new_file) {
+                        self.cursor = idx;
+                    }
+                    return ExplorerOutcome::TouchCreated(new_file);
+                }
+                Err(e) => {
+                    self.status = format!("touch failed: {e}");
+                    return ExplorerOutcome::Pending;
+                }
+            }
+        });
 
         // ── Mkdir-mode interception ───────────────────────────────────────────
         // When mkdir mode is active every printable character feeds the new
         // folder name.  Enter confirms creation; Esc cancels.
-        if self.mkdir_active {
-            match key.code {
-                KeyCode::Char(c)
-                    if key.modifiers.is_empty()
-                        || key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
-                {
-                    self.mkdir_input.push(c);
-                    return ExplorerOutcome::Pending;
-                }
-                KeyCode::Backspace => {
-                    self.mkdir_input.pop();
-                    return ExplorerOutcome::Pending;
-                }
-                KeyCode::Enter => {
-                    let name = self.mkdir_input.trim().to_string();
-                    self.mkdir_active = false;
-                    self.mkdir_input.clear();
-                    if name.is_empty() {
-                        return ExplorerOutcome::Pending;
-                    }
-                    let new_dir = self.current_dir.join(&name);
-                    match std::fs::create_dir_all(&new_dir) {
-                        Ok(()) => {
-                            self.reload();
-                            // Move cursor to the newly created directory.
-                            if let Some(idx) = self.entries.iter().position(|e| e.path == new_dir) {
-                                self.cursor = idx;
-                            }
-                            return ExplorerOutcome::MkdirCreated(new_dir);
-                        }
-                        Err(e) => {
-                            self.status = format!("mkdir failed: {e}");
-                            return ExplorerOutcome::Pending;
-                        }
-                    }
-                }
-                KeyCode::Esc => {
-                    self.mkdir_active = false;
-                    self.mkdir_input.clear();
-                    return ExplorerOutcome::Pending;
-                }
-                _ => return ExplorerOutcome::Pending,
+        handle_input_mode!(self, key, mkdir_active, mkdir_input, {
+            let name = self.mkdir_input.trim().to_string();
+            self.mkdir_active = false;
+            self.mkdir_input.clear();
+            if name.is_empty() {
+                return ExplorerOutcome::Pending;
             }
-        }
+            let new_dir = self.current_dir.join(&name);
+            match std::fs::create_dir_all(&new_dir) {
+                Ok(()) => {
+                    self.reload();
+                    // Move cursor to the newly created directory.
+                    if let Some(idx) = self.entries.iter().position(|e| e.path == new_dir) {
+                        self.cursor = idx;
+                    }
+                    return ExplorerOutcome::MkdirCreated(new_dir);
+                }
+                Err(e) => {
+                    self.status = format!("mkdir failed: {e}");
+                    return ExplorerOutcome::Pending;
+                }
+            }
+        });
 
         // ── Search-mode interception ──────────────────────────────────────────
         // When search is active, printable characters feed the query rather than
@@ -3010,5 +2996,178 @@ mod tests {
         let tmp = temp_dir_with_files();
         let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
         assert_eq!(explorer.rename_input(), "");
+    }
+
+    // ── handle_input_mode! macro tests ───────────────────────────────────────
+    // These tests exercise the Char-push, Backspace-pop, Esc-cancel, and
+    // unknown-key fallthrough paths that the macro generates for every mode.
+
+    // ── mkdir_mode via macro ──────────────────────────────────────────────────
+
+    #[test]
+    fn mkdir_mode_char_pushes_to_input_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.mkdir_active = true;
+        explorer.mkdir_input.clear();
+
+        let outcome = explorer.handle_key(key(KeyCode::Char('a')));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert_eq!(explorer.mkdir_input, "a");
+        assert!(explorer.mkdir_active, "mode must remain active after Char");
+    }
+
+    #[test]
+    fn mkdir_mode_backspace_pops_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.mkdir_active = true;
+        explorer.mkdir_input = "ab".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::Backspace));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert_eq!(explorer.mkdir_input, "a");
+        assert!(explorer.mkdir_active);
+    }
+
+    #[test]
+    fn mkdir_mode_esc_cancels_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.mkdir_active = true;
+        explorer.mkdir_input = "half".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::Esc));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(!explorer.mkdir_active, "mode must be deactivated by Esc");
+        assert!(
+            explorer.mkdir_input.is_empty(),
+            "input must be cleared by Esc"
+        );
+    }
+
+    #[test]
+    fn mkdir_mode_unknown_key_returns_pending_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.mkdir_active = true;
+        explorer.mkdir_input = "foo".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::F(2)));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        // Mode and input must be unchanged.
+        assert!(explorer.mkdir_active);
+        assert_eq!(explorer.mkdir_input, "foo");
+    }
+
+    // ── touch_mode via macro ──────────────────────────────────────────────────
+
+    #[test]
+    fn touch_mode_char_pushes_to_input_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.touch_active = true;
+        explorer.touch_input.clear();
+
+        let outcome = explorer.handle_key(key(KeyCode::Char('z')));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert_eq!(explorer.touch_input, "z");
+        assert!(explorer.touch_active);
+    }
+
+    #[test]
+    fn touch_mode_backspace_pops_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.touch_active = true;
+        explorer.touch_input = "xy".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::Backspace));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert_eq!(explorer.touch_input, "x");
+        assert!(explorer.touch_active);
+    }
+
+    #[test]
+    fn touch_mode_esc_cancels_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.touch_active = true;
+        explorer.touch_input = "half".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::Esc));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(!explorer.touch_active);
+        assert!(explorer.touch_input.is_empty());
+    }
+
+    #[test]
+    fn touch_mode_unknown_key_returns_pending_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.touch_active = true;
+        explorer.touch_input = "bar".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::F(3)));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(explorer.touch_active);
+        assert_eq!(explorer.touch_input, "bar");
+    }
+
+    // ── rename_mode via macro ─────────────────────────────────────────────────
+
+    #[test]
+    fn rename_mode_char_pushes_to_input_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.rename_active = true;
+        explorer.rename_input.clear();
+
+        let outcome = explorer.handle_key(key(KeyCode::Char('r')));
+        // NOTE: 'r' is normally the "activate rename" key, but because
+        // rename_active is already true the mode interception runs first and
+        // pushes 'r' to the input — it never reaches the normal key dispatch.
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert_eq!(explorer.rename_input, "r");
+        assert!(explorer.rename_active);
+    }
+
+    #[test]
+    fn rename_mode_backspace_pops_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.rename_active = true;
+        explorer.rename_input = "cd".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::Backspace));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert_eq!(explorer.rename_input, "c");
+        assert!(explorer.rename_active);
+    }
+
+    #[test]
+    fn rename_mode_esc_cancels_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.rename_active = true;
+        explorer.rename_input = "draft".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::Esc));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(!explorer.rename_active);
+        assert!(explorer.rename_input.is_empty());
+    }
+
+    #[test]
+    fn rename_mode_unknown_key_returns_pending_via_macro() {
+        let dir = tempdir().expect("tempdir");
+        let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
+        explorer.rename_active = true;
+        explorer.rename_input = "baz".to_string();
+
+        let outcome = explorer.handle_key(key(KeyCode::F(4)));
+        assert_eq!(outcome, ExplorerOutcome::Pending);
+        assert!(explorer.rename_active);
+        assert_eq!(explorer.rename_input, "baz");
     }
 }

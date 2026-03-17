@@ -41,6 +41,9 @@ tui-file-explorer/
   binary modules and must not leak into the library crate.
 - `Editor` enum lives in `app.rs` (binary-only). It is never exposed through
   the library crate.
+- `shell_init.rs` owns all shell-detection and rc-file writing logic.
+  `main.rs` owns the post-TUI notice that tells the user to `source` their rc
+  file; it must never be emitted from inside `shell_init.rs` during startup.
 
 ---
 
@@ -59,6 +62,7 @@ tui-file-explorer/
 | Constants | `SCREAMING_SNAKE_CASE` | `C_BRAND`, `C_ACCENT` |
 | Modules | `snake_case` | `file_explorer`, `render` |
 | Enum variants | `UpperCamelCase` | `Selected(PathBuf)`, `Dismissed` |
+| Macros | `snake_case!` | `handle_input_mode!`, `render_input_footer!` |
 
 ### Clippy
 - Target: **zero warnings** with `-D warnings`.
@@ -110,6 +114,9 @@ tui-file-explorer/
   part of the external API (e.g. `load_entries`, `scroll_offset`, `status`).
 - Do not expose `scroll_offset` or `status` fields publicly — they are rendering
   implementation details.
+- **Macros are never public.** Both `handle_input_mode!` and
+  `render_input_footer!` are module-private `macro_rules!` definitions. Do not
+  add `#[macro_export]` to them.
 
 ---
 
@@ -133,7 +140,96 @@ tui-file-explorer/
 
 ---
 
-## 6. Testing
+## 6. Macros
+
+### When to use macros
+
+Use `macro_rules!` only when **three or more call sites** share identical
+boilerplate that cannot be extracted into a regular function (e.g. because the
+duplicated code references different field names by identifier, not by value).
+Prefer functions, closures, or trait methods for everything else.
+
+Current macros in the codebase:
+
+| Macro | File | Purpose |
+|---|---|---|
+| `handle_input_mode!` | `explorer.rs` | De-duplicates the char-input guard block shared by `rename_active`, `touch_active`, and `mkdir_active` inside `handle_key`. |
+| `render_input_footer!` | `render.rs` | De-duplicates the inline-input `Paragraph` render + early-return shared by all four active-mode footer arms in `render_footer`. |
+
+### `handle_input_mode!` — signature and contract
+
+```rust
+handle_input_mode!(self, key, $active, $input, $on_enter);
+```
+
+| Parameter | Kind | Description |
+|---|---|---|
+| `$self` | ident | The `&mut self` receiver. |
+| `$key` | ident | The `KeyEvent` local taken by value in `handle_key`. |
+| `$active` | ident | Boolean field name on `FileExplorer` (e.g. `rename_active`). |
+| `$input` | ident | `String` field name on `FileExplorer` (e.g. `rename_input`). |
+| `$on_enter` | expr | Spliced into the `KeyCode::Enter` arm. Must set `$active = false`, clear `$input`, and `return` an `ExplorerOutcome`. |
+
+The macro wraps the match in `if $self.$active { … }` so it is a complete no-op
+when the mode is inactive. Arms covered by the macro (callers must not
+re-implement them in `$on_enter`):
+- `Char(c)` with empty or Shift modifiers → push, return `Pending`
+- `Backspace` → pop, return `Pending`
+- `Esc` → clear flag + input, return `Pending`
+- `_` → return `Pending` (consumes unrecognised keys while in the mode)
+
+### `render_input_footer!` — signature and contract
+
+```rust
+render_input_footer!(
+    explorer, frame, area, theme,
+    $active, $input_expr, $label, $colour, $hint
+);
+```
+
+| Parameter | Kind | Description |
+|---|---|---|
+| `$explorer` | expr | `&FileExplorer` reference. |
+| `$frame` | expr | `&mut Frame` reference. |
+| `$area` | expr | `Rect` for the footer zone. |
+| `$theme` | expr | `&Theme` reference. |
+| `$active` | ident | Boolean field name on `$explorer`. |
+| `$input_expr` | expr | Expression yielding `&str` / `String` for the typed input (e.g. `explorer.mkdir_input()` or `explorer.search_query.as_str()`). |
+| `$label` | expr | String expression for the leading label span. |
+| `$colour` | ident | Field name on `$theme` used for **both** the label colour and the border colour. |
+| `$hint` | expr | String expression for the trailing hint span. |
+
+The macro renders a rounded `Paragraph` with four spans (label · input · cursor
+block `█` · hint) and calls `return` after rendering. It is a complete no-op
+when `$explorer.$active` is false.
+
+### Macro placement rules
+
+- Define macros at **module level** (not inside `impl` blocks), placed in their
+  own named section with the standard divider banner:
+  ```rust
+  // ── handle_input_mode! ────────────────────────────────────────────────────────
+  ```
+- Place the macro definition **before** any `impl` block or function that uses
+  it, so the compiler sees it in order.
+- Do **not** use `#[macro_export]`. All macros in this codebase are
+  module-private by design.
+- Add a block comment above each macro explaining: what it does, the parameter
+  list, and what the caller must supply.
+
+### Adding a new macro
+
+Before reaching for `macro_rules!`:
+1. Count the call sites — fewer than three is not enough.
+2. Confirm a function cannot do the job (field-name metaprogramming is the
+   usual reason it cannot).
+3. Write the macro with a full doc-comment block (see existing examples).
+4. Add tests that exercise each arm of the macro through real call sites.
+   Test names: `<mode>_<arm>_via_macro` (e.g. `mkdir_mode_esc_cancels_via_macro`).
+
+---
+
+## 7. Testing
 
 ### What to test
 - Every public method on `FileExplorer` must have at least one test.
@@ -142,11 +238,14 @@ tui-file-explorer/
   in `app.rs` tests — both the confirm and cancel paths.
 - Edge cases: empty directory, cursor at boundaries, filesystem root ascent,
   last entry marking (no cursor overflow), partial errors in multi-delete.
+- Every macro arm must be exercised through its real call sites. The macro
+  itself is not tested in isolation — it is tested via the modes that use it.
 
 ### Conventions
 - Tests live in a `#[cfg(test)] mod tests` block at the **bottom** of the file
   that owns the code under test:
-  - `explorer.rs` — widget-level unit tests (key handling, mark toggle, navigation)
+  - `explorer.rs` — widget-level unit tests (key handling, mark toggle, navigation, macro arms)
+  - `render.rs` — rendering smoke tests (each active-mode footer arm, no-panic assertions)
   - `app.rs` — integration-level tests (prompt_delete, confirm_delete_many, paste, clipboard)
   - `ui.rs` — action-bar span structure tests
 - Use `tempfile::tempdir()` for all filesystem tests. Never rely on the real
@@ -160,6 +259,8 @@ tui-file-explorer/
   fn move_down_clamps_at_last()
   fn handle_key_enter_on_dir_descends()
   fn confirm_delete_many_clears_marks_on_both_panes()
+  fn mkdir_mode_esc_cancels_via_macro()
+  fn render_footer_mkdir_active_does_not_panic()
   ```
 - No `#[ignore]` tests. If a test is flaky, fix it.
 
@@ -168,8 +269,6 @@ tui-file-explorer/
 just test          # cargo test
 just test-all      # cargo test --all-features --all-targets
 ```
-
----
 
 ### Key bindings to keep covered
 Every key binding that produces a non-trivial state change needs a test:
@@ -190,10 +289,31 @@ Every key binding that produces a non-trivial state change needs a test:
 | `e` on file (editor ≠ None) | Same as Enter on file with editor — sets `open_with_editor` | `app.rs` / `main.rs` |
 | `e` on dir or editor = None | Silent no-op — no status message | `app.rs` |
 | `e` in options panel | Cycle `Editor` variant, update status message | `app.rs` |
+| `n` | Activate mkdir mode | `explorer.rs` |
+| `N` | Activate touch mode | `explorer.rs` |
+| `r` | Activate rename mode (pre-filled) | `explorer.rs` |
+| `Char(c)` in any input mode | Append char, stay in mode | `explorer.rs` (via macro tests) |
+| `Backspace` in any input mode | Pop last char, stay in mode | `explorer.rs` (via macro tests) |
+| `Esc` in any input mode | Cancel + clear input, return `Pending` | `explorer.rs` (via macro tests) |
+
+### Render smoke tests (`render.rs`)
+`render.rs` owns a `mod tests` block with smoke tests using `TestBackend`. Each
+active-mode footer arm and the all-inactive path must have a no-panic assertion:
+
+| Test | What it checks |
+|---|---|
+| `render_footer_mkdir_active_does_not_panic` | `mkdir_active = true` renders cleanly |
+| `render_footer_touch_active_does_not_panic` | `touch_active = true` renders cleanly |
+| `render_footer_rename_active_does_not_panic` | `rename_active = true` renders cleanly |
+| `render_footer_search_active_does_not_panic` | `search_active = true` renders cleanly |
+| `render_footer_all_inactive_does_not_panic` | All modes inactive renders cleanly |
+
+Use `Terminal::new(TestBackend::new(80, 24))` and call `render` inside
+`terminal.draw(…)`.
 
 ---
 
-## 7. Documentation
+## 8. Documentation
 
 - Every `pub` item needs a `///` doc comment.
 - Doc comments use imperative mood: *"Return the highlighted entry."* not
@@ -204,8 +324,6 @@ Every key binding that produces a non-trivial state change needs a test:
   without reading every file.
 - Run `just doc` to verify docs build without warnings before a release.
 
----
-
 ### Modal enum naming
 - `Modal` variants must **not** share a common postfix (Clippy `enum_variant_names`).
 - Current variants: `Delete`, `MultiDelete`, `Overwrite` — do not add a `Confirm`
@@ -213,7 +331,7 @@ Every key binding that produces a non-trivial state change needs a test:
 
 ---
 
-## 8. Editor Launch Pattern
+## 9. Editor Launch Pattern
 
 The `Editor` enum (`None`, `Helix`, `Neovim`, `Vim`, `Nano`, `Micro`,
 `Custom(String)`) controls which editor is opened when the user presses `e`
@@ -264,7 +382,272 @@ on a file. Key design decisions to preserve:
 
 ---
 
-## 9. Hermetic Test Pattern for Shell-Detection Code
+## 10. Shell Integration — cd-on-exit
+
+### The `source:` stdout protocol
+
+The shell wrapper captures everything `tfe` writes to stdout.  `tfe` uses a
+two-line protocol:
+
+| Line format | Meaning |
+|---|---|
+| `source:<absolute-path>` | Wrapper must source that file in the parent shell |
+| anything else non-empty | Wrapper must `cd` / `Set-Location` to that path |
+
+This allows `tfe` to request a `source` from its parent shell on first install
+— something a child process cannot do directly.  The directive is always
+terminated with `\n` (never NUL, even when `--null` is passed) because it is a
+control message consumed by the wrapper, not a data path consumed by the caller.
+
+The prefix constant is `shell_init::SOURCE_DIRECTIVE_PREFIX = "source:"`.  It
+is `pub` so `main.rs` and tests can reference it without hardcoding the string.
+
+**Backwards compatibility**: old wrappers that pre-date this protocol will
+attempt to `cd` to `source:<path>`, which will fail silently (the path does not
+exist) and leave the shell in its current directory.  No data is lost.
+
+### How the wrapper is installed
+
+`auto_install()` is called at the start of `run()` in `main.rs`, **before**
+the TUI enters the alternate screen.  It:
+
+1. Detects the current shell via `detect_shell()`.
+2. Checks all candidate rc files for the shell (`is_installed`).
+3. If the wrapper is absent, calls `install_or_print_to` to write it and
+   returns `InitOutcome::Installed(path)`.
+4. Returns the `InitOutcome` to the caller — it does **not** `eprintln!`
+   anything itself.  The caller (`run()` in `main.rs`) is responsible for
+   emitting the `source:` directive and the notice after the TUI exits.
+
+### Why the notice must be deferred
+
+`run()` stores `auto_install_outcome` before `enable_raw_mode()` and
+`EnterAlternateScreen`.  Any output emitted *after* those calls goes into
+the alternate screen buffer and is never seen by the user.  After the TUI
+exits (after `result?;`) the terminal is back in normal mode.  At that point
+`run()` does two things:
+
+1. **Emits the `source:` directive to stdout** via `emit_source_directive(rc_path)`.
+   The shell wrapper reads this line and sources the rc file in the parent
+   shell process — making the `tfe` function available in the current session
+   immediately, with no restart required.
+
+2. **Prints a brief notice to stderr** so the user knows what happened.
+
+```rust
+if let shell_init::InitOutcome::Installed(ref rc_path) = auto_install_outcome {
+    shell_init::emit_source_directive(rc_path);
+    eprintln!("tfe: shell integration installed to {}", rc_path.display());
+    eprintln!("  The wrapper function has been sourced into this session automatically.");
+    eprintln!("  cd-on-exit is now active — no restart needed.");
+}
+```
+
+**Never move this block inside `auto_install_with` or anywhere before
+`LeaveAlternateScreen`.**
+
+### `emit_source_directive`
+
+```rust
+pub fn emit_source_directive(rc_path: &Path)
+```
+
+Writes `source:<rc_path>\n` to stdout.  Errors are silently swallowed — a
+failure to emit the directive is not fatal; the user will still see the stderr
+notice and can source manually if needed.  Always uses `\n`, never `\0`.
+
+### Shell recognition strings
+
+`Shell::from_str` accepts these values (case-insensitive):
+
+| Input | Maps to |
+|-------|---------|
+| `bash` | `Shell::Bash` |
+| `zsh` | `Shell::Zsh` |
+| `fish` | `Shell::Fish` |
+| `powershell`, `pwsh` | `Shell::Pwsh` |
+| `nu`, `nushell` | `Shell::Nu` |
+
+`Shell::name()` returns the canonical lowercase name used in sentinel comments
+and display messages: `bash`, `zsh`, `fish`, `powershell`, `nushell`.
+
+### Shell fallback order
+
+`detect_shell()` reads `$SHELL` on Unix/macOS and `$PSModulePath` on Windows.
+`rc_path_with` applies the following priority rules:
+
+| Shell | Priority order |
+|-------|---------------|
+| **zsh** | `$ZDOTDIR/.zshrc` → `~/.zshrc` (if exists) → `~/.zshenv` (if exists) → `~/.zshrc` (create fresh) |
+| **bash** | `~/.bash_profile` (if exists, common on macOS) → `~/.bashrc` |
+| **fish** | `$XDG_CONFIG_HOME/fish/functions/tfe.fish` → `~/.config/fish/functions/tfe.fish` |
+| **powershell** | `$PROFILE` (set by PowerShell) → `~/Documents/PowerShell/…ps1` (Windows) → `~/.config/powershell/…ps1` (Linux/macOS) |
+| **nushell** | `$XDG_CONFIG_HOME/nushell/config.nu` → `~/Library/Application Support/nushell/config.nu` (macOS) → `~/.config/nushell/config.nu` (Linux) → `%APPDATA%\nushell\config.nu` (Windows) |
+
+The duplicate-install guard checks **all** candidates for the detected shell
+(e.g. both `.zshrc` and `.zshenv` for zsh) so that a manually-added wrapper
+in any of them prevents a second install.
+
+For Nushell, the only candidate is `<nu_config_dir>/config.nu`.  The config
+dir is resolved by `nu_config_dir_default()` which respects `$XDG_CONFIG_HOME`
+on all platforms before falling back to the OS-conventional path.
+
+### Updated wrapper shapes
+
+All five wrappers now loop over every output line from `^tfe` / `command tfe`
+and dispatch on the `source:` prefix.  The key structural change per shell:
+
+**bash / zsh** — process substitution loop:
+```bash
+tfe() {
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+            source:*) source "${line#source:}" ;;
+            ?*)       cd "$line" ;;
+        esac
+    done < <(command tfe "$@")
+}
+```
+
+**fish** — `for` loop over lines:
+```fish
+function tfe
+    for line in (command tfe $argv | string split0 | string split "\n")
+        if string match -q 'source:*' -- $line
+            source (string replace 'source:' '' -- $line)
+        else if test -n "$line"
+            cd $line
+        end
+    end
+end
+```
+
+**PowerShell** — pipeline `ForEach-Object`:
+```powershell
+function tfe {
+    & (Get-Command tfe -CommandType Application).Source @args | ForEach-Object {
+        if ($_ -like 'source:*') { . ($_ -replace '^source:', '') }
+        elseif ($_)              { Set-Location $_ }
+    }
+}
+```
+
+**Nushell** — `lines | each`:
+```nushell
+def --wrapped tfe [...rest] {
+    ^tfe ...$rest | lines | each {|line|
+        if ($line | str starts-with 'source:') {
+            source ($line | str replace 'source:' '')
+        } else if ($line | is-not-empty) {
+            cd $line
+        }
+    }
+}
+```
+
+When no `source:` line is emitted (every run after the first install), the
+wrappers behave identically to the old single-line versions — the loop body
+just hits the `cd` branch once.
+
+### Nushell-specific details
+
+- **Detection**: `detect_shell()` checks `$NU_VERSION` **first** on every
+  platform (Nushell exports it to all child processes).  This takes priority
+  over `$SHELL` and `$PSModulePath`, so running `tfe` from inside Nushell
+  always identifies correctly as Nu regardless of OS.
+- **Snippet**: Uses `def --wrapped tfe [...rest]` so positional arguments are
+  forwarded correctly.  Calls the external binary as `^tfe` (the caret prefix
+  bypasses Nushell's built-in shadowing).  Uses `str trim` to strip the
+  trailing newline from stdout, and `is-not-empty` to guard the `cd`:
+  ```
+  def --wrapped tfe [...rest] {
+      let dir = (^tfe ...$rest | str trim)
+      if ($dir | is-not-empty) { cd $dir }
+  }
+  ```
+- **Config file**: written to `<nu_config_dir>/config.nu`.  The directory is
+  created automatically by `install()` via `create_dir_all`.
+- **`nu_config_dir` parameter**: `rc_path_with`, `auto_install_with`, and
+  `install_or_print_to` all accept a `nu_config_dir: Option<&Path>` override.
+  Pass `None` in production (resolved via `nu_config_dir_default()`); pass
+  `Some(temp_dir)` in tests.  `rc_path_with` returns `None` when
+  `nu_config_dir` is `None` — callers must always provide a value or let the
+  production helpers resolve it.
+- **`is_installed` slow path**: recognises hand-written Nushell wrappers by
+  looking for `def --wrapped tfe` followed by `^tfe` within 6 lines.
+
+### Windows
+
+On Windows:
+- `detect_shell()` returns `Some(Shell::Nu)` when `$NU_VERSION` is set
+  (Nushell running), `Some(Shell::Pwsh)` when `$PSModulePath` is set
+  (PowerShell running), and `None` for CMD or unknown shells.
+- `auto_install_with` runs normally for both Pwsh and Nu and installs into
+  the appropriate config file.
+- The `--init` flag accepts `powershell` (or `pwsh`) and `nushell` (or `nu`)
+  on Windows.  Passing `--init bash/zsh/fish` on Windows prints an explicit
+  error message directing the user to WSL.
+- Editor launch uses `cmd /C <binary>` on Windows so that `.cmd`/`.bat`
+  shims (e.g. `code.cmd`, `nvim.cmd`) resolve correctly.  On Unix, editors
+  are spawned directly with `/dev/tty` as stdin/stdout/stderr.
+- CMD users: there is no CMD equivalent of shell functions.  The cd-on-exit
+  feature is PowerShell-only or Nushell-only on Windows.  WSL users should
+  run the Linux `tfe` binary inside WSL and use `tfe --init bash/zsh`.
+
+### `--init` error message
+
+The error message for an unrecognised shell must list all five supported
+shells:
+
+```
+tfe: unrecognised shell '…'. Supported: bash, zsh, fish, powershell, nushell
+```
+
+Never omit `powershell` or `nushell` from this list.
+
+### Snippet test requirements
+
+Every shell's snippet must be covered by at least these assertions:
+
+| Test | What it checks |
+|---|---|
+| `snippet_<shell>_contains_function_body` | `command tfe` / `^tfe` present; `cd` present; `source:` handler present |
+| `snippet_<shell>_handles_source_directive` | snippet contains the string `"source:"` |
+| `snippet_<shell>_differs_from_bash` | non-bash snippets are distinct (zsh is the exception — identical to bash) |
+
+When modifying any snippet, update **both** the structural assertion (variable
+names, keywords) **and** the `source:` handler assertion.  The variable `$dir`
+no longer exists in any wrapper — the loop variable is `$line` (bash/zsh),
+`$line` (fish), `$_` (PowerShell), or `|line|` (Nushell).
+
+### `nu_config_dir_default()`
+
+This `pub(crate)` helper resolves the platform-default Nushell configuration
+directory without requiring the caller to pass env vars.  Priority:
+
+1. `$XDG_CONFIG_HOME/nushell` — overrides the platform default on all OSes.
+2. `~/Library/Application Support/nushell` — macOS default (via `$HOME`).
+3. `%APPDATA%\nushell` — Windows default.
+4. `~/.config/nushell` — Linux / other Unix default.
+
+Returns `None` when `$HOME` / `$APPDATA` is unset.  Tests must use
+`auto_install_with(…, Some(tempdir))` rather than calling
+`nu_config_dir_default()` directly so they stay hermetic.
+
+### `auto_install` return type
+
+`auto_install() -> InitOutcome` — the return value must be preserved by
+callers.  Do not change it back to `()`.  `auto_install_with` likewise returns
+`InitOutcome`.
+
+When the wrapper is already installed everywhere, `auto_install_with` returns
+`InitOutcome::AlreadyInstalled(path)` where `path` is the first candidate that
+contains the wrapper.
+
+---
+
+## 11. Hermetic Test Pattern for Shell-Detection Code
 
 Any function that reads environment variables (`$SHELL`, `$HOME`, `$ZDOTDIR`,
 `$XDG_CONFIG_HOME`) **must** have a `_with(…)` twin that accepts explicit path
@@ -307,10 +690,56 @@ pub(crate) fn auto_install_with(
   may have any shell set.
 - Use `tempfile::tempdir()` for all path arguments. Never pass a real `$HOME`
   path into a `_with` function in tests.
+- `auto_install_with` now returns `InitOutcome`.  Tests that call it must
+  either assert on the return value or explicitly discard it with `let _ =`.
+  Preferred: assert with `matches!(outcome, InitOutcome::Installed(_))` etc.
+- Tests that call `auto_install_with(None, None, …)` must accept any of the
+  four `InitOutcome` variants — the real `$SHELL` environment variable may be
+  set on the CI host and cause paths other than `UnknownShell`.
+
+### `auto_install_with` test coverage requirements
+
+| Test | What it asserts |
+|------|-----------------|
+| `auto_install_returns_installed_on_first_run` | `Installed(_)` when no wrapper present |
+| `auto_install_installed_outcome_carries_rc_path` | Path in `Installed` ends with the expected rc filename |
+| `auto_install_returns_already_installed_on_second_run` | `AlreadyInstalled(_)` on second call |
+| `auto_install_already_installed_outcome_carries_rc_path` | Path in `AlreadyInstalled` contains the wrapper |
+| `auto_install_bash_returns_installed_on_first_run` | `Installed(_)` for bash; `.bashrc` contains wrapper |
+| `auto_install_fish_returns_installed_on_first_run` | `Installed(_)` for fish; `tfe.fish` contains wrapper |
+| `auto_install_zsh_already_installed_in_zshenv_returns_already_installed` | `AlreadyInstalled` when wrapper is in `.zshenv` |
+| `auto_install_nushell_writes_config_nu_on_first_run` | `Installed(_)` for Nu; `config.nu` contains wrapper |
+| `auto_install_nushell_does_not_duplicate_when_already_installed` | Content unchanged on second run |
+| `auto_install_nushell_returns_already_installed_when_config_nu_has_sentinel` | `AlreadyInstalled(_)` on second run |
+| `auto_install_nushell_creates_parent_directories_for_config_nu` | Deep nested path is created automatically |
+
+### `emit_source_directive` test
+
+`emit_source_directive_does_not_panic` — calls the function with a dummy path
+and asserts no panic.  Capturing stdout in unit tests requires extra
+dependencies (none allowed), so content correctness is verified indirectly
+through the snippet tests and the `SOURCE_DIRECTIVE_PREFIX` constant test.
+
+| Test | What it checks |
+|---|---|
+| `source_directive_prefix_constant_value` | `SOURCE_DIRECTIVE_PREFIX == "source:"` |
+| `emit_source_directive_does_not_panic` | function completes without panicking |
+| `snippet_bash_handles_source_directive` | bash snippet contains `"source:"` |
+| `snippet_fish_handles_source_directive` | fish snippet contains `"source:"` |
+| `snippet_pwsh_handles_source_directive` | PowerShell snippet contains `"source:"` |
+| `snippet_nushell_handles_source_directive` | Nushell snippet contains `"source:"` |
+
+### Nushell test helpers
+
+Nushell tests use a local `fn auto_install_nu(nu_config_dir: &Path) -> InitOutcome`
+helper (defined inside `mod tests`) that wires up the Nushell-specific argument
+while leaving all POSIX arguments as `None`.  This keeps individual tests
+concise.  There is no `install_or_print_nu` helper — use `install_or_print_to`
+directly when needed, always passing `Some(nu_config_dir)` as the last argument.
 
 ---
 
-## 10. Dependencies
+## 11. Dependencies
 
 - **Minimise dependencies.** The only `[dependencies]` should be `ratatui` and
   `crossterm`. Any new dependency requires justification in the PR description.
@@ -323,7 +752,7 @@ pub(crate) fn auto_install_with(
 
 ---
 
-## 11. Features
+## 12. Features
 
 ```toml
 [features]
@@ -340,7 +769,7 @@ cli     = ["dep:clap"]     # enables the `tfe` binary
 
 ---
 
-## 12. Commit & Release After Every Change
+## 13. Commit & Release After Every Change
 
 **Every completed implementation + test cycle must end with a commit and a new
 release.** There is no such thing as "I'll release later" — if the code is
@@ -388,7 +817,7 @@ just release 0.1.X                       # bumps, tags, pushes
 
 ---
 
-## 13. Versioning & Release Workflow
+## 14. Versioning & Release Workflow
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/)
 and [git-cliff](https://git-cliff.org/) for automated changelogs.
@@ -430,7 +859,7 @@ just publish-dry     # cargo publish --dry-run
 
 ---
 
-## 14. Git Hygiene
+## 15. Git Hygiene
 
 - Commits on `main` must pass `just check-all` (fmt + clippy + test).
 - PRs should be squash-merged with a conventional commit message.
@@ -443,7 +872,7 @@ just publish-dry     # cargo publish --dry-run
 
 ---
 
-## 15. Performance Hints
+## 16. Performance Hints
 
 - `load_entries` allocates two `Vec<FsEntry>` per directory read — acceptable
   since it only runs on navigation events, never in the hot draw loop.
@@ -451,17 +880,23 @@ just publish-dry     # cargo publish --dry-run
   Do not change this to iterate the full entries list.
 - `fmt_size` is called once per visible entry per frame. It is intentionally
   simple — no caching needed at current scale.
+- The `handle_input_mode!` and `render_input_footer!` macros expand inline at
+  each call site — there is no function-call overhead. Do not extract them into
+  functions to "reduce overhead"; the compiler already inlines trivial functions.
 - If the entry list grows beyond ~10 000 items, consider lazy loading or
   virtual scrolling, but do not over-engineer for the common case.
 
 ---
 
-## 16. Checklist Before Opening a PR
+## 17. Checklist Before Opening a PR
 
 - [ ] `just check-all` passes locally (fmt + clippy + test)
 - [ ] New public items have `///` doc comments
 - [ ] New logic has tests in the appropriate `mod tests` block
+- [ ] New macros have: block-comment docs, named section divider, tests via real call sites
 - [ ] A focused commit has been made with a Conventional Commit message
 - [ ] `just release <next-version>` has been run and the tag + branch pushed
 - [ ] No new dependencies added without discussion
 - [ ] Commit messages follow Conventional Commits
+- [ ] `render.rs` smoke tests cover any new active-mode footer arm
+- [ ] `explorer.rs` macro arm tests cover any new input-mode that uses `handle_input_mode!`

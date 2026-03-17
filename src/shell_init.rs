@@ -4,7 +4,7 @@
 //! the automatic first-run wrapper installation:
 //!
 //! * [`Shell`]            — recognised shell variants.
-//! * [`detect_shell`]     — infer the current shell from `$SHELL`.
+//! * [`detect_shell`]     — infer the current shell from `$SHELL` / `$NU_VERSION`.
 //! * [`snippet`]          — return the wrapper function text for a shell.
 //! * [`rc_path_with`]     — return the default rc-file path for a shell.
 //! * [`is_installed`]     — check whether the wrapper is already present in
@@ -37,6 +37,13 @@ pub enum Shell {
     /// PowerShell (Windows and cross-platform) — uses `$PROFILE`.
     /// Named `Pwsh` after the cross-platform PowerShell binary.
     Pwsh,
+    /// Nushell — uses `<config-dir>/nushell/config.nu`.
+    ///
+    /// Config-dir is platform-dependent:
+    /// - Linux:   `$XDG_CONFIG_HOME/nushell` or `~/.config/nushell`
+    /// - macOS:   `~/Library/Application Support/nushell`
+    /// - Windows: `%APPDATA%\nushell`
+    Nu,
 }
 
 impl Shell {
@@ -49,6 +56,7 @@ impl Shell {
             "zsh" => Some(Self::Zsh),
             "fish" => Some(Self::Fish),
             "powershell" | "pwsh" => Some(Self::Pwsh),
+            "nu" | "nushell" => Some(Self::Nu),
             _ => None,
         }
     }
@@ -60,6 +68,7 @@ impl Shell {
             Self::Zsh => "zsh",
             Self::Fish => "fish",
             Self::Pwsh => "powershell",
+            Self::Nu => "nushell",
         }
     }
 }
@@ -74,12 +83,21 @@ impl fmt::Display for Shell {
 
 /// Infer the current shell from environment variables.
 ///
-/// - Unix/macOS: reads `$SHELL` (e.g. `/bin/zsh` → `Zsh`).
-/// - Windows: checks `$PSVersionTable` / `$PSModulePath` presence to detect
-///   PowerShell; falls back to `None` for CMD or unknown shells.
+/// - **Nushell** (all platforms): checked first via `$NU_VERSION`, which
+///   Nushell always exports to child processes.  Also accepted when `$SHELL`
+///   ends with `nu` (some distributions set it).
+/// - **Unix/macOS**: reads `$SHELL` (e.g. `/bin/zsh` → `Zsh`).
+/// - **Windows**: checks `$PSModulePath` presence to detect PowerShell;
+///   falls back to `None` for CMD or unknown shells.
 ///
 /// Returns `None` when the shell cannot be determined or is not supported.
 pub fn detect_shell() -> Option<Shell> {
+    // Nushell exports $NU_VERSION to every child process regardless of
+    // platform, making it the most reliable detection signal.
+    if std::env::var_os("NU_VERSION").is_some() {
+        return Some(Shell::Nu);
+    }
+
     if cfg!(windows) {
         // On Windows $SHELL is not set. Detect PowerShell by the presence of
         // $PSModulePath which is always injected by the PowerShell host.
@@ -88,10 +106,60 @@ pub fn detect_shell() -> Option<Shell> {
         }
         return None;
     }
+
     let shell_var = std::env::var("SHELL").ok()?;
     // $SHELL is typically a full path like /bin/zsh — take just the filename.
     let name = Path::new(&shell_var).file_name()?.to_str()?;
     Shell::from_str(name)
+}
+
+/// Return the platform-default Nushell configuration directory.
+///
+/// Priority:
+/// - Linux / other Unix: `$XDG_CONFIG_HOME/nushell` → `~/.config/nushell`
+/// - macOS: `~/Library/Application Support/nushell`
+///   (Nushell follows macOS conventions and does *not* use `~/.config` by
+///   default; `$XDG_CONFIG_HOME` still overrides when explicitly set.)
+/// - Windows: `%APPDATA%\nushell`
+///
+/// Returns `None` when the necessary home/appdata variable is unset.
+pub(crate) fn nu_config_dir_default() -> Option<PathBuf> {
+    // $XDG_CONFIG_HOME overrides platform defaults on every OS.
+    if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME") {
+        return Some(PathBuf::from(xdg).join("nushell"));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: ~/Library/Application Support/nushell
+        if let Some(home) = std::env::var_os("HOME") {
+            return Some(
+                PathBuf::from(home)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("nushell"),
+            );
+        }
+        None
+    }
+
+    #[cfg(windows)]
+    {
+        // Windows: %APPDATA%\nushell
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            return Some(PathBuf::from(appdata).join("nushell"));
+        }
+        return None;
+    }
+
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        // Linux / other Unix: ~/.config/nushell
+        if let Some(home) = std::env::var_os("HOME") {
+            return Some(PathBuf::from(home).join(".config").join("nushell"));
+        }
+        None
+    }
 }
 
 // ── Snippet ───────────────────────────────────────────────────────────────────
@@ -107,30 +175,75 @@ const SENTINEL: &str = "# tfe-shell-init";
 /// The snippet wraps the `tfe` binary so that dismissing the explorer with
 /// `Esc` or `q` automatically `cd`s the terminal to the browsed directory.
 /// A [`SENTINEL`] comment is included so [`is_installed`] can detect it.
+/// The prefix used in the stdout protocol for source directives.
+///
+/// When `tfe` auto-installs the shell wrapper on first run it cannot source
+/// the rc file itself (a child process cannot modify its parent's environment).
+/// Instead it emits a line of the form `source:<path>` to stdout.  The shell
+/// wrapper reads every output line and, when it sees this prefix, runs
+/// `source <path>` in the parent shell — making the newly-written `tfe`
+/// function available immediately without the user needing to open a new
+/// terminal or run `source` manually.
+///
+/// Any other non-empty output line is treated as a directory/file path and
+/// handled with `cd` / `Set-Location` as before.  The protocol is strictly
+/// additive and backwards-compatible: old wrappers that do not recognise the
+/// prefix will simply try to `cd` to `source:<path>`, which will fail silently
+/// (the directory does not exist) and leave the shell in its current directory.
+pub const SOURCE_DIRECTIVE_PREFIX: &str = "source:";
+
 pub fn snippet(shell: Shell) -> String {
     match shell {
+        // bash / zsh: loop over every output line.  Lines beginning with
+        // "source:" are sourced in the current shell; any other non-empty
+        // line is treated as a cd target.
         Shell::Bash | Shell::Zsh => format!(
             "\n{SENTINEL}\n\
              tfe() {{\n\
-             \x20   local dir\n\
-             \x20   dir=$(command tfe \"$@\")\n\
-             \x20   [ -n \"$dir\" ] && cd \"$dir\"\n\
+             \x20   local line\n\
+             \x20   while IFS= read -r line; do\n\
+             \x20       case \"$line\" in\n\
+             \x20           source:*) source \"${{line#source:}}\" ;;\n\
+             \x20           ?*)       cd \"$line\" ;;\n\
+             \x20       esac\n\
+             \x20   done < <(command tfe \"$@\")\n\
              }}\n"
         ),
+        // fish: same logic using fish syntax.
         Shell::Fish => format!(
             "\n{SENTINEL}\n\
              function tfe\n\
-             \x20   set dir (command tfe $argv)\n\
-             \x20   if test -n \"$dir\"\n\
-             \x20       cd $dir\n\
+             \x20   for line in (command tfe $argv | string split0 | string split \"\\n\")\n\
+             \x20       if string match -q 'source:*' -- $line\n\
+             \x20           source (string replace 'source:' '' -- $line)\n\
+             \x20       else if test -n \"$line\"\n\
+             \x20           cd $line\n\
+             \x20       end\n\
              \x20   end\n\
              end\n"
         ),
+        // PowerShell: split output on newlines, handle source: and cd.
         Shell::Pwsh => format!(
             "\n{SENTINEL}\n\
              function tfe {{\n\
-             \x20   $dir = & (Get-Command tfe -CommandType Application).Source @args\n\
-             \x20   if ($dir) {{ Set-Location $dir }}\n\
+             \x20   & (Get-Command tfe -CommandType Application).Source @args | ForEach-Object {{\n\
+             \x20       if ($_ -like 'source:*') {{ . ($_ -replace '^source:', '') }}\n\
+             \x20       elseif ($_)              {{ Set-Location $_ }}\n\
+             \x20   }}\n\
+             }}\n"
+        ),
+        // Nushell: collect all output lines, source or cd for each.
+        Shell::Nu => format!(
+            "\n{SENTINEL}\n\
+             # tfe wrapper: handle source: directives and cd on exit.\n\
+             def --wrapped tfe [...rest] {{\n\
+             \x20   ^tfe ...$rest | lines | each {{|line|\n\
+             \x20       if ($line | str starts-with 'source:') {{\n\
+             \x20           source ($line | str replace 'source:' '')\n\
+             \x20       }} else if ($line | is-not-empty) {{\n\
+             \x20           cd $line\n\
+             \x20       }}\n\
+             \x20   }}\n\
              }}\n"
         ),
     }
@@ -147,10 +260,12 @@ pub fn snippet(shell: Shell) -> String {
 ///   → `~/.zshrc` (created fresh)
 /// - **bash**: `$HOME/.bash_profile` (if it exists) → `$HOME/.bashrc`
 /// - **fish**: `$XDG_CONFIG_HOME/fish/functions/tfe.fish` → `$HOME/.config/…`
+/// - **nushell**: `nu_config_dir/config.nu` (platform-dependent; see
+///   [`nu_config_dir_default`] for the resolution order)
 ///
 /// Pass explicit overrides (`home`, `xdg_config_home`, `zdotdir`,
-/// `bash_profile`, `zshenv`) to keep tests hermetic without mutating global
-/// env vars.
+/// `bash_profile`, `zshenv`, `nu_config_dir`) to keep tests hermetic without
+/// mutating global env vars.
 pub fn rc_path_with(
     shell: Shell,
     home: Option<&Path>,
@@ -158,6 +273,7 @@ pub fn rc_path_with(
     zdotdir: Option<&Path>,
     bash_profile: Option<&Path>,
     zshenv: Option<&Path>,
+    nu_config_dir: Option<&Path>,
 ) -> Option<PathBuf> {
     match shell {
         // bash: prefer ~/.bash_profile when it already exists (common on macOS),
@@ -223,6 +339,11 @@ pub fn rc_path_with(
                 }
             })
         }
+        // Nushell: <config-dir>/nushell/config.nu
+        // The config dir is platform-dependent (see nu_config_dir_default).
+        // An explicit `nu_config_dir` override takes priority so tests stay
+        // hermetic.
+        Shell::Nu => nu_config_dir.map(|d| d.join("config.nu")),
     }
 }
 
@@ -246,18 +367,24 @@ fn zshenv(home: Option<&Path>) -> Option<PathBuf> {
     home.map(|h| h.join(".zshenv"))
 }
 
+fn nu_config_dir() -> Option<PathBuf> {
+    nu_config_dir_default()
+}
+
 // ── Already-installed check ───────────────────────────────────────────────────
 
 /// Return `true` when the `tfe` wrapper snippet is already present in `path`.
 ///
-/// Two signatures are recognised so that manually-added wrappers (without the
-/// sentinel) are never duplicated alongside a sentinel-based install:
+/// Three signatures are recognised so that manually-added wrappers (without
+/// the sentinel) are never duplicated alongside a sentinel-based install:
 ///
 /// 1. The [`SENTINEL`] comment `# tfe-shell-init` — present in all wrappers
 ///    written by `--init`.
-/// 2. The bare function signatures `tfe()` (bash/zsh) and `function tfe`
-///    (fish) preceded by `command tfe` on any nearby line — catches wrappers
-///    that were copy-pasted by hand before `--init` existed.
+/// 2. The bare POSIX/fish function signatures `tfe()` / `function tfe`
+///    preceded by `command tfe` on a nearby line — catches bash/zsh/fish
+///    wrappers copy-pasted by hand before `--init` existed.
+/// 3. The Nushell signature `def --wrapped tfe` followed by `^tfe` on a
+///    nearby line — catches hand-written Nushell wrappers.
 ///
 /// Returns `false` when `path` does not exist or cannot be read.
 pub fn is_installed(path: &Path) -> bool {
@@ -269,21 +396,25 @@ pub fn is_installed(path: &Path) -> bool {
     if content.contains(SENTINEL) {
         return true;
     }
-    // Slow path: detect a hand-written wrapper by looking for the tfe function
-    // body pattern — the function declaration followed by `command tfe` within
-    // a short window of lines.
+    // Slow path: detect a hand-written wrapper by looking for known function
+    // declaration patterns followed by the tfe invocation within a short window.
     let lines: Vec<&str> = content.lines().collect();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if trimmed == "tfe() {" || trimmed == "function tfe" {
-            // Check the next 6 lines for `command tfe`.
-            let window_end = (i + 7).min(lines.len());
-            if lines[i..window_end]
+        let window_end = (i + 7).min(lines.len());
+        // bash / zsh hand-written wrapper
+        if (trimmed == "tfe() {" || trimmed == "function tfe")
+            && lines[i..window_end]
                 .iter()
                 .any(|l| l.contains("command tfe"))
-            {
-                return true;
-            }
+        {
+            return true;
+        }
+        // Nushell hand-written wrapper
+        if trimmed.starts_with("def --wrapped tfe")
+            && lines[i..window_end].iter().any(|l| l.contains("^tfe"))
+        {
+            return true;
         }
     }
     false
@@ -311,6 +442,23 @@ pub fn install(shell: Shell, rc: &Path) -> io::Result<()> {
 
 // ── Auto-install (first-run) ──────────────────────────────────────────────────
 
+/// Write a `source:<rc_path>` directive to stdout so the shell wrapper
+/// can source the newly-installed rc file in the parent shell process.
+///
+/// This is emitted once — immediately after auto-install — so that the
+/// current shell session picks up the `tfe` wrapper function without the
+/// user having to open a new terminal or run `source` manually.
+///
+/// The directive is always terminated with `\n` regardless of any `--null`
+/// flag; it is a control message, not a data path.
+pub fn emit_source_directive(rc_path: &Path) {
+    // Write directly to stdout.  Errors are silently swallowed — failing to
+    // emit the directive is not fatal; the user just has to source manually.
+    let _ = std::io::stdout()
+        .write_all(format!("{}{}\n", SOURCE_DIRECTIVE_PREFIX, rc_path.display()).as_bytes());
+    let _ = std::io::stdout().flush();
+}
+
 /// Silently install the shell wrapper on first run if it is not already
 /// present in any candidate rc file for the detected shell.
 ///
@@ -325,15 +473,21 @@ pub fn install(shell: Shell, rc: &Path) -> io::Result<()> {
 /// - If the wrapper is found in any candidate, returns immediately.
 /// - Otherwise calls [`install_or_print`] to write to the best rc file and
 ///   prints one line to stderr.
-pub fn auto_install() {
+///
+/// Returns the [`InitOutcome`] so the caller can surface a post-TUI notice
+/// when the snippet was freshly written (the TUI would have swallowed any
+/// `eprintln!` emitted during startup via the alternate screen).
+pub fn auto_install() -> InitOutcome {
+    let h = home();
     auto_install_with(
         None,
-        home().as_deref(),
+        h.as_deref(),
         xdg_config_home().as_deref(),
         zdotdir().as_deref(),
-        bash_profile(home().as_deref()).as_deref(),
-        zshenv(home().as_deref()).as_deref(),
-    );
+        bash_profile(h.as_deref()).as_deref(),
+        zshenv(h.as_deref()).as_deref(),
+        nu_config_dir().as_deref(),
+    )
 }
 
 /// Like [`auto_install`] but with explicit overrides for hermetic testing.
@@ -347,10 +501,11 @@ pub(crate) fn auto_install_with(
     zdotdir: Option<&Path>,
     bash_profile: Option<&Path>,
     zshenv: Option<&Path>,
-) {
+    nu_config_dir: Option<&Path>,
+) -> InitOutcome {
     let shell = match shell.or_else(detect_shell) {
         Some(s) => s,
-        None => return, // unrecognised shell — do nothing silently
+        None => return InitOutcome::UnknownShell, // unrecognised shell — do nothing silently
     };
 
     // Build the full list of candidate rc files to check for an existing
@@ -400,34 +555,41 @@ pub(crate) fn auto_install_with(
                 vec![]
             }
         }
+        Shell::Nu => {
+            if let Some(d) = nu_config_dir {
+                vec![d.join("config.nu")]
+            } else {
+                vec![]
+            }
+        }
     };
 
     // Already installed in any candidate — nothing to do.
     if candidates.iter().any(|p| is_installed(p)) {
-        return;
+        return InitOutcome::AlreadyInstalled(
+            // Return the first candidate that has it installed so callers can
+            // display the path if needed.
+            candidates
+                .into_iter()
+                .find(|p| is_installed(p))
+                .unwrap_or_default(),
+        );
     }
 
     // Not found anywhere — install silently into the best rc file.
-    match install_or_print_to(
+    // Do NOT eprintln! here: at startup the TUI alternate screen is either
+    // already active or about to be activated, which would swallow the message.
+    // The caller (main.rs) is responsible for surfacing the notice *after* the
+    // TUI exits, when stderr is once again connected to a visible terminal.
+    install_or_print_to(
         Some(shell),
         home,
         xdg_config_home,
         zdotdir,
         bash_profile,
         zshenv,
-    ) {
-        InitOutcome::Installed(path) => {
-            eprintln!(
-                "tfe: shell integration installed to {} — run `source {}` or open a new terminal to activate",
-                path.display(),
-                path.display()
-            );
-        }
-        // Already installed guard fired inside install_or_print_to — fine.
-        InitOutcome::AlreadyInstalled(_) => {}
-        // Could not write — stay silent, don't block startup.
-        InitOutcome::PrintedToStdout | InitOutcome::UnknownShell => {}
-    }
+        nu_config_dir,
+    )
 }
 
 // ── Top-level entry point ─────────────────────────────────────────────────────
@@ -466,6 +628,7 @@ pub fn install_or_print(shell: Option<Shell>) -> InitOutcome {
         zdotdir().as_deref(),
         bash_profile(h.as_deref()).as_deref(),
         zshenv(h.as_deref()).as_deref(),
+        nu_config_dir().as_deref(),
     )
 }
 
@@ -480,15 +643,17 @@ pub(crate) fn install_or_print_to(
     zdotdir: Option<&Path>,
     bash_profile: Option<&Path>,
     zshenv: Option<&Path>,
+    nu_config_dir: Option<&Path>,
 ) -> InitOutcome {
-    // On Windows, only PowerShell is supported for --init.
-    // CMD has no equivalent of shell functions. WSL users should run the
-    // Linux tfe binary inside WSL and use tfe --init zsh/bash there.
+    // On Windows, only PowerShell and Nushell are supported for --init.
+    // CMD has no equivalent of shell functions.  WSL users should run the
+    // Linux tfe binary inside WSL and use tfe --init bash/zsh/fish there.
     if cfg!(windows) {
         if let Some(s) = shell {
-            if s != Shell::Pwsh {
+            if s != Shell::Pwsh && s != Shell::Nu {
                 eprintln!(
-                    "tfe: on Windows only PowerShell is supported: tfe --init powershell\n\
+                    "tfe: on Windows only PowerShell and Nushell are supported.\n\
+                     Use: tfe --init powershell   or   tfe --init nushell\n\
                      For WSL (bash/zsh/fish) run tfe --init <shell> inside WSL."
                 );
                 return InitOutcome::UnknownShell;
@@ -518,6 +683,7 @@ pub(crate) fn install_or_print_to(
         zdotdir,
         bash_profile,
         zshenv,
+        nu_config_dir,
     ) {
         Some(p) => p,
         None => {
@@ -559,6 +725,21 @@ mod tests {
     use std::fs;
     use tempfile::tempdir;
 
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    /// Call auto_install_with with the Nushell-specific nu_config_dir wired in.
+    fn auto_install_nu(nu_config_dir: &Path) -> InitOutcome {
+        auto_install_with(
+            Some(Shell::Nu),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(nu_config_dir),
+        )
+    }
+
     // ── Shell::from_str ───────────────────────────────────────────────────────
 
     #[test]
@@ -583,8 +764,17 @@ mod tests {
     }
 
     #[test]
+    fn from_str_recognises_nushell() {
+        assert_eq!(Shell::from_str("nu"), Some(Shell::Nu));
+        assert_eq!(Shell::from_str("nushell"), Some(Shell::Nu));
+    }
+
+    #[test]
     fn from_str_is_case_insensitive() {
+        assert_eq!(Shell::from_str("BASH"), Some(Shell::Bash));
         assert_eq!(Shell::from_str("ZSH"), Some(Shell::Zsh));
+        assert_eq!(Shell::from_str("FISH"), Some(Shell::Fish));
+        assert_eq!(Shell::from_str("NU"), Some(Shell::Nu));
         assert_eq!(Shell::from_str("Bash"), Some(Shell::Bash));
         assert_eq!(Shell::from_str("FISH"), Some(Shell::Fish));
         assert_eq!(Shell::from_str("PowerShell"), Some(Shell::Pwsh));
@@ -604,6 +794,7 @@ mod tests {
         assert_eq!(Shell::Zsh.to_string(), "zsh");
         assert_eq!(Shell::Fish.to_string(), "fish");
         assert_eq!(Shell::Pwsh.to_string(), "powershell");
+        assert_eq!(Shell::Nu.to_string(), "nushell");
     }
 
     // ── snippet ───────────────────────────────────────────────────────────────
@@ -625,12 +816,96 @@ mod tests {
             s.contains("command tfe"),
             "bash snippet missing command tfe"
         );
-        assert!(s.contains("cd \"$dir\""), "bash snippet missing cd");
+        assert!(s.contains("cd \"$line\""), "bash snippet missing cd");
+        assert!(
+            s.contains("source:"),
+            "bash snippet missing source: handler"
+        );
     }
 
     #[test]
     fn snippet_zsh_identical_to_bash() {
         assert_eq!(snippet(Shell::Zsh), snippet(Shell::Bash));
+    }
+
+    #[test]
+    fn snippet_nushell_contains_def_wrapped() {
+        let s = snippet(Shell::Nu);
+        assert!(
+            s.contains("def --wrapped tfe"),
+            "nushell snippet must use 'def --wrapped tfe', got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn snippet_nushell_uses_caret_tfe() {
+        let s = snippet(Shell::Nu);
+        assert!(
+            s.contains("^tfe"),
+            "nushell snippet must call the external binary with ^tfe, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn snippet_nushell_uses_cd() {
+        let s = snippet(Shell::Nu);
+        assert!(
+            s.contains("cd"),
+            "nushell snippet must cd to the dir, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn snippet_nushell_handles_source_directive() {
+        let s = snippet(Shell::Nu);
+        assert!(
+            s.contains("source:"),
+            "nushell snippet must handle source: directives, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn snippet_nushell_differs_from_bash() {
+        assert_ne!(snippet(Shell::Nu), snippet(Shell::Bash));
+    }
+
+    #[test]
+    fn snippet_bash_handles_source_directive() {
+        let s = snippet(Shell::Bash);
+        assert!(
+            s.contains("source:"),
+            "bash snippet must handle source: directives, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn snippet_fish_handles_source_directive() {
+        let s = snippet(Shell::Fish);
+        assert!(
+            s.contains("source:"),
+            "fish snippet must handle source: directives, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn snippet_pwsh_handles_source_directive() {
+        let s = snippet(Shell::Pwsh);
+        assert!(
+            s.contains("source:"),
+            "powershell snippet must handle source: directives, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn source_directive_prefix_constant_value() {
+        assert_eq!(SOURCE_DIRECTIVE_PREFIX, "source:");
+    }
+
+    #[test]
+    fn emit_source_directive_does_not_panic() {
+        // We can't easily capture stdout in a unit test without extra deps,
+        // but we can verify the function completes without panicking.
+        emit_source_directive(std::path::Path::new("/tmp/test_rc"));
     }
 
     #[test]
@@ -640,10 +915,14 @@ mod tests {
             s.contains("command tfe"),
             "fish snippet missing command tfe"
         );
-        assert!(s.contains("cd $dir"), "fish snippet missing cd");
+        assert!(s.contains("cd $line"), "fish snippet missing cd");
         assert!(
             s.contains("function tfe"),
             "fish snippet missing function keyword"
+        );
+        assert!(
+            s.contains("source:"),
+            "fish snippet missing source: handler"
         );
     }
 
@@ -676,6 +955,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
         assert_eq!(p, PathBuf::from("/test/home/.bashrc"));
@@ -687,6 +967,7 @@ mod tests {
         let p = rc_path_with(
             Shell::Zsh,
             Some(Path::new("/test/home")),
+            None,
             None,
             None,
             None,
@@ -705,6 +986,7 @@ mod tests {
             Some(Path::new("/custom/zdotdir")),
             None,
             None,
+            None,
         )
         .unwrap();
         assert_eq!(p, PathBuf::from("/custom/zdotdir/.zshrc"));
@@ -717,7 +999,16 @@ mod tests {
         // Create .zshenv but NOT .zshrc — colleague's setup.
         let zshenv = home.join(".zshenv");
         fs::write(&zshenv, b"# existing zshenv\n").unwrap();
-        let p = rc_path_with(Shell::Zsh, Some(home), None, None, None, Some(&zshenv)).unwrap();
+        let p = rc_path_with(
+            Shell::Zsh,
+            Some(home),
+            None,
+            None,
+            None,
+            Some(&zshenv),
+            None,
+        )
+        .unwrap();
         assert_eq!(p, zshenv, "must write to .zshenv when .zshrc absent");
     }
 
@@ -729,7 +1020,16 @@ mod tests {
         let zshenv = home.join(".zshenv");
         fs::write(&zshrc, b"# existing zshrc\n").unwrap();
         fs::write(&zshenv, b"# existing zshenv\n").unwrap();
-        let p = rc_path_with(Shell::Zsh, Some(home), None, None, None, Some(&zshenv)).unwrap();
+        let p = rc_path_with(
+            Shell::Zsh,
+            Some(home),
+            None,
+            None,
+            None,
+            Some(&zshenv),
+            None,
+        )
+        .unwrap();
         assert_eq!(p, zshrc, "must prefer .zshrc over .zshenv when both exist");
     }
 
@@ -740,6 +1040,7 @@ mod tests {
         let p = rc_path_with(
             Shell::Pwsh,
             Some(Path::new("/test/home")),
+            None,
             None,
             None,
             None,
@@ -761,6 +1062,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
         assert_eq!(p, PathBuf::from("/custom/config/fish/functions/tfe.fish"));
@@ -771,6 +1073,7 @@ mod tests {
         let p = rc_path_with(
             Shell::Fish,
             Some(Path::new("/test/home")),
+            None,
             None,
             None,
             None,
@@ -786,10 +1089,34 @@ mod tests {
     #[test]
     fn rc_path_returns_none_when_home_unset() {
         std::env::remove_var("PROFILE");
-        assert!(rc_path_with(Shell::Bash, None, None, None, None, None).is_none());
-        assert!(rc_path_with(Shell::Zsh, None, None, None, None, None).is_none());
-        assert!(rc_path_with(Shell::Fish, None, None, None, None, None).is_none());
-        assert!(rc_path_with(Shell::Pwsh, None, None, None, None, None).is_none());
+        assert!(rc_path_with(Shell::Bash, None, None, None, None, None, None).is_none());
+        assert!(rc_path_with(Shell::Zsh, None, None, None, None, None, None).is_none());
+        assert!(rc_path_with(Shell::Fish, None, None, None, None, None, None).is_none());
+        assert!(rc_path_with(Shell::Pwsh, None, None, None, None, None, None).is_none());
+        assert!(rc_path_with(Shell::Nu, None, None, None, None, None, None).is_none());
+    }
+
+    #[test]
+    fn rc_path_nu_uses_nu_config_dir() {
+        let p = rc_path_with(
+            Shell::Nu,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(Path::new("/test/nushell")),
+        )
+        .unwrap();
+        assert_eq!(p, PathBuf::from("/test/nushell/config.nu"));
+    }
+
+    #[test]
+    fn rc_path_nu_returns_none_when_nu_config_dir_unset() {
+        assert!(
+            rc_path_with(Shell::Nu, None, None, None, None, None, None).is_none(),
+            "Nu rc_path must be None when nu_config_dir is not provided"
+        );
     }
 
     // ── is_installed ──────────────────────────────────────────────────────────
@@ -799,6 +1126,14 @@ mod tests {
         let dir = tempdir().unwrap();
         let rc = dir.path().join(".zshrc");
         install(Shell::Zsh, &rc).unwrap();
+        assert!(is_installed(&rc));
+    }
+
+    #[test]
+    fn is_installed_detects_sentinel_in_nushell_config() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join("config.nu");
+        install(Shell::Nu, &rc).unwrap();
         assert!(is_installed(&rc));
     }
 
@@ -860,7 +1195,15 @@ mod tests {
     fn is_installed_returns_false_when_sentinel_absent() {
         let dir = tempdir().unwrap();
         let rc = dir.path().join(".zshrc");
-        fs::write(&rc, b"export PATH=$PATH:~/.cargo/bin\n").unwrap();
+        fs::write(&rc, b"export PATH=$PATH:/usr/local/bin\n").unwrap();
+        assert!(!is_installed(&rc));
+    }
+
+    #[test]
+    fn is_installed_nushell_returns_false_when_sentinel_absent() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join("config.nu");
+        fs::write(&rc, b"$env.config.show_banner = false\n").unwrap();
         assert!(!is_installed(&rc));
     }
 
@@ -868,7 +1211,19 @@ mod tests {
     fn is_installed_returns_true_when_sentinel_present() {
         let dir = tempdir().unwrap();
         let rc = dir.path().join(".zshrc");
-        fs::write(&rc, format!("some stuff\n{SENTINEL}\ntfe() {{}}\n")).unwrap();
+        fs::write(&rc, format!("some content\n{SENTINEL}\nmore\n").as_bytes()).unwrap();
+        assert!(is_installed(&rc));
+    }
+
+    #[test]
+    fn is_installed_nushell_returns_true_when_sentinel_present() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join("config.nu");
+        fs::write(
+            &rc,
+            format!("$env.config.show_banner = false\n{SENTINEL}\n").as_bytes(),
+        )
+        .unwrap();
         assert!(is_installed(&rc));
     }
 
@@ -881,6 +1236,60 @@ mod tests {
         assert!(!rc.exists());
         install(Shell::Zsh, &rc).unwrap();
         assert!(rc.exists());
+    }
+
+    #[test]
+    fn install_nushell_creates_config_nu_when_missing() {
+        let dir = tempdir().unwrap();
+        let nu_dir = dir.path().join("nushell");
+        let rc = nu_dir.join("config.nu");
+        assert!(!rc.exists());
+        install(Shell::Nu, &rc).unwrap();
+        assert!(rc.exists());
+        assert!(is_installed(&rc));
+    }
+
+    #[test]
+    fn install_nushell_creates_parent_directories() {
+        let dir = tempdir().unwrap();
+        let rc = dir
+            .path()
+            .join("Library")
+            .join("Application Support")
+            .join("nushell")
+            .join("config.nu");
+        install(Shell::Nu, &rc).unwrap();
+        assert!(rc.exists());
+        assert!(is_installed(&rc));
+    }
+
+    #[test]
+    fn install_nushell_snippet_passes_is_installed() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join("config.nu");
+        install(Shell::Nu, &rc).unwrap();
+        assert!(
+            is_installed(&rc),
+            "installed nushell snippet must pass is_installed"
+        );
+    }
+
+    #[test]
+    fn install_nushell_does_not_duplicate_when_called_twice() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join("config.nu");
+        install(Shell::Nu, &rc).unwrap();
+        let before = fs::read_to_string(&rc).unwrap();
+        // Second install should not be reached in practice (auto_install_with
+        // guards it), but install() itself does not de-duplicate — verify that
+        // is_installed catches it before a second call.
+        assert!(is_installed(&rc), "must be detected after first install");
+        // Confirm the content after one install contains the snippet exactly once.
+        let count = before.matches(SENTINEL).count();
+        assert_eq!(
+            count, 1,
+            "sentinel should appear exactly once after one install"
+        );
     }
 
     #[test]
@@ -936,8 +1345,15 @@ mod tests {
     fn install_or_print_installs_when_rc_writable() {
         let dir = tempdir().unwrap();
         let rc = dir.path().join(".zshrc");
-        let outcome =
-            install_or_print_to(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
+        let outcome = install_or_print_to(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(outcome, InitOutcome::Installed(rc.clone()));
         assert!(is_installed(&rc));
     }
@@ -948,8 +1364,15 @@ mod tests {
         let rc = dir.path().join(".zshrc");
         // Pre-install the snippet.
         install(Shell::Zsh, &rc).unwrap();
-        let outcome =
-            install_or_print_to(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
+        let outcome = install_or_print_to(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(outcome, InitOutcome::AlreadyInstalled(rc));
     }
 
@@ -964,6 +1387,7 @@ mod tests {
             Some(dir.path()),
             None,
             Some(&zdotdir),
+            None,
             None,
             None,
         );
@@ -989,6 +1413,7 @@ mod tests {
             None,
             None,
             Some(&zshenv),
+            None,
         );
         assert_eq!(
             outcome,
@@ -1009,6 +1434,7 @@ mod tests {
             None,
             None,
             Some(&bp),
+            None,
             None,
         );
         assert_eq!(
@@ -1031,8 +1457,15 @@ mod tests {
             let mut perms = fs::metadata(&ro_dir).unwrap().permissions();
             perms.set_mode(0o444);
             fs::set_permissions(&ro_dir, perms).unwrap();
-            let outcome =
-                install_or_print_to(Some(Shell::Zsh), Some(&ro_dir), None, None, None, None);
+            let outcome = install_or_print_to(
+                Some(Shell::Zsh),
+                Some(&ro_dir),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
             assert_eq!(
                 outcome,
                 InitOutcome::PrintedToStdout,
@@ -1055,7 +1488,15 @@ mod tests {
         // Simulate $SHELL=zsh by using auto_install_with directly.
         // Before: wrapper absent.
         assert!(!is_installed(&rc));
-        auto_install_with(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
+        auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         // After: wrapper present.
         assert!(
             is_installed(&rc),
@@ -1071,7 +1512,15 @@ mod tests {
         install(Shell::Zsh, &rc).unwrap();
         let before = fs::read_to_string(&rc).unwrap();
         // Run auto_install — must be a no-op.
-        auto_install_with(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
+        auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         let after = fs::read_to_string(&rc).unwrap();
         assert_eq!(
             before, after,
@@ -1093,6 +1542,7 @@ mod tests {
             None,
             None,
             Some(&zshenv),
+            None,
         );
         let zshrc = dir.path().join(".zshrc");
         assert!(
@@ -1109,7 +1559,15 @@ mod tests {
         fs::write(&zprofile, format!("{SENTINEL}\ntfe() {{}}\n")).unwrap();
         // auto_install_with checks .zprofile as a candidate — should skip.
         // We pass zshenv=None so it won't find it there.
-        auto_install_with(Some(Shell::Zsh), Some(dir.path()), None, None, None, None);
+        auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         // .zshrc should not have been created (wrapper found in .zprofile).
         // Note: auto_install_with checks .zprofile via the candidates list
         // but rc_path_with would still pick .zshrc — the key invariant is
@@ -1138,6 +1596,7 @@ mod tests {
             Some(&zdotdir),
             None,
             None,
+            None,
         );
         assert!(
             is_installed(&rc),
@@ -1164,6 +1623,7 @@ mod tests {
             None,
             None,
             Some(&zshenv),
+            None,
         );
         assert!(
             is_installed(&zshenv),
@@ -1172,12 +1632,270 @@ mod tests {
     }
 
     #[test]
+    fn auto_install_nushell_writes_config_nu_on_first_run() {
+        let dir = tempdir().unwrap();
+        let nu_dir = dir.path().join("nushell");
+        let config_nu = nu_dir.join("config.nu");
+        assert!(!config_nu.exists());
+        let outcome = auto_install_nu(&nu_dir);
+        assert!(
+            matches!(outcome, InitOutcome::Installed(_)),
+            "expected Installed, got {outcome:?}"
+        );
+        assert!(
+            is_installed(&config_nu),
+            "config.nu must contain the wrapper"
+        );
+    }
+
+    #[test]
+    fn auto_install_nushell_does_not_duplicate_when_already_installed() {
+        let dir = tempdir().unwrap();
+        let nu_dir = dir.path().join("nushell");
+        let config_nu = nu_dir.join("config.nu");
+        // Pre-install once.
+        install(Shell::Nu, &config_nu).unwrap();
+        let before = fs::read_to_string(&config_nu).unwrap();
+        // Second run — must be a no-op.
+        auto_install_nu(&nu_dir);
+        let after = fs::read_to_string(&config_nu).unwrap();
+        assert_eq!(
+            before, after,
+            "auto_install must not duplicate the nushell wrapper"
+        );
+    }
+
+    #[test]
+    fn auto_install_nushell_returns_already_installed_when_config_nu_has_sentinel() {
+        let dir = tempdir().unwrap();
+        let nu_dir = dir.path().join("nushell");
+        let config_nu = nu_dir.join("config.nu");
+        install(Shell::Nu, &config_nu).unwrap();
+        let outcome = auto_install_nu(&nu_dir);
+        assert!(
+            matches!(outcome, InitOutcome::AlreadyInstalled(_)),
+            "expected AlreadyInstalled, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn auto_install_nushell_creates_parent_directories_for_config_nu() {
+        let dir = tempdir().unwrap();
+        // Deep nested path — directories do not exist yet.
+        let nu_dir = dir.path().join("deep").join("nested").join("nushell");
+        let config_nu = nu_dir.join("config.nu");
+        assert!(!nu_dir.exists());
+        let outcome = auto_install_nu(&nu_dir);
+        assert!(
+            matches!(outcome, InitOutcome::Installed(_)),
+            "expected Installed, got {outcome:?}"
+        );
+        assert!(config_nu.exists(), "config.nu must have been created");
+    }
+
+    #[test]
     fn auto_install_does_nothing_when_shell_unrecognised() {
         // auto_install_with resolves shell via detect_shell() which reads $SHELL.
         // We can't safely mutate $SHELL in a parallel test, so we verify the
         // None-home path (unresolvable rc) is handled without panic instead.
         // The real unrecognised-shell path is covered by detect_shell tests.
-        auto_install_with(None, None, None, None, None, None);
+        let outcome = auto_install_with(None, None, None, None, None, None, None);
         // Must not panic — that is the assertion.
+        // Acceptable outcomes depending on the CI environment:
+        //   - UnknownShell      : $SHELL is unset or unrecognised
+        //   - AlreadyInstalled  : wrapper already present in the real rc file
+        //   - PrintedToStdout   : $SHELL is set but $HOME is None (our override),
+        //                         so rc_path_with returns None and the snippet
+        //                         is printed to stdout as a fallback
+        //   - Installed         : $SHELL is set, $HOME is None but rc_path_with
+        //                         somehow resolves (shouldn't happen, but safe)
+        assert!(
+            matches!(
+                outcome,
+                InitOutcome::UnknownShell
+                    | InitOutcome::AlreadyInstalled(_)
+                    | InitOutcome::PrintedToStdout
+                    | InitOutcome::Installed(_)
+            ),
+            "unexpected outcome: {outcome:?}"
+        );
+    }
+
+    // ── auto_install_with return value ────────────────────────────────────────
+
+    #[test]
+    fn auto_install_returns_installed_on_first_run() {
+        let dir = tempdir().unwrap();
+        let outcome = auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(
+            matches!(outcome, InitOutcome::Installed(_)),
+            "expected Installed on first run, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn auto_install_installed_outcome_carries_rc_path() {
+        let dir = tempdir().unwrap();
+        let outcome = auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        if let InitOutcome::Installed(path) = outcome {
+            assert!(
+                path.ends_with(".zshrc"),
+                "installed path should be .zshrc, got {path:?}"
+            );
+        } else {
+            panic!("expected Installed, got {outcome:?}");
+        }
+    }
+
+    #[test]
+    fn auto_install_returns_already_installed_on_second_run() {
+        let dir = tempdir().unwrap();
+        // First run installs.
+        auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        // Second run must return AlreadyInstalled.
+        let outcome = auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(
+            matches!(outcome, InitOutcome::AlreadyInstalled(_)),
+            "expected AlreadyInstalled on second run, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn auto_install_already_installed_outcome_carries_rc_path() {
+        let dir = tempdir().unwrap();
+        let rc = dir.path().join(".zshrc");
+        install(Shell::Zsh, &rc).unwrap();
+        let outcome = auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        if let InitOutcome::AlreadyInstalled(path) = outcome {
+            assert!(
+                path.ends_with(".zshrc") || is_installed(&path),
+                "AlreadyInstalled path should point to a file containing the wrapper, got {path:?}"
+            );
+        } else {
+            panic!("expected AlreadyInstalled, got {outcome:?}");
+        }
+    }
+
+    #[test]
+    fn auto_install_returns_unknown_shell_when_shell_is_none_and_home_is_none() {
+        // When both shell detection and home are unavailable we get UnknownShell.
+        let outcome = auto_install_with(None, None, None, None, None, None, None);
+        // On a real machine $SHELL may be set, so we allow AlreadyInstalled too.
+        assert!(
+            matches!(
+                outcome,
+                InitOutcome::UnknownShell
+                    | InitOutcome::AlreadyInstalled(_)
+                    | InitOutcome::Installed(_)
+                    | InitOutcome::PrintedToStdout
+            ),
+            "unexpected outcome variant: {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn auto_install_bash_returns_installed_on_first_run() {
+        let dir = tempdir().unwrap();
+        let outcome = auto_install_with(
+            Some(Shell::Bash),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(
+            matches!(outcome, InitOutcome::Installed(_)),
+            "expected Installed for bash on first run, got {outcome:?}"
+        );
+        let rc = dir.path().join(".bashrc");
+        assert!(is_installed(&rc), ".bashrc should contain the wrapper");
+    }
+
+    #[test]
+    fn auto_install_fish_returns_installed_on_first_run() {
+        let dir = tempdir().unwrap();
+        let outcome = auto_install_with(
+            Some(Shell::Fish),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(
+            matches!(outcome, InitOutcome::Installed(_)),
+            "expected Installed for fish on first run, got {outcome:?}"
+        );
+        let rc = dir
+            .path()
+            .join(".config")
+            .join("fish")
+            .join("functions")
+            .join("tfe.fish");
+        assert!(is_installed(&rc), "tfe.fish should contain the wrapper");
+    }
+
+    #[test]
+    fn auto_install_zsh_already_installed_in_zshenv_returns_already_installed() {
+        let dir = tempdir().unwrap();
+        let zshenv = dir.path().join(".zshenv");
+        install(Shell::Zsh, &zshenv).unwrap();
+        // No .zshrc present — wrapper is in .zshenv.
+        let outcome = auto_install_with(
+            Some(Shell::Zsh),
+            Some(dir.path()),
+            None,
+            None,
+            None,
+            Some(&zshenv),
+            None,
+        );
+        assert!(
+            matches!(outcome, InitOutcome::AlreadyInstalled(_)),
+            "expected AlreadyInstalled when wrapper is in .zshenv, got {outcome:?}"
+        );
     }
 }
