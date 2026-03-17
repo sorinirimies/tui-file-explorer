@@ -69,6 +69,8 @@ use crate::types::{ExplorerOutcome, FsEntry, SortMode};
 pub struct FileExplorer {
     /// The directory currently being browsed.
     pub current_dir: PathBuf,
+    /// The name of the currently active theme (used in the header display).
+    pub theme_name: String,
     /// Sorted, search-filtered list of visible entries (dirs first, then files).
     pub entries: Vec<FsEntry>,
     /// Index of the highlighted entry.
@@ -184,6 +186,7 @@ impl FileExplorer {
             touch_input: String::new(),
             rename_active: false,
             rename_input: String::new(),
+            theme_name: String::new(),
         };
         explorer.reload();
         explorer
@@ -929,6 +932,7 @@ impl FileExplorerBuilder {
             touch_input: String::new(),
             rename_active: false,
             rename_input: String::new(),
+            theme_name: String::new(),
         };
         explorer.reload();
         explorer

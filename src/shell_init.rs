@@ -232,18 +232,20 @@ pub fn snippet(shell: Shell) -> String {
              \x20   }}\n\
              }}\n"
         ),
-        // Nushell: collect all output lines, source or cd for each.
+        // Nushell: def --env is required so that cd propagates to the caller's
+        // scope.  Without --env, environment mutations (including PWD changes
+        // from cd) are discarded when the command returns.  --wrapped forwards
+        // all flags and arguments to the external binary unchanged.
+        // source is a parse-time keyword in Nushell and cannot be called with
+        // a runtime string argument, so the source: protocol is intentionally
+        // not handled here — the simple str trim + cd form is correct.
         Shell::Nu => format!(
             "\n{SENTINEL}\n\
-             # tfe wrapper: handle source: directives and cd on exit.\n\
-             def --wrapped tfe [...rest] {{\n\
-             \x20   ^tfe ...$rest | lines | each {{|line|\n\
-             \x20       if ($line | str starts-with 'source:') {{\n\
-             \x20           source ($line | str replace 'source:' '')\n\
-             \x20       }} else if ($line | is-not-empty) {{\n\
-             \x20           cd $line\n\
-             \x20       }}\n\
-             \x20   }}\n\
+             # tfe wrapper: cd to the directory printed by tfe on exit.\n\
+             # def --env is required so the cd takes effect in the caller's shell.\n\
+             def --env --wrapped tfe [...rest] {{\n\
+             \x20   let dir = (^tfe ...$rest | str trim)\n\
+             \x20   if ($dir | is-not-empty) {{ cd $dir }}\n\
              }}\n"
         ),
     }
@@ -832,8 +834,17 @@ mod tests {
     fn snippet_nushell_contains_def_wrapped() {
         let s = snippet(Shell::Nu);
         assert!(
-            s.contains("def --wrapped tfe"),
-            "nushell snippet must use 'def --wrapped tfe', got:\n{s}"
+            s.contains("def --env --wrapped tfe"),
+            "nushell snippet must use 'def --env --wrapped tfe', got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn snippet_nushell_contains_def_env() {
+        let s = snippet(Shell::Nu);
+        assert!(
+            s.contains("--env"),
+            "nushell snippet must use --env so cd propagates to caller, got:\n{s}"
         );
     }
 
@@ -856,11 +867,22 @@ mod tests {
     }
 
     #[test]
-    fn snippet_nushell_handles_source_directive() {
+    fn snippet_nushell_does_not_use_each_closure() {
+        // cd inside an `each` closure does not propagate to the caller —
+        // the correct form calls cd at the top level of the def --env body.
         let s = snippet(Shell::Nu);
         assert!(
-            s.contains("source:"),
-            "nushell snippet must handle source: directives, got:\n{s}"
+            !s.contains("each {"),
+            "nushell snippet must not use an each closure for cd, got:\n{s}"
+        );
+    }
+
+    #[test]
+    fn snippet_nushell_uses_str_trim() {
+        let s = snippet(Shell::Nu);
+        assert!(
+            s.contains("str trim"),
+            "nushell snippet must use str trim to strip trailing newline, got:\n{s}"
         );
     }
 

@@ -79,6 +79,11 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         Pane::Right => (&inactive_theme, &active_theme),
     };
 
+    // Sync the current theme name into both panes so render_header can display it.
+    let theme_name = app.theme_name().to_string();
+    app.left.theme_name = theme_name.clone();
+    app.right.theme_name = theme_name;
+
     render_themed(&mut app.left, frame, h_chunks[0], left_theme);
 
     if !app.single_pane {
@@ -366,9 +371,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
         .title(Span::styled(" ⚙ Options ", title_style))
         .title_bottom(Line::from(vec![
             Span::styled(" Shift + O ", key_style),
-            Span::styled("close   ", subtitle_style),
-            Span::styled("Shift + C ", key_style),
-            Span::styled("toggle cd", subtitle_style),
+            Span::styled("close", subtitle_style),
         ]))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)

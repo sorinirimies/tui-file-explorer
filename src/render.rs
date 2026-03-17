@@ -272,29 +272,37 @@ fn render_header(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
 
     let version = concat!(" v", env!("CARGO_PKG_VERSION"), " ");
 
+    let mut block = Block::default()
+        .title(Span::styled(
+            " \u{1F4C1}  File Explorer ",
+            Style::default()
+                .fg(theme.brand)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .title_bottom(
+            ratatui::text::Line::from(Span::styled(version, Style::default().fg(theme.dim)))
+                .right_aligned(),
+        )
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.accent))
+        .padding(Padding::horizontal(1));
+
+    if !explorer.theme_name.is_empty() {
+        let theme_label = format!(" {} ", explorer.theme_name);
+        block = block.title(
+            ratatui::text::Line::from(Span::styled(theme_label, Style::default().fg(theme.dim)))
+                .right_aligned(),
+        );
+    }
+
     let header = Paragraph::new(Span::styled(
         display_path,
         Style::default()
             .fg(theme.accent)
             .add_modifier(Modifier::BOLD),
     ))
-    .block(
-        Block::default()
-            .title(Span::styled(
-                " \u{1F4C1}  File Explorer ",
-                Style::default()
-                    .fg(theme.brand)
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .title_bottom(
-                ratatui::text::Line::from(Span::styled(version, Style::default().fg(theme.dim)))
-                    .right_aligned(),
-            )
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(theme.accent))
-            .padding(Padding::horizontal(1)),
-    )
+    .block(block)
     .alignment(Alignment::Left);
 
     frame.render_widget(header, area);

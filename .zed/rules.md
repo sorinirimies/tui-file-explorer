@@ -533,22 +533,29 @@ function tfe {
 }
 ```
 
-**Nushell** — `lines | each`:
+**Nushell** — `def --env --wrapped`, simple `str trim` form:
 ```nushell
-def --wrapped tfe [...rest] {
-    ^tfe ...$rest | lines | each {|line|
-        if ($line | str starts-with 'source:') {
-            source ($line | str replace 'source:' '')
-        } else if ($line | is-not-empty) {
-            cd $line
-        }
-    }
+def --env --wrapped tfe [...rest] {
+    let dir = (^tfe ...$rest | str trim)
+    if ($dir | is-not-empty) { cd $dir }
 }
 ```
 
+> **Why no `source:` handling in Nushell?**  `source` is a parse-time keyword
+> in Nushell — it cannot accept a dynamically-computed string argument at
+> runtime.  The `source:` protocol is therefore intentionally skipped for Nu.
+> The one-time bootstrap still requires opening a new terminal or running
+> `source <config.nu>` manually, exactly as for other shells.
+
+> **Why `def --env`?**  In Nushell, environment mutations (including `cd`,
+> which changes `$env.PWD`) are scoped to the command and discarded on return
+> unless the command is declared with `--env`.  Without `--env` the `cd` call
+> inside the wrapper takes effect only within the wrapper's own scope and the
+> caller's directory is unchanged.
+
 When no `source:` line is emitted (every run after the first install), the
-wrappers behave identically to the old single-line versions — the loop body
-just hits the `cd` branch once.
+bash/zsh/fish/PowerShell wrappers behave identically to the old single-line
+versions — the loop body just hits the `cd` branch once.
 
 ### Nushell-specific details
 
@@ -556,12 +563,19 @@ just hits the `cd` branch once.
   platform (Nushell exports it to all child processes).  This takes priority
   over `$SHELL` and `$PSModulePath`, so running `tfe` from inside Nushell
   always identifies correctly as Nu regardless of OS.
-- **Snippet**: Uses `def --wrapped tfe [...rest]` so positional arguments are
-  forwarded correctly.  Calls the external binary as `^tfe` (the caret prefix
-  bypasses Nushell's built-in shadowing).  Uses `str trim` to strip the
-  trailing newline from stdout, and `is-not-empty` to guard the `cd`:
+- **Snippet**: Uses `def --env --wrapped tfe [...rest]`.
+  - `--env` is **required** so that `cd` (which mutates `$env.PWD`) propagates
+    to the caller's scope.  Without it the directory change is discarded when
+    the command returns.
+  - `--wrapped` forwards all flags and arguments to `^tfe` unchanged.
+  - `^tfe` calls the external binary, bypassing any Nushell built-in shadowing.
+  - `str trim` strips the trailing newline from stdout.
+  - `is-not-empty` guards the `cd` so dismissing without cd-on-exit is a no-op.
+  - `source` is **not** handled: it is a parse-time keyword in Nushell and
+    cannot be called with a runtime string.  The `source:` protocol does not
+    apply to Nushell.
   ```
-  def --wrapped tfe [...rest] {
+  def --env --wrapped tfe [...rest] {
       let dir = (^tfe ...$rest | str trim)
       if ($dir | is-not-empty) { cd $dir }
   }
@@ -575,7 +589,8 @@ just hits the `cd` branch once.
   `nu_config_dir` is `None` — callers must always provide a value or let the
   production helpers resolve it.
 - **`is_installed` slow path**: recognises hand-written Nushell wrappers by
-  looking for `def --wrapped tfe` followed by `^tfe` within 6 lines.
+  looking for `def --wrapped tfe` (with or without `--env`) followed by `^tfe`
+  within 6 lines.
 
 ### Windows
 
@@ -612,14 +627,22 @@ Every shell's snippet must be covered by at least these assertions:
 
 | Test | What it checks |
 |---|---|
-| `snippet_<shell>_contains_function_body` | `command tfe` / `^tfe` present; `cd` present; `source:` handler present |
-| `snippet_<shell>_handles_source_directive` | snippet contains the string `"source:"` |
+| `snippet_<shell>_contains_function_body` | `command tfe` / `^tfe` present; `cd` present; `source:` handler present (bash/zsh/fish/pwsh only) |
+| `snippet_<shell>_handles_source_directive` | snippet contains `"source:"` (bash/zsh/fish/pwsh only — not Nushell) |
+| `snippet_nushell_contains_def_env` | Nushell snippet contains `--env` |
+| `snippet_nushell_contains_def_wrapped` | Nushell snippet contains `def --env --wrapped tfe` |
+| `snippet_nushell_does_not_use_each_closure` | Nushell snippet does **not** contain `each {` (cd must be at top level) |
+| `snippet_nushell_uses_str_trim` | Nushell snippet contains `str trim` |
 | `snippet_<shell>_differs_from_bash` | non-bash snippets are distinct (zsh is the exception — identical to bash) |
 
-When modifying any snippet, update **both** the structural assertion (variable
-names, keywords) **and** the `source:` handler assertion.  The variable `$dir`
-no longer exists in any wrapper — the loop variable is `$line` (bash/zsh),
-`$line` (fish), `$_` (PowerShell), or `|line|` (Nushell).
+When modifying any snippet:
+- For bash/zsh/fish/PowerShell: update both the structural assertion and the `source:` handler assertion.
+- For Nushell: update `def --env --wrapped`, `^tfe`, `str trim`, `is-not-empty` assertions.
+  **Never** add `source:` handling to the Nushell snippet — `source` is a parse-time
+  keyword and cannot be called with a runtime string.
+
+The loop variable in the non-Nu wrappers is `$line` (bash/zsh/fish) or `$_` (PowerShell).
+The Nushell wrapper uses a plain `let dir` binding, not a loop.
 
 ### `nu_config_dir_default()`
 
