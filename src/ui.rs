@@ -762,28 +762,50 @@ pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
         );
         frame.render_widget(left_bar, h[0]);
     } else {
-        let status = if app.status_msg.is_empty() {
-            let active = match app.active {
-                Pane::Left => "left",
-                Pane::Right => "right",
-            };
-            format!(" Active pane: {active}")
-        } else {
-            format!(" {}", app.status_msg)
-        };
         let status_color =
             if app.status_msg.starts_with("Error") || app.status_msg.starts_with("Delete failed") {
                 theme.brand
             } else {
                 theme.success
             };
-        let left_bar = Paragraph::new(Span::styled(status, Style::default().fg(status_color)))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(theme.dim)),
-            );
+
+        // Build the left bar content as a Line so we can mix styles.
+        let line = if app.status_msg.is_empty() {
+            let active = match app.active {
+                Pane::Left => "left",
+                Pane::Right => "right",
+            };
+            let mut spans = vec![Span::styled(
+                format!(" Active pane: {active}"),
+                Style::default().fg(status_color),
+            )];
+            // Show the configured editor when one is set.
+            if app.editor != crate::app::Editor::None {
+                spans.push(Span::styled(
+                    "   \u{270F}  ",
+                    Style::default().fg(theme.dim),
+                ));
+                spans.push(Span::styled(
+                    app.editor.label().to_string(),
+                    Style::default()
+                        .fg(theme.accent)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+            Line::from(spans)
+        } else {
+            Line::from(Span::styled(
+                format!(" {}", app.status_msg),
+                Style::default().fg(status_color),
+            ))
+        };
+
+        let left_bar = Paragraph::new(line).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme.dim)),
+        );
         frame.render_widget(left_bar, h[0]);
     }
 
@@ -813,34 +835,28 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
     let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
     vec![
         k("Tab"),
-        d(" pane  "),
+        d(" pane · "),
         k("Spc"),
-        d(" mark  "),
+        d(" mark · "),
         k("y"),
-        d(" copy  "),
+        d(" copy · "),
         k("x"),
-        d(" cut  "),
+        d(" cut · "),
         k("p"),
-        d(" paste  "),
+        d(" paste · "),
         k("d"),
-        d(" del  "),
+        d(" del · "),
         k("e"),
-        d(" open  "),
+        d(" open · "),
         k("Shift+E"),
-        d(" editor  "),
-        k("n"),
-        d(" mkdir  "),
-        k("N"),
-        d(" touch  "),
-        k("r"),
-        d(" rename  "),
+        d(" editor · "),
         k("["),
         d("/"),
         k("t"),
-        d(" theme  "),
+        d(" theme · "),
         k("w"),
-        d(" split  "),
-        k("Shift + O"),
+        d(" split · "),
+        k("Shift+O"),
         d(" options"),
     ]
 }
@@ -1053,16 +1069,19 @@ mod tests {
         assert!(text.contains('t'), "missing t hint");
         assert!(text.contains("Spc"), "missing Spc hint");
         assert!(text.contains('w'), "missing w hint");
+        assert!(text.contains('e'), "missing e hint");
+        assert!(text.contains("Shift+E"), "missing Shift+E (editor) hint");
+        assert!(text.contains("Shift+O"), "missing Shift+O (options) hint");
     }
 
     #[test]
     fn action_bar_spans_count_is_stable() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        // 15 key spans + 15 description spans = 30 total.
+        // 12 key spans + 12 description spans = 24 total.
         assert_eq!(
             spans.len(),
-            30,
+            24,
             "span count changed — update this test if the action bar was intentionally modified"
         );
     }
@@ -1073,21 +1092,7 @@ mod tests {
         let spans = render_action_bar_spans(&theme);
         // Key spans are the ones whose content matches a known key label.
         let key_labels = [
-            "Tab",
-            "Spc",
-            "y",
-            "x",
-            "p",
-            "d",
-            "e",
-            "Shift+E",
-            "n",
-            "N",
-            "r",
-            "[",
-            "t",
-            "w",
-            "Shift + O",
+            "Tab", "Spc", "y", "x", "p", "d", "e", "Shift+E", "[", "t", "w", "Shift+O",
         ];
         for label in key_labels {
             let span = spans
@@ -1106,21 +1111,7 @@ mod tests {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
         let key_labels = [
-            "Tab",
-            "Spc",
-            "y",
-            "x",
-            "p",
-            "d",
-            "e",
-            "Shift+E",
-            "n",
-            "N",
-            "r",
-            "[",
-            "t",
-            "w",
-            "Shift + O",
+            "Tab", "Spc", "y", "x", "p", "d", "e", "Shift+E", "[", "t", "w", "Shift+O",
         ];
         // Every span
         for span in &spans {
@@ -1139,21 +1130,7 @@ mod tests {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
         let key_labels = [
-            "Tab",
-            "Spc",
-            "y",
-            "x",
-            "p",
-            "d",
-            "e",
-            "Shift+E",
-            "n",
-            "N",
-            "r",
-            "[",
-            "t",
-            "w",
-            "Shift + O",
+            "Tab", "Spc", "y", "x", "p", "d", "e", "Shift+E", "[", "t", "w", "Shift+O",
         ];
         for label in key_labels {
             let span = spans
@@ -1173,21 +1150,7 @@ mod tests {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
         let key_labels = [
-            "Tab",
-            "Spc",
-            "y",
-            "x",
-            "p",
-            "d",
-            "e",
-            "Shift+E",
-            "n",
-            "N",
-            "r",
-            "[",
-            "t",
-            "w",
-            "Shift + O",
+            "Tab", "Spc", "y", "x", "p", "d", "e", "Shift+E", "[", "t", "w", "Shift+O",
         ];
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
