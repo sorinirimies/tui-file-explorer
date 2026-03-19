@@ -14,39 +14,54 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 
 ## Preview
 
-**Navigation · Search · Sort** — `cargo run --example basic`
+### Basic navigation
+![basic](examples/vhs/generated/basic.gif)
 
-![Navigation, search and sort](examples/vhs/generated/basic.gif)
+### Search
+![search](examples/vhs/generated/search.gif)
 
-**File Operations** — copy, cut, paste, delete across two panes · `cargo run --bin tfe`
+### Sort modes
+![sort](examples/vhs/generated/sort.gif)
 
-![Copy, Cut, Paste, Delete](examples/vhs/generated/file_ops.gif)
+### Extension filter
+![filter](examples/vhs/generated/filter.gif)
 
-**27 Live Themes** — `cargo run --example theme_switcher`
+### File operations
+![file_ops](examples/vhs/generated/file_ops.gif)
 
-![27 live themes](examples/vhs/generated/theme_switcher.gif)
+### Theme switcher
+![theme_switcher](examples/vhs/generated/theme_switcher.gif)
 
-**DualPane Library Widget** — Tab focus, `w` toggle, independent panes · `cargo run --example dual_pane`
+### Pane toggle
+![pane_toggle](examples/vhs/generated/pane_toggle.gif)
 
-![DualPane library widget](examples/vhs/generated/dual_pane.gif)
+### Dual pane
+![dual_pane](examples/vhs/generated/dual_pane.gif)
 
-**Options Panel & Snackbar** — editor picker, toggles, error notification · `cargo run --bin tfe` then `Shift+O`
+### Options panel
+![options](examples/vhs/generated/options.gif)
 
-![Options panel and snackbar](examples/vhs/generated/options.gif)
+### Editor picker
+![editor_picker](examples/vhs/generated/editor_picker.gif)
+
+### Create entries
+![create_entries](examples/vhs/generated/create_entries.gif)
 
 ---
 
 ## Features
 
 - 🗂️ **Two-pane layout** — independent left and right explorer panes, `Tab` to switch focus
-- 📋 **File operations** — copy (`y`), cut (`x`), paste (`p`), and delete (`d`) between panes
+- 📋 **File operations** — copy (`y`), cut (`x`), paste (`p`), delete (`d`); `Spc` to multi-select; `n`/`N` to create dirs/files; `r` to rename
 - 🔍 **Incremental search** — press `/` to filter entries live as you type
 - 🔃 **Sort modes** — cycle `Name → Size ↓ → Extension` with `s`
 - 🎛️ **Extension filter** — only matching files are selectable; dirs are always navigable
 - 👁️ Toggle hidden dot-file visibility with `.`
 - ⌨️ Full keyboard navigation: Miller-columns `←`/`→` (ascend/descend), vim keys (`h/j/k/l`), `↑`/`↓`/`j`/`k`, `PgUp/PgDn`, `g/G` — `→` on a file moves down, never exits the TUI
 - 🎨 **27 named themes** — Catppuccin, Dracula, Nord, Tokyo Night, Kanagawa, Gruvbox, and more
-- 🎛️ **Live theme panel** — press `t` to open a side panel, `[`/`]` to cycle themes
+- 🎛️ **Live theme panel** — press `T` to open a sidebar, `t`/`[` to cycle themes; `↑`/`↓` navigate the list when the panel is open
+- 📝 **Editor picker** — `Shift+E` opens a panel listing Terminal Editors and IDEs & GUI Editors; `↑`/`↓` navigate, `Enter` selects, `Esc` cancels; `e` opens the highlighted file in the configured editor
+- ⚙️ **Options panel** — `Shift+O` opens a panel showing Toggles, Editor, and File Ops sections
 - 🔧 Fluent builder API for ergonomic embedding — both `FileExplorer` and `DualPane`
 - 📦 **`DualPane` library widget** — drop a full two-pane explorer into any Ratatui app with one struct
 - 🖥️ **`cd` on exit** — dismiss with `Esc`/`q` and your terminal jumps to the directory you were browsing; one-time setup with `tfe --init <shell>` (bash, zsh, fish, powershell)
@@ -184,19 +199,27 @@ match dual.handle_key(key) {
 
 | Key | Action |
 |-----|--------|
+| `Spc` | **Mark** — toggle multi-select on the highlighted entry |
 | `y` | **Yank** — mark highlighted entry for copy |
 | `x` | **Cut** — mark highlighted entry for move |
 | `p` | **Paste** — copy/move clipboard into the *other* pane's directory |
 | `d` | **Delete** — remove highlighted entry (asks for confirmation) |
+| `n` | **New folder** — prompt for a name and create the directory (`mkdir`) |
+| `N` | **New file** — prompt for a name and create the file (`touch`) |
+| `r` | **Rename** — prompt for a new name and rename the highlighted entry |
+| `e` | **Open in editor** — open highlighted file in the configured editor; shows an error if no editor is set |
 
-### Layout & theme controls
+### Panels & layout controls
 
 | Key | Action |
 |-----|--------|
 | `w` | Toggle two-pane ↔ single-pane layout |
 | `t` | Next theme |
-| `T` | Toggle theme panel (right sidebar) |
 | `[` | Previous theme |
+| `T` | Toggle theme panel (right sidebar); `↑`/`↓`/`j`/`k` navigate themes when open |
+| `Shift+E` | Open **editor picker** panel; `↑`/`↓`/`j`/`k` navigate, `Enter` select, `Esc` cancel |
+| `Shift+O` | Toggle **options panel** |
+| `Shift+C` | Toggle `cd-on-exit` on/off |
 
 ### Search mode (after pressing `/`)
 
@@ -529,16 +552,17 @@ cargo run --example theme_switcher
 
 [`examples/options.rs`](examples/options.rs) — dual-pane explorer with a fully interactive options panel:
 
-- Editor picker: cycle through `none → helix → nvim → vim → nano → micro` with `e` (while panel is open)
-- Error snackbar when `e` is pressed outside the panel with no editor configured
+- **`Shift+O`** opens and closes the options side panel (toggles, editor row, file-ops reference)
+- **`Shift+E`** opens the **editor picker** panel to select from terminal editors and IDEs
+- Error snackbar when `e` is pressed with no editor configured
 - Toggle `cd-on-exit`, single-pane mode, and hidden-file visibility from the panel
 - Selecting a file with `Enter` stays in the TUI and shows a helpful message when no editor is set
 
 | Key | Action |
 |-----|--------|
-| `O` | Toggle options panel |
-| `e` (panel open) | Cycle editor |
-| `e` (panel closed) | Open current file in editor (or show snackbar if none set) |
+| `Shift+O` | Toggle options panel |
+| `Shift+E` | Open editor picker panel |
+| `e` | Open current file in editor (shows error snackbar if none set) |
 | `Shift+C` | Toggle cd-on-exit |
 | `w` | Toggle single-pane mode |
 | `h` | Toggle hidden files |
@@ -549,6 +573,33 @@ cargo run --example theme_switcher
 
 ```bash
 cargo run --example options
+```
+
+---
+
+### `editor_picker`
+
+[`examples/editor_picker.rs`](examples/editor_picker.rs) — single-pane explorer demonstrating the full **editor picker panel**:
+
+- Two bordered cells: **"Terminal Editors"** (`none`, `helix`, `nvim`, `vim`, `nano`, `micro`, `emacs`) and **"IDEs & GUI Editors"** (`sublime`, `vscode`, `zed`, `xcode`, `android-studio`, `rustrover`, `intellij`, `webstorm`, `pycharm`, `goland`, `clion`, `fleet`, `rubymine`, `phpstorm`, `rider`, `eclipse`)
+- `↑`/`↓` (or `j`/`k`) navigate the list; highlighted entry is shown with a `▶` cursor
+- `Enter` sets the selected editor and closes the panel; a checkmark (`✓`) shows the active editor
+- Footer shows the binary name for the currently highlighted editor
+- `Esc` closes without changing the selection
+- `e` opens the highlighted file in the configured editor; shows an error if none is set
+
+| Key | Action |
+|-----|--------|
+| `Shift+E` | Open / close the editor picker panel |
+| `↑` / `k` | Move cursor up in the picker |
+| `↓` / `j` | Move cursor down in the picker |
+| `Enter` | Confirm the highlighted editor |
+| `Esc` | Cancel — editor unchanged |
+| `e` | Open current file in the configured editor |
+| `Esc` / `q` | Quit (when panel is closed) |
+
+```bash
+cargo run --example editor_picker
 ```
 
 ---
@@ -657,12 +708,28 @@ Demonstrates the three layout controls in sequence:
 
 Demonstrates the full options panel workflow:
 
-- **`Shift+O`** — open and close the options side panel
-- **`e`** (panel open) — cycle the editor: `none → helix → nvim → vim → nano → micro → none`
-- **`e`** (panel closed, no editor set) — triggers the **error snackbar** floating above the action bar, auto-dismissing after 4 seconds
+- **`Shift+O`** — open and close the options side panel (shows Toggles, Editor, and File Ops cells)
+- **`Shift+E`** — open the **editor picker** panel; select from Terminal Editors and IDEs & GUI Editors
+- **`e`** (no editor set) — triggers the **error snackbar** floating above the action bar, auto-dismissing after 4 seconds; message reads _"No editor set — open Editor picker (Shift + E) to pick one"_
 - **`Shift+C`** — toggle `cd-on-exit` on/off with live indicator
 - **`w`** — toggle single-pane mode from inside the panel
 - **`T`** — open the theme panel (closes the options panel); both panels cannot be open simultaneously
+
+---
+
+### Editor Picker Panel
+
+**Run:** `cargo run --example editor_picker`
+
+![Editor picker panel](examples/vhs/generated/editor_picker.gif)
+
+Demonstrates the editor picker panel:
+
+- **`Shift+E`** — open the floating editor picker; two bordered cells show **Terminal Editors** and **IDEs & GUI Editors**
+- **`↑`/`↓`** (or `j`/`k`) — navigate the list; a `▶` cursor tracks the highlighted editor
+- **`Enter`** — set the highlighted editor and close the panel; a `✓` marks the active selection
+- **`Esc`** — close without changing the editor
+- Footer displays the launch binary of the highlighted editor (e.g. `vscode  →  code`)
 
 ---
 
@@ -684,6 +751,22 @@ A complete two-pane file manager built entirely on the **library API** — no bi
 
 ---
 
+### Create Entries
+
+**Run:** `cargo run --example create_entries`
+
+![Create entries](examples/vhs/generated/create_entries.gif)
+
+Demonstrates in-place file and directory creation:
+
+- **`n`** — new folder: opens an inline input bar, type a name (supports nested paths like `src/lib`), `Enter` to confirm or `Esc` to cancel
+- **`N`** — new file: same input bar, creates an empty file with `touch`
+- **`r`** — rename: prompts for the new name of the highlighted entry
+- Cursor automatically jumps to the newly created entry after confirmation
+- `Backspace` corrects typos mid-input
+
+---
+
 ## Demo Quick Reference
 
 | Demo | Command | Highlights |
@@ -697,7 +780,9 @@ A complete two-pane file manager built entirely on the **library API** — no bi
 | File operations | `cargo run --bin tfe` | Copy, cut, paste, delete, overwrite modal |
 | Theme switcher | `cargo run --example theme_switcher` | 27 live themes, sidebar catalogue |
 | Pane toggle | `cargo run --bin tfe` | Tab focus-switch, `w` single/two-pane, `T` theme panel |
-| **Options panel** | `cargo run --bin tfe` then `Shift+O` | Editor picker, toggles, error snackbar |
+| **Options panel** | `cargo run --bin tfe` then `Shift+O` | Options panel, Shift+E editor picker, error snackbar |
+| **Editor picker** | `cargo run --example editor_picker` | Editor picker panel, Terminal Editors + IDEs |
+| **Create entries** | `cargo run --example create_entries` | `n` mkdir, `N` touch, `r` rename, nested paths |
 | **Dual-pane GIF** | `vhs examples/vhs/dual_pane.tape` | Full `dual_pane` example recorded end-to-end |
 
 ---
@@ -896,7 +981,7 @@ Because rendering is fully decoupled from state, you can slot either widget into
 |--------|----------|
 | `main` | `Cli` struct (argument parsing), `run()`, `run_loop()` — thin entry-point only |
 | `app` | `App` state, `Pane`, `ClipOp`, `ClipboardItem`, `Modal`, `handle_event` |
-| `ui` | `draw()`, `render_theme_panel()`, `render_options_panel()`, `render_nav_hints()`, `render_nav_hints_spans()`, `render_action_bar()`, `render_action_bar_spans()`, `render_modal()`, `render_snackbar()` |
+| `ui` | `draw()`, `render_theme_panel()`, `render_editor_panel()`, `render_options_panel()`, `render_nav_hints()`, `render_nav_hints_spans()`, `render_action_bar()`, `render_action_bar_spans()`, `render_modal()`, `render_snackbar()` |
 | `fs` | `copy_dir_all()`, `resolve_output_path()` |
 | `persistence` | `AppState`, `load_state()`, `save_state()`, `resolve_theme_idx()` |
 | `shell_init` | `Shell`, `detect_shell()`, `snippet()`, `rc_path_with()`, `is_installed()`, `install()`, `install_or_print()` |
@@ -921,6 +1006,8 @@ vhs examples/vhs/theme_switcher.tape
 vhs examples/vhs/pane_toggle.tape
 vhs examples/vhs/dual_pane.tape
 vhs examples/vhs/options.tape
+vhs examples/vhs/editor_picker.tape
+vhs examples/vhs/create_entries.tape
 ```
 
 GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
@@ -935,7 +1022,9 @@ GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
 | `theme_switcher.tape` | Live cycling of all 27 themes with sidebar | `cargo run --example theme_switcher` |
 | `pane_toggle.tape` | Tab focus-switch, `w` single/dual, `T` theme panel | `cargo run --bin tfe` |
 | `dual_pane.tape` | `DualPane` library widget — Tab, `w`, status bar | `cargo run --example dual_pane` |
-| `options.tape` | Options panel, editor picker, toggles, error snackbar | `cargo run --bin tfe` |
+| `options.tape` | Options panel, Shift+E editor picker, toggles, error snackbar | `cargo run --bin tfe` |
+| `editor_picker.tape` | Editor picker panel — Terminal Editors and IDEs & GUI Editors | `cargo run --example editor_picker` |
+| `create_entries.tape` | New folder (`n`), new file (`N`), rename (`r`), nested paths | `cargo run --example create_entries` |
 
 ---
 

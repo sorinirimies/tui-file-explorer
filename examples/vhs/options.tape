@@ -1,7 +1,7 @@
 # VHS tape for options demo
-# Demonstrates: options panel open/close, editor cycling, hidden-file toggle,
-# sort cycling, single-pane toggle, theme cycling, "no editor" status message
-# (both from e key and from Enter on a file), and Tab pane-switching.
+# Demonstrates: options panel open/close, Shift+E editor picker, hidden-file
+# toggle, sort cycling, single-pane toggle, theme cycling, "no editor" status
+# message (both from e key and from Enter on a file), and Tab pane-switching.
 #
 # Example: cargo run --example options
 
@@ -56,35 +56,73 @@ Sleep 400ms
 Type "O"
 Sleep 900ms
 
-# ── Cycle through all editors with e (panel must be open) ────────────────────
+# ── Open the editor picker with Shift+E ──────────────────────────────────────
 
-# None → Helix
 Sleep 400ms
-Type "e"
+Type "E"
+Sleep 900ms
+
+# Scroll down to highlight a few editors
+Down
+Sleep 400ms
+Down
+Sleep 400ms
+Down
+Sleep 400ms
+
+# Select Vim
+Enter
+Sleep 1000ms
+
+# ── Close the options panel ───────────────────────────────────────────────────
+
+Sleep 500ms
+Type "O"
 Sleep 700ms
 
-# Helix → Neovim
+# ── Now e opens the file in the configured editor (vim) ──────────────────────
+# Navigate to a plain file and press e — with an editor set the status message
+# shows "returned from vim — <filename>" after the editor exits.
+# In a recording environment vim may not be installed so we just show the key.
+
+Sleep 400ms
+Type "g"
+Sleep 300ms
+Down
+Sleep 200ms
+Down
+Sleep 200ms
+Down
+Sleep 200ms
+
+Sleep 500ms
 Type "e"
+Sleep 1500ms
+
+# ── Re-open options panel to show Shift+E picker again ───────────────────────
+
+Sleep 400ms
+Type "O"
 Sleep 700ms
 
-# Neovim → Vim
-Type "e"
-Sleep 700ms
+# ── Open editor picker and reset to None ─────────────────────────────────────
 
-# Vim → Nano
-Type "e"
-Sleep 700ms
+Sleep 400ms
+Type "E"
+Sleep 800ms
 
-# Nano → Micro
-Type "e"
-Sleep 700ms
+# Scroll back up to None (top of the list)
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 200ms
+Type "k"
+Sleep 400ms
 
-# Micro → None
-Type "e"
-Sleep 700ms
-
-# Back to Helix — leave an editor set for the next section
-Type "e"
+# Confirm None
+Enter
 Sleep 900ms
 
 # ── Toggle hidden files with h (panel open) ───────────────────────────────────
@@ -156,10 +194,7 @@ Sleep 500ms
 Type "O"
 Sleep 900ms
 
-# ── Now e opens the file in the configured editor (Helix) ────────────────────
-# Navigate to a plain file and press e — with an editor set the status message
-# shows "returned from helix — <filename>" after the editor exits.
-# In a recording environment hx may not be installed so we just show the key.
+# ── Confirm e still shows the "no editor" message after reset ────────────────
 
 Sleep 400ms
 Type "g"
@@ -170,48 +205,9 @@ Down
 Sleep 200ms
 Down
 Sleep 200ms
-
-Sleep 500ms
-Type "e"
-Sleep 1500ms
-
-# ── Re-open options and cycle editor back to None ────────────────────────────
-
-Sleep 400ms
-Type "O"
-Sleep 700ms
-
-# Helix → Neovim → Vim → Nano → Micro → None
-Type "e"
-Sleep 350ms
-Type "e"
-Sleep 350ms
-Type "e"
-Sleep 350ms
-Type "e"
-Sleep 350ms
-Type "e"
-Sleep 800ms
-
-# ── Close the panel and confirm the "no editor" message reappears ────────────
-
-Sleep 400ms
-Type "O"
-Sleep 700ms
-
-# Navigate to a file
-Type "g"
-Sleep 300ms
-Down
-Sleep 200ms
-Down
-Sleep 200ms
-Down
-Sleep 200ms
 Down
 Sleep 200ms
 
-# e with editor back to None → status message
 Sleep 500ms
 Type "e"
 Sleep 2000ms

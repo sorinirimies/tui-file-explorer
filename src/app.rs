@@ -33,6 +33,23 @@ use std::{
 /// | `Vim`              | `vim`             |
 /// | `Nano`             | `nano`            |
 /// | `Micro`            | `micro`           |
+/// | `Emacs`            | `emacs`           |
+/// | `VSCode`           | `vscode`          |
+/// | `Zed`              | `zed`             |
+/// | `Xcode`            | `xcode`           |
+/// | `AndroidStudio`    | `android-studio`  |
+/// | `RustRover`        | `rustrover`       |
+/// | `IntelliJIdea`     | `intellij`        |
+/// | `WebStorm`         | `webstorm`        |
+/// | `PyCharm`          | `pycharm`         |
+/// | `GoLand`           | `goland`          |
+/// | `CLion`            | `clion`           |
+/// | `Fleet`            | `fleet`           |
+/// | `Sublime`          | `sublime`         |
+/// | `RubyMine`         | `rubymine`        |
+/// | `PHPStorm`         | `phpstorm`        |
+/// | `Rider`            | `rider`           |
+/// | `Eclipse`          | `eclipse`         |
 /// | `Custom(s)`        | `custom:<s>`      |
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Editor {
@@ -49,6 +66,40 @@ pub enum Editor {
     Nano,
     /// [Micro](https://micro-editor.github.io/) — `micro`
     Micro,
+    /// [Emacs](https://www.gnu.org/software/emacs/) — `emacs`
+    Emacs,
+    /// [Visual Studio Code](https://code.visualstudio.com/) — `code`
+    VSCode,
+    /// [Zed](https://zed.dev/) — `zed`
+    Zed,
+    /// [Xcode](https://developer.apple.com/xcode/) — `xed`
+    Xcode,
+    /// [Android Studio](https://developer.android.com/studio) — `studio`
+    AndroidStudio,
+    /// [RustRover](https://www.jetbrains.com/rust/) — `rustrover`
+    RustRover,
+    /// [IntelliJ IDEA](https://www.jetbrains.com/idea/) — `idea`
+    IntelliJIdea,
+    /// [WebStorm](https://www.jetbrains.com/webstorm/) — `webstorm`
+    WebStorm,
+    /// [PyCharm](https://www.jetbrains.com/pycharm/) — `pycharm`
+    PyCharm,
+    /// [GoLand](https://www.jetbrains.com/go/) — `goland`
+    GoLand,
+    /// [CLion](https://www.jetbrains.com/clion/) — `clion`
+    CLion,
+    /// [Fleet](https://www.jetbrains.com/fleet/) — `fleet`
+    Fleet,
+    /// [Sublime Text](https://www.sublimetext.com/) — `subl`
+    Sublime,
+    /// [RubyMine](https://www.jetbrains.com/ruby/) — `rubymine`
+    RubyMine,
+    /// [PHPStorm](https://www.jetbrains.com/phpstorm/) — `phpstorm`
+    PHPStorm,
+    /// [Rider](https://www.jetbrains.com/rider/) — `rider`
+    Rider,
+    /// [Eclipse](https://www.eclipse.org/) — `eclipse`
+    Eclipse,
     /// A user-supplied binary name or path.
     Custom(String),
 }
@@ -78,6 +129,23 @@ impl Editor {
             Editor::Vim => Some("vim".to_string()),
             Editor::Nano => Some("nano".to_string()),
             Editor::Micro => Some("micro".to_string()),
+            Editor::Emacs => Some("emacs".to_string()),
+            Editor::VSCode => Some("code".to_string()),
+            Editor::Zed => Some("zed".to_string()),
+            Editor::Xcode => Some("xed".to_string()),
+            Editor::AndroidStudio => Some("studio".to_string()),
+            Editor::RustRover => Some("rustrover".to_string()),
+            Editor::IntelliJIdea => Some("idea".to_string()),
+            Editor::WebStorm => Some("webstorm".to_string()),
+            Editor::PyCharm => Some("pycharm".to_string()),
+            Editor::GoLand => Some("goland".to_string()),
+            Editor::CLion => Some("clion".to_string()),
+            Editor::Fleet => Some("fleet".to_string()),
+            Editor::Sublime => Some("subl".to_string()),
+            Editor::RubyMine => Some("rubymine".to_string()),
+            Editor::PHPStorm => Some("phpstorm".to_string()),
+            Editor::Rider => Some("rider".to_string()),
+            Editor::Eclipse => Some("eclipse".to_string()),
             Editor::Custom(s) => Some(s.clone()),
         }
     }
@@ -105,6 +173,23 @@ impl Editor {
             Editor::Vim => "vim",
             Editor::Nano => "nano",
             Editor::Micro => "micro",
+            Editor::Emacs => "emacs",
+            Editor::VSCode => "vscode",
+            Editor::Zed => "zed",
+            Editor::Xcode => "xcode",
+            Editor::AndroidStudio => "android-studio",
+            Editor::RustRover => "rustrover",
+            Editor::IntelliJIdea => "intellij",
+            Editor::WebStorm => "webstorm",
+            Editor::PyCharm => "pycharm",
+            Editor::GoLand => "goland",
+            Editor::CLion => "clion",
+            Editor::Fleet => "fleet",
+            Editor::Sublime => "sublime",
+            Editor::RubyMine => "rubymine",
+            Editor::PHPStorm => "phpstorm",
+            Editor::Rider => "rider",
+            Editor::Eclipse => "eclipse",
             Editor::Custom(s) => s.as_str(),
         }
     }
@@ -115,6 +200,7 @@ impl Editor {
     ///
     /// `Custom` variants skip back to `None` — the user must set them via
     /// `--editor` or direct persistence editing.
+    #[allow(dead_code)]
     pub fn cycle(&self) -> Editor {
         match self {
             Editor::None => Editor::Helix,
@@ -123,7 +209,10 @@ impl Editor {
             Editor::Vim => Editor::Nano,
             Editor::Nano => Editor::Micro,
             Editor::Micro => Editor::None,
-            Editor::Custom(_) => Editor::None,
+            // New GUI/IDE editors and Custom all fall back to None in the legacy
+            // cycle rotation.  The cycle() method is deprecated in favour of the
+            // editor-picker panel (Shift + E); this fallback keeps it exhaustive.
+            _ => Editor::None,
         }
     }
 
@@ -136,6 +225,23 @@ impl Editor {
             Editor::Vim => "vim".to_string(),
             Editor::Nano => "nano".to_string(),
             Editor::Micro => "micro".to_string(),
+            Editor::Emacs => "emacs".to_string(),
+            Editor::VSCode => "vscode".to_string(),
+            Editor::Zed => "zed".to_string(),
+            Editor::Xcode => "xcode".to_string(),
+            Editor::AndroidStudio => "android-studio".to_string(),
+            Editor::RustRover => "rustrover".to_string(),
+            Editor::IntelliJIdea => "intellij".to_string(),
+            Editor::WebStorm => "webstorm".to_string(),
+            Editor::PyCharm => "pycharm".to_string(),
+            Editor::GoLand => "goland".to_string(),
+            Editor::CLion => "clion".to_string(),
+            Editor::Fleet => "fleet".to_string(),
+            Editor::Sublime => "sublime".to_string(),
+            Editor::RubyMine => "rubymine".to_string(),
+            Editor::PHPStorm => "phpstorm".to_string(),
+            Editor::Rider => "rider".to_string(),
+            Editor::Eclipse => "eclipse".to_string(),
             Editor::Custom(s) => format!("custom:{s}"),
         }
     }
@@ -155,6 +261,23 @@ impl Editor {
             "vim" => Editor::Vim,
             "nano" => Editor::Nano,
             "micro" => Editor::Micro,
+            "emacs" => Editor::Emacs,
+            "vscode" => Editor::VSCode,
+            "zed" => Editor::Zed,
+            "xcode" => Editor::Xcode,
+            "android-studio" => Editor::AndroidStudio,
+            "rustrover" => Editor::RustRover,
+            "intellij" => Editor::IntelliJIdea,
+            "webstorm" => Editor::WebStorm,
+            "pycharm" => Editor::PyCharm,
+            "goland" => Editor::GoLand,
+            "clion" => Editor::CLion,
+            "fleet" => Editor::Fleet,
+            "sublime" => Editor::Sublime,
+            "rubymine" => Editor::RubyMine,
+            "phpstorm" => Editor::PHPStorm,
+            "rider" => Editor::Rider,
+            "eclipse" => Editor::Eclipse,
             _ if s.starts_with("custom:") => Editor::Custom(s["custom:".len()..].to_string()),
             other => Editor::Custom(other.to_string()),
         })
@@ -416,6 +539,10 @@ pub struct App {
     /// `self.editor`, then restore the TUI.  Set by the `e` key handler;
     /// cleared by `run_loop` after the editor exits.
     pub open_with_editor: Option<PathBuf>,
+    /// Whether the editor-picker side-panel is visible.
+    pub show_editor_panel: bool,
+    /// Highlighted row index in the editor-picker panel (cursor position).
+    pub editor_panel_idx: usize,
 }
 
 impl App {
@@ -448,7 +575,62 @@ impl App {
             cd_on_exit: opts.cd_on_exit,
             editor: opts.editor,
             open_with_editor: None,
+            show_editor_panel: false,
+            editor_panel_idx: 0,
         }
+    }
+
+    /// Index of the first IDE/GUI editor in the [`all_editors`] list.
+    ///
+    /// Everything before this index is a terminal editor; everything from
+    /// this index onward is a GUI editor or IDE.  Used by the editor panel
+    /// to render the two section headers.
+    pub fn first_ide_idx() -> usize {
+        // None, Helix, Neovim, Vim, Nano, Micro, Emacs  →  7 terminal entries
+        7
+    }
+
+    /// Return every [`Editor`] variant in display order.
+    ///
+    /// Used by the editor-picker panel to populate the list and navigate it.
+    /// Terminal editors come first, then GUI editors/IDEs.
+    pub fn all_editors() -> Vec<Editor> {
+        vec![
+            // ── Terminal editors ──────────────────────────────────────────────
+            Editor::None,
+            Editor::Helix,
+            Editor::Neovim,
+            Editor::Vim,
+            Editor::Nano,
+            Editor::Micro,
+            Editor::Emacs,
+            // ── IDEs & GUI editors ────────────────────────────────────────────
+            Editor::Sublime,
+            Editor::VSCode,
+            Editor::Zed,
+            Editor::Xcode,
+            Editor::AndroidStudio,
+            Editor::RustRover,
+            Editor::IntelliJIdea,
+            Editor::WebStorm,
+            Editor::PyCharm,
+            Editor::GoLand,
+            Editor::CLion,
+            Editor::Fleet,
+            Editor::RubyMine,
+            Editor::PHPStorm,
+            Editor::Rider,
+            Editor::Eclipse,
+        ]
+    }
+
+    /// Sync `editor_panel_idx` to point at the currently active `editor`.
+    ///
+    /// Called when the panel is opened so the cursor lands on the current
+    /// selection.  Defaults to index `0` (`Editor::None`) if not found.
+    pub fn sync_editor_panel_idx(&mut self) {
+        let editors = Self::all_editors();
+        self.editor_panel_idx = editors.iter().position(|e| e == &self.editor).unwrap_or(0);
     }
 
     // ── Snackbar helpers ──────────────────────────────────────────────────────
@@ -723,6 +905,36 @@ impl App {
         }
 
         // ── Global keys (always active) ───────────────────────────────────────
+        // ── Editor panel navigation (arrows / j / k steal focus when open) ───
+        if self.show_editor_panel {
+            match key.code {
+                KeyCode::Down | KeyCode::Char('j') if key.modifiers.is_empty() => {
+                    let editors = App::all_editors();
+                    self.editor_panel_idx = (self.editor_panel_idx + 1) % editors.len();
+                    return Ok(false);
+                }
+                KeyCode::Up | KeyCode::Char('k') if key.modifiers.is_empty() => {
+                    let editors = App::all_editors();
+                    self.editor_panel_idx = self
+                        .editor_panel_idx
+                        .checked_sub(1)
+                        .unwrap_or(editors.len() - 1);
+                    return Ok(false);
+                }
+                KeyCode::Enter => {
+                    let editors = App::all_editors();
+                    self.editor = editors[self.editor_panel_idx].clone();
+                    self.show_editor_panel = false;
+                    return Ok(false);
+                }
+                KeyCode::Esc => {
+                    self.show_editor_panel = false;
+                    return Ok(false);
+                }
+                _ => {}
+            }
+        }
+
         // ── Theme panel navigation (arrows / j / k steal focus when open) ────
         if self.show_theme_panel {
             match key.code {
@@ -749,19 +961,31 @@ impl App {
                 self.prev_theme();
                 return Ok(false);
             }
-            // Toggle theme panel — closes options panel if open
+            // Toggle theme panel — closes options/editor panels if open
             KeyCode::Char('T') => {
                 self.show_theme_panel = !self.show_theme_panel;
                 if self.show_theme_panel {
                     self.show_options_panel = false;
+                    self.show_editor_panel = false;
                 }
                 return Ok(false);
             }
-            // Toggle options panel — closes theme panel if open
+            // Toggle options panel — closes theme/editor panels if open
             KeyCode::Char('O') => {
                 self.show_options_panel = !self.show_options_panel;
                 if self.show_options_panel {
                     self.show_theme_panel = false;
+                    self.show_editor_panel = false;
+                }
+                return Ok(false);
+            }
+            // Toggle editor panel — closes theme/options panels if open
+            KeyCode::Char('E') => {
+                self.show_editor_panel = !self.show_editor_panel;
+                if self.show_editor_panel {
+                    self.show_options_panel = false;
+                    self.show_theme_panel = false;
+                    self.sync_editor_panel_idx();
                 }
                 return Ok(false);
             }
@@ -802,13 +1026,9 @@ impl App {
                 self.prompt_delete();
                 return Ok(false);
             }
-            // Open in editor — when options panel is open, cycle the editor;
-            // otherwise open the highlighted file in the configured editor.
+            // Open the highlighted file in the configured editor.
             KeyCode::Char('e') if key.modifiers.is_empty() => {
-                if self.show_options_panel {
-                    self.editor = self.editor.cycle();
-                    self.status_msg = format!("Editor: {}", self.editor.label());
-                } else if self.editor != Editor::None {
+                if self.editor != Editor::None {
                     if let Some(entry) = self.active_pane().current_entry() {
                         if !entry.path.is_dir() {
                             self.open_with_editor = Some(entry.path.clone());
@@ -817,9 +1037,7 @@ impl App {
                     }
                 } else {
                     // No editor configured — tell the user how to set one.
-                    self.notify_error(
-                        "No editor set — open Options (Shift + O) and press e to pick one",
-                    );
+                    self.notify_error("No editor set — open Editor picker (Shift + E) to pick one");
                 }
                 return Ok(false);
             }
@@ -842,9 +1060,7 @@ impl App {
                     return Ok(false);
                 }
                 // No editor configured — stay in the TUI and tell the user.
-                self.notify_error(
-                    "No editor set — open Options (Shift + O) and press e to pick one",
-                );
+                self.notify_error("No editor set — open Editor picker (Shift + E) to pick one");
                 return Ok(false);
             }
             ExplorerOutcome::Dismissed => return Ok(true),
@@ -1039,9 +1255,10 @@ mod tests {
 
     #[test]
     fn editor_from_key_unknown_is_custom() {
+        // "emacs" is now a first-class variant; use a genuinely unknown string.
         assert_eq!(
-            Editor::from_key("emacs"),
-            Some(Editor::Custom("emacs".into()))
+            Editor::from_key("some-unknown-editor"),
+            Some(Editor::Custom("some-unknown-editor".into()))
         );
     }
 

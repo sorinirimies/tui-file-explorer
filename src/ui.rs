@@ -65,6 +65,9 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     if app.show_options_panel {
         h_constraints.push(Constraint::Length(42));
     }
+    if app.show_editor_panel {
+        h_constraints.push(Constraint::Length(42));
+    }
     let h_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints(h_constraints)
@@ -100,6 +103,12 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     if app.show_options_panel {
         let panel_area = h_chunks[h_chunks.len() - 1];
         render_options_panel(frame, panel_area, app);
+    }
+
+    // ── Editor panel ──────────────────────────────────────────────────────────
+    if app.show_editor_panel {
+        let panel_area = h_chunks[h_chunks.len() - 1];
+        render_editor_panel(frame, panel_area, app);
     }
 
     // ── Action bar ────────────────────────────────────────────────────────────
@@ -282,6 +291,176 @@ pub fn render_theme_panel(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(desc, v[2]);
 }
 
+// ── Editor panel ──────────────────────────────────────────────────────────────
+
+/// Render the slide-in editor-picker side panel occupying `area`.
+///
+/// Two bordered group cells — "Terminal Editors" and "IDEs & GUI Editors" —
+/// mirror the Options panel layout.  The highlighted row (cursor) is tracked
+/// by `app.editor_panel_idx`; the active editor is marked with a `✓`.
+pub fn render_editor_panel(frame: &mut Frame, area: Rect, app: &App) {
+    use crate::app::{App as TfeApp, Editor};
+
+    let theme = app.theme();
+
+    let on_style = Style::default()
+        .fg(theme.success)
+        .add_modifier(Modifier::BOLD);
+    let key_style = Style::default()
+        .fg(theme.accent)
+        .add_modifier(Modifier::BOLD);
+    let label_style = Style::default().fg(theme.fg);
+    let subtitle_style = Style::default().fg(theme.dim);
+    let title_style = Style::default()
+        .fg(theme.brand)
+        .add_modifier(Modifier::BOLD);
+
+    let editors = TfeApp::all_editors();
+    let first_ide = TfeApp::first_ide_idx();
+    let terminal_editors = &editors[..first_ide]; // None … Emacs
+    let ide_editors = &editors[first_ide..]; // Sublime … Eclipse
+
+    // ── Layout ───────────────────────────────────────────────────────────────
+    // Slots (top to bottom):
+    //   [0]  hints header box              — 2 rows
+    //   [1]  gap                           — 1 row
+    //   [2]  "Terminal Editors" title      — 1 row
+    //   [3]  Terminal Editors cell         — terminal_editors.len() + 2 (borders)
+    //   [4]  gap                           — 1 row
+    //   [5]  "IDEs & GUI Editors" title    — 1 row
+    //   [6]  IDEs cell                     — ide_editors.len() + 2 (borders)
+    //   [7]  gap                           — 1 row
+    //   [8]  footer                        — 3 rows
+    //   [9]  remainder
+    let terminal_cell_h = terminal_editors.len() as u16 + 2;
+    let ide_cell_h = ide_editors.len() as u16 + 2;
+
+    let slots = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),               // [0] hints header
+            Constraint::Length(1),               // [1] gap
+            Constraint::Length(1),               // [2] "Terminal Editors" title
+            Constraint::Length(terminal_cell_h), // [3] terminal cell
+            Constraint::Length(1),               // [4] gap
+            Constraint::Length(1),               // [5] "IDEs & GUI Editors" title
+            Constraint::Length(ide_cell_h),      // [6] IDE cell
+            Constraint::Length(1),               // [7] gap
+            Constraint::Length(3),               // [8] footer
+            Constraint::Min(0),                  // [9] slack
+        ])
+        .split(area);
+
+    // ── Helper: floating section title ────────────────────────────────────────
+    let section_title = |frame: &mut Frame, slot: Rect, label: &str| {
+        let dashes = "─".repeat((slot.width as usize).saturating_sub(label.len() + 2));
+        let para = Paragraph::new(Line::from(vec![
+            Span::styled(format!(" {label} "), subtitle_style),
+            Span::styled(dashes, subtitle_style),
+        ]));
+        frame.render_widget(para, slot);
+    };
+
+    // ── Helper: one editor row ────────────────────────────────────────────────
+    let editor_row = |editor: &Editor, idx: usize| -> Line {
+        let is_highlighted = idx == app.editor_panel_idx;
+        let is_selected = editor == &app.editor;
+        let marker = if is_highlighted { "\u{25BA} " } else { "   " };
+        let check = if is_selected { "\u{2713} " } else { "  " };
+        Line::from(vec![
+            Span::styled(
+                marker,
+                Style::default().fg(if is_highlighted {
+                    theme.brand
+                } else {
+                    theme.dim
+                }),
+            ),
+            Span::styled(
+                check,
+                if is_selected {
+                    on_style
+                } else {
+                    subtitle_style
+                },
+            ),
+            Span::styled(
+                format!("{:<width$}", editor.label(), width = 16),
+                if is_highlighted {
+                    key_style
+                } else {
+                    label_style
+                },
+            ),
+        ])
+    };
+
+    // ── Hints header ─────────────────────────────────────────────────────────
+    let header = Block::default()
+        .title(Span::styled(" \u{1F4DD} Editor ", title_style))
+        .title_bottom(Line::from(vec![
+            Span::styled(" Shift + E ", key_style),
+            Span::styled("close", subtitle_style),
+        ]))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.accent));
+    frame.render_widget(header, slots[0]);
+
+    // ── Terminal Editors cell ─────────────────────────────────────────────────
+    section_title(frame, slots[2], "Terminal Editors");
+
+    let terminal_rows: Vec<Line> = terminal_editors
+        .iter()
+        .enumerate()
+        .map(|(i, ed)| editor_row(ed, i))
+        .collect();
+    let terminal_cell = Paragraph::new(terminal_rows).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.dim)),
+    );
+    frame.render_widget(terminal_cell, slots[3]);
+
+    // ── IDEs & GUI Editors cell ───────────────────────────────────────────────
+    section_title(frame, slots[5], "IDEs & GUI Editors");
+
+    let ide_rows: Vec<Line> = ide_editors
+        .iter()
+        .enumerate()
+        .map(|(i, ed)| editor_row(ed, first_ide + i))
+        .collect();
+    let ide_cell = Paragraph::new(ide_rows).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.dim)),
+    );
+    frame.render_widget(ide_cell, slots[6]);
+
+    // ── Footer — binary of the highlighted editor ─────────────────────────────
+    let highlighted_editor = &editors[app.editor_panel_idx];
+    let footer_text = if *highlighted_editor == Editor::None {
+        "none  —  no editor".to_string()
+    } else {
+        format!(
+            "{}  →  {}",
+            highlighted_editor.label(),
+            highlighted_editor.binary().unwrap_or_default()
+        )
+    };
+    let footer = Paragraph::new(footer_text)
+        .style(Style::default().fg(theme.success))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(theme.accent)),
+        );
+    frame.render_widget(footer, slots[8]);
+}
+
 // ── Options panel ─────────────────────────────────────────────────────────────
 
 /// Render the slide-in options panel occupying `area`.
@@ -315,7 +494,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     //   [6]  Editor group cell        — 3 rows  (border + 1 row + border)
     //   [7]  gap                      — 1 row
     //   [8]  "File Ops" section title — 1 row
-    //   [9]  File Ops group cell      — 5 rows  (border + 3 rows + border)
+    //   [9]  File Ops group cell      — 9 rows  (border + 7 rows + border)
     //   [10] remainder (absorbs slack)
     let slots = Layout::default()
         .direction(Direction::Vertical)
@@ -329,7 +508,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(3), // [6] Editor group (1 option row)
             Constraint::Length(1), // [7] gap
             Constraint::Length(1), // [8] "File Ops" title
-            Constraint::Length(5), // [9] File Ops group (3 option rows)
+            Constraint::Length(9), // [9] File Ops group (7 option rows)
             Constraint::Min(0),    // [10] slack
         ])
         .split(area);
@@ -407,8 +586,8 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     };
 
     let editor_rows = vec![option_row(
-        "e",
-        "open with",
+        "Shift + E",
+        "editor",
         Span::styled(editor_label, editor_val_style),
     )];
     let editor_cell = Paragraph::new(editor_rows).block(
@@ -423,6 +602,31 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     section_title(frame, slots[8], "File Ops");
 
     let fileops_rows = vec![
+        option_row(
+            "Spc",
+            "mark",
+            Span::styled("multi-select", Style::default().fg(theme.accent)),
+        ),
+        option_row(
+            "y",
+            "copy",
+            Span::styled("yank", Style::default().fg(theme.accent)),
+        ),
+        option_row(
+            "x",
+            "cut",
+            Span::styled("cut", Style::default().fg(theme.accent)),
+        ),
+        option_row(
+            "p",
+            "paste",
+            Span::styled("paste", Style::default().fg(theme.accent)),
+        ),
+        option_row(
+            "d",
+            "delete",
+            Span::styled("delete", Style::default().fg(theme.accent)),
+        ),
         option_row(
             "n",
             "new folder",
@@ -613,7 +817,9 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
         k("d"),
         d(" del  "),
         k("e"),
-        d(" edit  "),
+        d(" open  "),
+        k("Shift+E"),
+        d(" editor  "),
         k("n"),
         d(" mkdir  "),
         k("N"),
@@ -845,10 +1051,10 @@ mod tests {
     fn action_bar_spans_count_is_stable() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        // 14 key spans + 14 description spans = 28 total.
+        // 15 key spans + 15 description spans = 30 total.
         assert_eq!(
             spans.len(),
-            28,
+            30,
             "span count changed — update this test if the action bar was intentionally modified"
         );
     }
@@ -866,6 +1072,7 @@ mod tests {
             "p",
             "d",
             "e",
+            "Shift+E",
             "n",
             "N",
             "r",
@@ -898,6 +1105,7 @@ mod tests {
             "p",
             "d",
             "e",
+            "Shift+E",
             "n",
             "N",
             "r",
@@ -930,6 +1138,7 @@ mod tests {
             "p",
             "d",
             "e",
+            "Shift+E",
             "n",
             "N",
             "r",
@@ -963,6 +1172,7 @@ mod tests {
             "p",
             "d",
             "e",
+            "Shift+E",
             "n",
             "N",
             "r",
