@@ -71,6 +71,8 @@ pub struct FileExplorer {
     pub current_dir: PathBuf,
     /// The name of the currently active theme (used in the header display).
     pub theme_name: String,
+    /// The label of the currently configured editor (used in the header display).
+    pub editor_name: String,
     /// Sorted, search-filtered list of visible entries (dirs first, then files).
     pub entries: Vec<FsEntry>,
     /// Index of the highlighted entry.
@@ -187,6 +189,7 @@ impl FileExplorer {
             rename_active: false,
             rename_input: String::new(),
             theme_name: String::new(),
+            editor_name: String::new(),
         };
         explorer.reload();
         explorer
@@ -933,6 +936,7 @@ impl FileExplorerBuilder {
             rename_active: false,
             rename_input: String::new(),
             theme_name: String::new(),
+            editor_name: String::new(),
         };
         explorer.reload();
         explorer

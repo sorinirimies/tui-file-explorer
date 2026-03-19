@@ -296,6 +296,14 @@ fn render_header(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
         );
     }
 
+    if !explorer.editor_name.is_empty() {
+        let editor_label = format!(" \u{270F}  {} ", explorer.editor_name);
+        block = block.title_bottom(
+            ratatui::text::Line::from(Span::styled(editor_label, Style::default().fg(theme.dim)))
+                .left_aligned(),
+        );
+    }
+
     let header = Paragraph::new(Span::styled(
         display_path,
         Style::default()

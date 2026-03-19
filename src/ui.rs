@@ -82,10 +82,14 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         Pane::Right => (&inactive_theme, &active_theme),
     };
 
-    // Sync the current theme name into both panes so render_header can display it.
+    // Sync the current theme name and editor label into both panes so render_header can display them.
     let theme_name = app.theme_name().to_string();
     app.left.theme_name = theme_name.clone();
     app.right.theme_name = theme_name;
+
+    let editor_name = app.editor.label().to_string();
+    app.left.editor_name = editor_name.clone();
+    app.right.editor_name = editor_name;
 
     render_themed(&mut app.left, frame, h_chunks[0], left_theme);
 
