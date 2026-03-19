@@ -87,7 +87,11 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     app.left.theme_name = theme_name.clone();
     app.right.theme_name = theme_name;
 
-    let editor_name = app.editor.label().to_string();
+    let editor_name = if app.editor == crate::app::Editor::None {
+        String::new()
+    } else {
+        app.editor.label().to_string()
+    };
     app.left.editor_name = editor_name.clone();
     app.right.editor_name = editor_name;
 
