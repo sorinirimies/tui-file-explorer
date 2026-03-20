@@ -662,21 +662,125 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 // ── Action bar ────────────────────────────────────────────────────────────────
 
-/// Render the full-width navigation hint row (top half of the action bar).
+/// Render the top hints row of the action area as three labelled columns:
+/// Navigate | File Ops | Global.
 pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let hints = Line::from(render_nav_hints_spans(theme));
-    let nav_bar = Paragraph::new(hints).block(
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Percentage(35),
+            Constraint::Percentage(25),
+        ])
+        .split(area);
+
+    let k = |s: &'static str| {
+        Span::styled(
+            s,
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        )
+    };
+    let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
+
+    // ── Navigate column ───────────────────────────────────────────────────────
+    let nav_spans = vec![
+        k("↑"),
+        d("/"),
+        k("k"),
+        d(" up │ "),
+        k("↓"),
+        d("/"),
+        k("j"),
+        d(" down │ "),
+        k("→"),
+        d("/"),
+        k("l"),
+        d("/"),
+        k("Enter"),
+        d(" open │ "),
+        k("←"),
+        d("/"),
+        k("h"),
+        d("/"),
+        k("Bksp"),
+        d(" back │ "),
+        k("/"),
+        d(" search │ "),
+        k("s"),
+        d(" sort │ "),
+        k("."),
+        d(" hidden │ "),
+        k("Esc"),
+        d(" dismiss"),
+    ];
+    let nav_col = Paragraph::new(Line::from(nav_spans)).block(
         Block::default()
+            .title(Span::styled(" Navigate ", Style::default().fg(theme.dim)))
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.dim)),
     );
-    frame.render_widget(nav_bar, area);
+    frame.render_widget(nav_col, cols[0]);
+
+    // ── File Ops column ───────────────────────────────────────────────────────
+    let fileops_spans = vec![
+        k("y"),
+        d(" copy │ "),
+        k("x"),
+        d(" cut │ "),
+        k("p"),
+        d(" paste │ "),
+        k("d"),
+        d(" del │ "),
+        k("n"),
+        d(" mkdir │ "),
+        k("N"),
+        d(" touch │ "),
+        k("r"),
+        d(" rename │ "),
+        k("Spc"),
+        d(" mark"),
+    ];
+    let fileops_col = Paragraph::new(Line::from(fileops_spans)).block(
+        Block::default()
+            .title(Span::styled(" File Ops ", Style::default().fg(theme.dim)))
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.dim)),
+    );
+    frame.render_widget(fileops_col, cols[1]);
+
+    // ── Global column ─────────────────────────────────────────────────────────
+    let global_spans = vec![
+        k("Tab"),
+        d(" pane │ "),
+        k("w"),
+        d(" split │ "),
+        k("["),
+        d("/"),
+        k("t"),
+        d(" theme │ "),
+        k("Shift+E"),
+        d(" editor │ "),
+        k("Shift+O"),
+        d(" options"),
+    ];
+    let global_col = Paragraph::new(Line::from(global_spans)).block(
+        Block::default()
+            .title(Span::styled(" Global ", Style::default().fg(theme.dim)))
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(theme.dim)),
+    );
+    frame.render_widget(global_col, cols[2]);
 }
 
-/// Build the list of styled [`Span`]s for the navigation hint row.
+/// Build the flat list of styled [`Span`]s for the navigate column.
 ///
 /// Extracted so the spans can be tested independently of a real [`Frame`].
+#[cfg(test)]
 pub fn render_nav_hints_spans(theme: &Theme) -> Vec<Span<'_>> {
     let k = |s: &'static str| {
         Span::styled(
@@ -691,53 +795,48 @@ pub fn render_nav_hints_spans(theme: &Theme) -> Vec<Span<'_>> {
         k("↑"),
         d("/"),
         k("k"),
-        d(" up  "),
+        d(" up │ "),
         k("↓"),
         d("/"),
         k("j"),
-        d(" down  "),
+        d(" down │ "),
         k("→"),
         d("/"),
         k("l"),
         d("/"),
         k("Enter"),
-        d(" confirm  "),
+        d(" open │ "),
         k("←"),
         d("/"),
         k("h"),
         d("/"),
         k("Bksp"),
-        d(" ascend  "),
+        d(" back │ "),
         k("/"),
-        d(" search  "),
+        d(" search │ "),
         k("s"),
-        d(" sort  "),
+        d(" sort │ "),
         k("."),
-        d(" hidden  "),
-        k("n"),
-        d(" mkdir  "),
-        k("N"),
-        d(" touch  "),
-        k("r"),
-        d(" rename  "),
+        d(" hidden │ "),
         k("Esc"),
         d(" dismiss"),
     ]
 }
 
-/// Render the bottom status/shortcut bar occupying `area`.
+/// Render the bottom status bar occupying `area`.
 ///
-/// The bar is split into two halves:
+/// Split into two halves:
 /// - **Left** — clipboard info when something is yanked, otherwise the current
-///   status message (or the active-pane indicator when the status is empty).
-/// - **Right** — global key-binding hints.
+///   status message.
+/// - **Right** — active pane indicator + currently configured editor (always
+///   visible so the user always knows which editor `e` will open).
 pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let h = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    // Left half: clipboard info, status message, or active-pane indicator.
+    // ── Left half: clipboard info or status message ───────────────────────────
     if let Some(clip) = &app.clipboard {
         let name = clip.path.file_name().unwrap_or_default().to_string_lossy();
         let line = Line::from(vec![
@@ -768,50 +867,54 @@ pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
             } else {
                 theme.success
             };
-
-        // Build the left bar content as a Line so we can mix styles.
-        let line = if app.status_msg.is_empty() {
-            let active = match app.active {
-                Pane::Left => "left",
-                Pane::Right => "right",
-            };
-            let mut spans = vec![Span::styled(
-                format!(" Active pane: {active}"),
-                Style::default().fg(status_color),
-            )];
-            // Show the configured editor when one is set.
-            if app.editor != crate::app::Editor::None {
-                spans.push(Span::styled(
-                    "   \u{270F}  ",
-                    Style::default().fg(theme.dim),
-                ));
-                spans.push(Span::styled(
-                    app.editor.label().to_string(),
-                    Style::default()
-                        .fg(theme.accent)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
-            Line::from(spans)
+        let status = if app.status_msg.is_empty() {
+            " No pending operations".to_string()
         } else {
-            Line::from(Span::styled(
-                format!(" {}", app.status_msg),
-                Style::default().fg(status_color),
-            ))
+            format!(" {}", app.status_msg)
         };
-
-        let left_bar = Paragraph::new(line).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(theme.dim)),
-        );
+        let left_bar = Paragraph::new(Span::styled(status, Style::default().fg(status_color)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(theme.dim)),
+            );
         frame.render_widget(left_bar, h[0]);
     }
 
-    // Right half: global key hints.
-    let hints = Line::from(render_action_bar_spans(theme));
-    let right_bar = Paragraph::new(hints).block(
+    // ── Right half: active pane + editor info (always shown) ─────────────────
+    let active_label = match app.active {
+        Pane::Left => "left",
+        Pane::Right => "right",
+    };
+
+    let mut right_spans = vec![
+        Span::styled(" pane: ", Style::default().fg(theme.dim)),
+        Span::styled(
+            active_label,
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("   editor: ", Style::default().fg(theme.dim)),
+    ];
+
+    if app.editor == crate::app::Editor::None {
+        right_spans.push(Span::styled("none", Style::default().fg(theme.dim)));
+        right_spans.push(Span::styled(
+            "  (Shift+E to pick)",
+            Style::default().fg(theme.dim),
+        ));
+    } else {
+        right_spans.push(Span::styled(
+            format!("\u{270F}  {}", app.editor.label()),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    let right_bar = Paragraph::new(Line::from(right_spans)).block(
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
@@ -820,9 +923,10 @@ pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
     frame.render_widget(right_bar, h[1]);
 }
 
-/// Build the list of styled [`Span`]s for the global key-hint row.
+/// Build the list of styled [`Span`]s for the global key-hint column.
 ///
 /// Extracted so the spans can be tested independently of a real [`Frame`].
+#[cfg(test)]
 pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
     let k = |s: &'static str| {
         Span::styled(
@@ -835,27 +939,15 @@ pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
     let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
     vec![
         k("Tab"),
-        d(" pane · "),
-        k("Spc"),
-        d(" mark · "),
-        k("y"),
-        d(" copy · "),
-        k("x"),
-        d(" cut · "),
-        k("p"),
-        d(" paste · "),
-        k("d"),
-        d(" del · "),
-        k("e"),
-        d(" open · "),
-        k("Shift+E"),
-        d(" editor · "),
+        d(" pane │ "),
+        k("w"),
+        d(" split │ "),
         k("["),
         d("/"),
         k("t"),
-        d(" theme · "),
-        k("w"),
-        d(" split · "),
+        d(" theme │ "),
+        k("Shift+E"),
+        d(" editor │ "),
         k("Shift+O"),
         d(" options"),
     ]
@@ -1061,15 +1153,9 @@ mod tests {
         let spans = render_action_bar_spans(&theme);
         let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.contains("Tab"), "missing Tab hint");
-        assert!(text.contains('y'), "missing y hint");
-        assert!(text.contains('x'), "missing x hint");
-        assert!(text.contains('p'), "missing p hint");
-        assert!(text.contains('d'), "missing d hint");
         assert!(text.contains('['), "missing [ hint");
         assert!(text.contains('t'), "missing t hint");
-        assert!(text.contains("Spc"), "missing Spc hint");
         assert!(text.contains('w'), "missing w hint");
-        assert!(text.contains('e'), "missing e hint");
         assert!(text.contains("Shift+E"), "missing Shift+E (editor) hint");
         assert!(text.contains("Shift+O"), "missing Shift+O (options) hint");
     }
@@ -1078,10 +1164,10 @@ mod tests {
     fn action_bar_spans_count_is_stable() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        // 12 key spans + 12 description spans = 24 total.
+        // 6 key spans + 6 description spans = 12 total.
         assert_eq!(
             spans.len(),
-            24,
+            12,
             "span count changed — update this test if the action bar was intentionally modified"
         );
     }
@@ -1090,10 +1176,7 @@ mod tests {
     fn action_bar_spans_key_spans_are_bold() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        // Key spans are the ones whose content matches a known key label.
-        let key_labels = [
-            "Tab", "Spc", "y", "x", "p", "d", "e", "Shift+E", "[", "t", "w", "Shift+O",
-        ];
+        let key_labels = ["Tab", "w", "[", "t", "Shift+E", "Shift+O"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -1110,10 +1193,7 @@ mod tests {
     fn action_bar_spans_description_spans_are_not_bold() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = [
-            "Tab", "Spc", "y", "x", "p", "d", "e", "Shift+E", "[", "t", "w", "Shift+O",
-        ];
-        // Every span
+        let key_labels = ["Tab", "w", "[", "t", "Shift+E", "Shift+O"];
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
                 assert!(
@@ -1129,9 +1209,7 @@ mod tests {
     fn action_bar_spans_key_spans_use_accent_colour() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = [
-            "Tab", "Spc", "y", "x", "p", "d", "e", "Shift+E", "[", "t", "w", "Shift+O",
-        ];
+        let key_labels = ["Tab", "w", "[", "t", "Shift+E", "Shift+O"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -1149,9 +1227,7 @@ mod tests {
     fn action_bar_spans_description_spans_use_dim_colour() {
         let theme = Theme::default();
         let spans = render_action_bar_spans(&theme);
-        let key_labels = [
-            "Tab", "Spc", "y", "x", "p", "d", "e", "Shift+E", "[", "t", "w", "Shift+O",
-        ];
+        let key_labels = ["Tab", "w", "[", "t", "Shift+E", "Shift+O"];
         for span in &spans {
             if !key_labels.contains(&span.content.as_ref()) {
                 assert_eq!(
@@ -1198,7 +1274,7 @@ mod tests {
         // the bold search-activation key.  Exclude it from the simple
         // "first match" check and verify it separately below.
         let key_labels = [
-            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "n", "N", "Esc",
+            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "Esc",
         ];
         for label in key_labels {
             let span = spans
@@ -1223,9 +1299,7 @@ mod tests {
         let theme = Theme::default();
         let spans = render_nav_hints_spans(&theme);
         // Exclude '/' — it appears as both a dim separator and a bold accent key.
-        let key_labels = [
-            "↑", "k", "↓", "j", "Enter", "Bksp", "s", ".", "n", "N", "Esc",
-        ];
+        let key_labels = ["↑", "k", "↓", "j", "Enter", "Bksp", "s", ".", "Esc"];
         for label in key_labels {
             let span = spans
                 .iter()
@@ -1256,7 +1330,7 @@ mod tests {
         // Bold key labels — spans carrying these as content must be accent-coloured.
         // '/' is excluded because it also appears as a dim separator between combos.
         let key_labels = [
-            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "n", "N", "r", "Esc",
+            "↑", "k", "↓", "j", "→", "l", "Enter", "←", "h", "Bksp", "s", ".", "Esc",
         ];
         for span in &spans {
             let content = span.content.as_ref();
@@ -1277,10 +1351,10 @@ mod tests {
     fn nav_hints_span_count_is_stable() {
         let theme = Theme::default();
         let spans = render_nav_hints_spans(&theme);
-        // 17 key spans + 17 separator/description spans = 34 total.
+        // 14 key spans + 14 separator/description spans = 28 total.
         assert_eq!(
             spans.len(),
-            34,
+            28,
             "nav hint span count changed — update this test if the nav bar was intentionally modified"
         );
     }
