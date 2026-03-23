@@ -53,80 +53,13 @@ jobs:
       - name: Install git-cliff
         run: cargo install git-cliff
 
-      - name: Update version and generate changelog
+      - name: Install Nushell
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "Updating version to: $VERSION"
+          curl -sSL https://github.com/nushell/nushell/releases/latest/download/nu-$(curl -sSL https://api.github.com/repos/nushell/nushell/releases/latest | grep '"tag_name"' | sed 's/.*"tag_name": "\(.*\)".*/\1/')-x86_64-unknown-linux-gnu.tar.gz | tar -xz --strip-components=1 -C /usr/local/bin nu
+        shell: bash
 
-          # Update Cargo.toml version — use POSIX character classes so the
-          # pattern matches regardless of how many spaces surround '=' in the
-          # version line (e.g. 'version      = "0.1.0"').
-          sed -i 's/^version[[:space:]]*=[[:space:]]*"[^"]*"/version      = "'"$VERSION"'"/' Cargo.toml
-
-          # Verify the substitution took effect.
-          UPDATED=$(grep '^version[[:space:]]*=' Cargo.toml | head -1 | sed 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/')
-          if [ "$UPDATED" != "$VERSION" ]; then
-            echo "ERROR: Failed to update version in Cargo.toml (got '$UPDATED', expected '$VERSION')"
-            exit 1
-          fi
-          echo "Cargo.toml version updated to $VERSION"
-
-          # Regenerate full changelog
-          git-cliff --config cliff.toml --latest --output CHANGELOG.md
-
-          # Determine previous tag for release notes range
-          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
-          if [ -n "$LAST_TAG" ]; then
-            git-cliff --config cliff.toml ${LAST_TAG}..${{ github.ref_name }} --strip header > CLIFF_CHANGES.md
-          else
-            git-cliff --config cliff.toml --tag ${{ github.ref_name }} --strip header > CLIFF_CHANGES.md
-          fi
-
-          # Build release notes
-          echo "# tui-file-explorer ${VERSION}" > RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "## What's New" >> RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-
-          if [ -n "$LAST_TAG" ]; then
-            echo "### Changes since ${LAST_TAG}:" >> RELEASE_CHANGELOG.md
-          else
-            echo "### Initial Release" >> RELEASE_CHANGELOG.md
-          fi
-
-          echo "" >> RELEASE_CHANGELOG.md
-          cat CLIFF_CHANGES.md >> RELEASE_CHANGELOG.md
-
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "## Installation" >> RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "Add to your \`Cargo.toml\`:" >> RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "\`\`\`toml" >> RELEASE_CHANGELOG.md
-          echo "[dependencies]" >> RELEASE_CHANGELOG.md
-          echo "tui-file-explorer = \"${VERSION}\"" >> RELEASE_CHANGELOG.md
-          echo "\`\`\`" >> RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "Or via cargo-add:" >> RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "\`\`\`bash" >> RELEASE_CHANGELOG.md
-          echo "cargo add tui-file-explorer" >> RELEASE_CHANGELOG.md
-          echo "\`\`\`" >> RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "## Quick Start" >> RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "\`\`\`rust" >> RELEASE_CHANGELOG.md
-          echo "use tui_file_explorer::{FileExplorer, ExplorerOutcome, render};" >> RELEASE_CHANGELOG.md
-          echo "" >> RELEASE_CHANGELOG.md
-          echo "let mut explorer = FileExplorer::new(" >> RELEASE_CHANGELOG.md
-          echo "    std::env::current_dir().unwrap()," >> RELEASE_CHANGELOG.md
-          echo "    vec![\"iso\".into(), \"img\".into()]," >> RELEASE_CHANGELOG.md
-          echo ");" >> RELEASE_CHANGELOG.md
-          echo "\`\`\`" >> RELEASE_CHANGELOG.md
-
-          echo "Generated release notes:"
-          cat RELEASE_CHANGELOG.md
+      - name: Prepare release
+        run: nu scripts/release_prepare.nu ${{ github.ref_name }}
 
       - name: Build release
         run: cargo build --release --all-features
