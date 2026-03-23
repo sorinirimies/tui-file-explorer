@@ -862,15 +862,29 @@ impl App {
 
     // ── Event handling ────────────────────────────────────────────────────────
 
-    /// Read one terminal event and update application state.
+    /// Process a single [`KeyEvent`] and update application state.
+    ///
+    /// This is the core key-dispatch method. Library consumers that read
+    /// their own events (e.g. via a shared event loop) should call this
+    /// directly instead of [`App::handle_event`].
     ///
     /// Returns `true` when the event loop should exit (user confirmed a
     /// selection or dismissed the explorer).
-    pub fn handle_event(&mut self) -> io::Result<bool> {
-        let Event::Key(key) = event::read()? else {
-            return Ok(false);
-        };
-
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+    /// use tui_file_explorer::{App, AppOptions};
+    ///
+    /// let mut app = App::new(AppOptions::default());
+    ///
+    /// // Read the event yourself and forward only key events.
+    /// if let Event::Key(key) = event::read().unwrap() {
+    ///     let should_exit = app.handle_key(key).unwrap();
+    /// }
+    /// ```
+    pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> io::Result<bool> {
         // Always handle Ctrl-C.
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return Ok(true);
@@ -1105,6 +1119,20 @@ impl App {
         }
 
         Ok(false)
+    }
+
+    /// Read one terminal event and update application state.
+    ///
+    /// Calls [`event::read`] internally. If your application already owns the
+    /// event loop and reads events itself, call [`App::handle_key`] instead.
+    ///
+    /// Returns `true` when the event loop should exit (user confirmed a
+    /// selection or dismissed the explorer).
+    pub fn handle_event(&mut self) -> io::Result<bool> {
+        let Event::Key(key) = event::read()? else {
+            return Ok(false);
+        };
+        self.handle_key(key)
     }
 }
 
