@@ -1,6 +1,6 @@
 [package]
 name         = "tui-file-explorer"
-version      = "0.7.5"
+version      = "0.8.0"
 edition      = "2021"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
@@ -29,8 +29,16 @@ exclude      = [
 #   tui-file-explorer = { version = "0.1", default-features = false }
 #
 [features]
-default = ["cli"]
+default = ["cli", "full"]
 cli     = ["dep:clap"]
+# Exposes the complete standalone-app surface (App, Editor, Pane, ClipOp,
+# ClipboardItem, Modal, Snackbar, AppOptions, AppState, persistence helpers,
+# filesystem helpers, and all UI rendering functions) as public library API.
+# Enabled by default. Library users who only want the core widget can opt out:
+#
+#   [dependencies]
+#   tui-file-explorer = { version = "...", default-features = false }
+full    = []
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
