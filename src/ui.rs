@@ -34,22 +34,29 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     let theme = app.theme().clone();
     let full = frame.area();
 
-    // Vertical split: main area | action bar (6 rows = nav-hints row + status row).
+    // Vertical split: main area | action bar (9 rows = hints row 1 + hints row 2 + status row).
     let v_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(6)])
+        .constraints([Constraint::Min(0), Constraint::Length(9)])
         .split(full);
 
     let main_area = v_chunks[0];
     let action_area = v_chunks[1];
 
-    // Split the action bar vertically into: nav hints (top) | status+shortcuts (bottom).
+    // Split the action bar vertically into three rows of 3:
+    //   row 0 — Navigate | File Ops
+    //   row 1 — Global   | Status
     let action_rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+        ])
         .split(action_area);
-    let nav_area = action_rows[0];
-    let status_area = action_rows[1];
+    let nav_fileops_area = action_rows[0];
+    let global_status_area = action_rows[1];
+    // action_rows[2] is spare slack — not used but keeps the layout pinned.
 
     // Horizontal split: left pane | [right pane] | [theme panel].
     let mut h_constraints = vec![];
@@ -120,8 +127,7 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     }
 
     // ── Action bar ────────────────────────────────────────────────────────────
-    render_nav_hints(frame, nav_area, &theme);
-    render_action_bar(frame, status_area, app, &theme);
+    render_nav_hints(frame, nav_fileops_area, global_status_area, app, &theme);
 
     // ── Modal overlay ─────────────────────────────────────────────────────────
     if let Some(modal) = &app.modal {
@@ -662,18 +668,12 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 // ── Action bar ────────────────────────────────────────────────────────────────
 
-/// Render the top hints row of the action area as three labelled columns:
-/// Navigate | File Ops | Global.
-pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(40),
-            Constraint::Percentage(35),
-            Constraint::Percentage(25),
-        ])
-        .split(area);
-
+/// Render the two hint rows and the status bar of the action area.
+///
+/// Layout (each row is 3 terminal rows tall):
+///   Row 0  ╭─ Navigate ──────────────────╮╭─ File Ops ──────────────────╮
+///   Row 1  ╭─ Global ────────────────────╮╭─ Status ────────────────────╮
+pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, theme: &Theme) {
     let k = |s: &'static str| {
         Span::styled(
             s,
@@ -684,7 +684,12 @@ pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
     };
     let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
 
-    // ── Navigate column ───────────────────────────────────────────────────────
+    // ── Row 0: Navigate (left 50%) | File Ops (right 50%) ────────────────────
+    let row0_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(row0);
+
     let nav_spans = vec![
         k("↑"),
         d("/"),
@@ -722,9 +727,8 @@ pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.dim)),
     );
-    frame.render_widget(nav_col, cols[0]);
+    frame.render_widget(nav_col, row0_cols[0]);
 
-    // ── File Ops column ───────────────────────────────────────────────────────
     let fileops_spans = vec![
         k("y"),
         d(" copy │ "),
@@ -750,9 +754,14 @@ pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.dim)),
     );
-    frame.render_widget(fileops_col, cols[1]);
+    frame.render_widget(fileops_col, row0_cols[1]);
 
-    // ── Global column ─────────────────────────────────────────────────────────
+    // ── Row 1: Global (left 50%) | Status (right 50%) ────────────────────────
+    let row1_cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(row1);
+
     let global_spans = vec![
         k("Tab"),
         d(" pane │ "),
@@ -774,7 +783,10 @@ pub fn render_nav_hints(frame: &mut Frame, area: Rect, theme: &Theme) {
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(theme.dim)),
     );
-    frame.render_widget(global_col, cols[2]);
+    frame.render_widget(global_col, row1_cols[0]);
+
+    // Status cell (right half of row 1) — replaces the old render_action_bar.
+    render_action_bar(frame, row1_cols[1], app, theme);
 }
 
 /// Build the flat list of styled [`Span`]s for the navigate column.
@@ -823,20 +835,17 @@ pub fn render_nav_hints_spans(theme: &Theme) -> Vec<Span<'_>> {
     ]
 }
 
-/// Render the bottom status bar occupying `area`.
+/// Render the status cell: clipboard info, or status message on the left
+/// and the active pane + configured editor on the right.
 ///
-/// Split into two halves:
-/// - **Left** — clipboard info when something is yanked, otherwise the current
-///   status message.
-/// - **Right** — active pane indicator + currently configured editor (always
-///   visible so the user always knows which editor `e` will open).
+/// Occupies the right half of row 1 in the action area.
 pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     let h = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    // ── Left half: clipboard info or status message ───────────────────────────
+    // ── Left: clipboard info or status message ────────────────────────────────
     if let Some(clip) = &app.clipboard {
         let name = clip.path.file_name().unwrap_or_default().to_string_lossy();
         let line = Line::from(vec![
@@ -882,7 +891,7 @@ pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
         frame.render_widget(left_bar, h[0]);
     }
 
-    // ── Right half: active pane + editor info (always shown) ─────────────────
+    // ── Right: active pane + editor (always visible) ──────────────────────────
     let active_label = match app.active {
         Pane::Left => "left",
         Pane::Right => "right",
