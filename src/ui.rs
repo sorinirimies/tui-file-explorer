@@ -11,6 +11,7 @@
 //! * [`render_action_bar`]  — the bottom status / key-hint bar.
 //! * [`render_modal`]       — the blocking confirmation dialog overlay.
 
+use crate::{render_themed, Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -18,7 +19,6 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
-use tui_file_explorer::{render_themed, Theme};
 
 use crate::app::{App, Modal, Pane, Snackbar};
 
@@ -1152,7 +1152,7 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tui_file_explorer::Theme;
+    use crate::Theme;
 
     // ── render_action_bar_spans ───────────────────────────────────────────────
 

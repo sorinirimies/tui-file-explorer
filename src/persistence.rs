@@ -28,7 +28,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use tui_file_explorer::{SortMode, Theme};
+use crate::{SortMode, Theme};
 
 // ── Key constants ─────────────────────────────────────────────────────────────
 

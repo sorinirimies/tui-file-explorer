@@ -256,6 +256,17 @@ pub mod palette;
 pub mod render;
 pub mod types;
 
+// ── Full-app modules (gated behind the `full` feature) ───────────────────────
+
+#[cfg(feature = "full")]
+pub mod app;
+#[cfg(feature = "full")]
+pub mod fs;
+#[cfg(feature = "full")]
+pub mod persistence;
+#[cfg(feature = "full")]
+pub mod ui;
+
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
 pub use dual_pane::{DualPane, DualPaneActive, DualPaneBuilder, DualPaneOutcome};
@@ -263,3 +274,17 @@ pub use explorer::{entry_icon, fmt_size, FileExplorer, FileExplorerBuilder};
 pub use palette::Theme;
 pub use render::{render, render_dual_pane, render_dual_pane_themed, render_themed};
 pub use types::{ExplorerOutcome, FsEntry, SortMode};
+
+// ── Full-app re-exports ───────────────────────────────────────────────────────
+
+#[cfg(feature = "full")]
+pub use app::{App, AppOptions, ClipOp, ClipboardItem, Editor, Modal, Pane, Snackbar};
+#[cfg(feature = "full")]
+pub use fs::{copy_dir_all, resolve_output_path};
+#[cfg(feature = "full")]
+pub use persistence::{load_state, resolve_theme_idx, save_state, AppState};
+#[cfg(feature = "full")]
+pub use ui::{
+    draw, render_action_bar, render_editor_panel, render_modal, render_nav_hints,
+    render_options_panel, render_snackbar, render_theme_panel,
+};

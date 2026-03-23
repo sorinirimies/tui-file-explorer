@@ -43,13 +43,9 @@
 //!   0 — path printed to stdout (file selected, or dismissed with a current dir)
 //!   2 — bad arguments / I/O error
 
-mod app;
-mod fs;
-mod persistence;
 mod shell_init;
-mod ui;
 
-use app::Editor;
+use tui_file_explorer::app::Editor;
 
 use std::{
     io::{self, stdout, Write},
@@ -64,11 +60,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use tui_file_explorer::Theme;
-
-use app::App;
-use fs::resolve_output_path;
-use ui::draw;
+use tui_file_explorer::{
+    draw, load_state, resolve_output_path, resolve_theme_idx, save_state, App, AppOptions,
+    AppState, Theme,
+};
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -233,14 +228,14 @@ fn run() -> io::Result<()> {
     }
 
     // Load all persisted state once at startup.
-    let saved = persistence::load_state();
+    let saved = load_state();
 
     // Priority: explicit --theme flag > persisted selection > built-in default.
     let theme_name = cli
         .theme
         .or_else(|| saved.theme.clone())
         .unwrap_or_else(|| "default".to_string());
-    let theme_idx = persistence::resolve_theme_idx(&theme_name, &themes);
+    let theme_idx = resolve_theme_idx(&theme_name, &themes);
 
     // Priority: explicit --path arg > persisted last directory > cwd.
     let start_dir = match cli.path {
@@ -318,7 +313,7 @@ fn run() -> io::Result<()> {
 
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(app::AppOptions {
+    let mut app = App::new(AppOptions {
         left_dir: start_dir,
         right_dir: right_start_dir,
         extensions: cli.extensions,
@@ -384,7 +379,7 @@ fn run() -> io::Result<()> {
         Some(app.right.current_dir.clone())
     };
 
-    persistence::save_state(&persistence::AppState {
+    save_state(&AppState {
         theme: Some(app.theme_name().to_string()),
         last_dir: Some(app.left.current_dir.clone()),
         last_dir_right,

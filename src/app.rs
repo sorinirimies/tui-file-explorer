@@ -373,8 +373,8 @@ impl Default for AppOptions {
 
 use crate::fs::copy_dir_all;
 
+use crate::{ExplorerOutcome, FileExplorer, SortMode, Theme};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use tui_file_explorer::{ExplorerOutcome, FileExplorer, SortMode, Theme};
 
 // ── Pane ─────────────────────────────────────────────────────────────────────
 
