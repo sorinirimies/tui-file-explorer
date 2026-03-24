@@ -690,7 +690,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     let fileops_rows = vec![
         option_row(
-            "Spc",
+            "Space",
             "mark",
             Span::styled("multi-select", Style::default().fg(theme.accent)),
         ),
@@ -817,7 +817,7 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
         d(" touch │ "),
         k("r"),
         d(" rename │ "),
-        k("Spc"),
+        k("Space"),
         d(" mark"),
     ];
     let fileops_col = Paragraph::new(Line::from(fileops_spans)).block(

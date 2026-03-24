@@ -52,7 +52,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 ## Features
 
 - 🗂️ **Two-pane layout** — independent left and right explorer panes, `Tab` to switch focus
-- 📋 **File operations** — copy (`y`), cut (`x`), paste (`p`), delete (`d`); `Spc` to multi-select; `n`/`N` to create dirs/files; `r` to rename
+- 📋 **File operations** — copy (`y`), cut (`x`), paste (`p`), delete (`d`); `Space` to multi-select; `n`/`N` to create dirs/files; `r` to rename
 - 🔍 **Incremental search** — press `/` to filter entries live as you type
 - 🔃 **Sort modes** — cycle `Name → Size ↓ → Extension` with `s`
 - 🎛️ **Extension filter** — only matching files are selectable; dirs are always navigable
@@ -199,7 +199,7 @@ match dual.handle_key(key) {
 
 | Key | Action |
 |-----|--------|
-| `Spc` | **Mark** — toggle multi-select on the highlighted entry |
+| `Space` | **Mark** — toggle multi-select on the highlighted entry |
 | `y` | **Yank** — mark highlighted entry for copy |
 | `x` | **Cut** — mark highlighted entry for move |
 | `p` | **Paste** — copy/move clipboard into the *other* pane's directory |
