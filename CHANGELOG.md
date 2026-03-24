@@ -1,6 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.8.8] - 2026-03-25
+
+### Bug Fixes
+- Filter for `KeyEventKind::Press` in all `handle_key` methods — on Windows
+  and terminals negotiating the kitty keyboard protocol, crossterm delivers
+  both Press and Release events per physical key-press; without this guard
+  the Release event re-ran yank after marks were cleared, silently replacing
+  the multi-item clipboard with just the cursor entry
+
+### CI
+- Add weekly dependency update workflow for GitHub and Gitea (`cargo update`
+  with test + clippy gate, automatic PR creation, cron every Wednesday 01:00 CET)
+
 ## [0.8.6] - 2026-03-24
 
 ### Miscellaneous

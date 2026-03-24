@@ -1,0 +1,85 @@
+name: Weekly Dependency Update
+
+on:
+  schedule:
+    - cron: "0 0 * * 3"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  update-deps:
+    name: Update Cargo dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run cargo update
+        run: cargo update
+
+      - name: Check for changes
+        id: check
+        run: |
+          if git diff --quiet Cargo.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No dependency changes detected."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Dependency changes detected."
+          fi
+
+      - name: Run tests
+        if: steps.check.outputs.changed == 'true'
+        run: cargo test --locked --all-features --all-targets
+
+      - name: Run clippy
+        if: steps.check.outputs.changed == 'true'
+        run: cargo clippy -- -D warnings -A deprecated
+
+      - name: Create pull request
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="deps/weekly-cargo-update"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$BRANCH"
+          git add Cargo.lock
+          git commit -m "chore(deps): weekly cargo update"
+          git push --force origin "$BRANCH"
+
+          # Check if an open PR from this branch already exists
+          EXISTING_PR=$(curl -s \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/pulls?state=open&head=$BRANCH" \
+            | jq '. | length')
+
+          if [ "$EXISTING_PR" -gt 0 ]; then
+            echo "Pull request already exists — skipping creation."
+          else
+            curl -s -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{
+                "title": "chore(deps): weekly cargo update",
+                "body": "Automated weekly update of Cargo dependencies via `cargo update`.\n\nThis PR was created automatically by the **Weekly Dependency Update** workflow.",
+                "head": "'"$BRANCH"'",
+                "base": "main"
+              }' \
+              "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/pulls" || true
+          fi
