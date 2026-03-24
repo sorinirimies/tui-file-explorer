@@ -516,6 +516,45 @@ impl Snackbar {
     }
 }
 
+/// Tracks the progress of an in-progress copy/move operation.
+#[derive(Debug, Clone)]
+pub struct CopyProgress {
+    /// Human-readable label for the current operation (e.g. "Copying 3 items").
+    pub label: String,
+    /// Number of files/dirs successfully processed so far.
+    pub done: usize,
+    /// Total number of files/dirs to process.
+    pub total: usize,
+    /// Name of the item currently being copied.
+    pub current_item: String,
+}
+
+impl CopyProgress {
+    /// Create a new progress tracker.
+    pub fn new(label: impl Into<String>, total: usize) -> Self {
+        Self {
+            label: label.into(),
+            done: 0,
+            total,
+            current_item: String::new(),
+        }
+    }
+
+    /// Returns the fraction complete as a value in `0.0..=1.0`.
+    pub fn fraction(&self) -> f64 {
+        if self.total == 0 {
+            1.0
+        } else {
+            self.done as f64 / self.total as f64
+        }
+    }
+
+    /// Returns `true` when all items have been processed.
+    pub fn is_complete(&self) -> bool {
+        self.done >= self.total
+    }
+}
+
 pub struct App {
     /// The left-hand explorer pane.
     pub left: FileExplorer,
@@ -543,6 +582,8 @@ pub struct App {
     pub status_msg: String,
     /// Optional floating notification that auto-expires.
     pub snackbar: Option<Snackbar>,
+    /// Progress of an ongoing copy/move operation, if any.
+    pub copy_progress: Option<CopyProgress>,
     /// Whether cd-on-exit is enabled (dismiss prints cwd to stdout).
     pub cd_on_exit: bool,
     /// Which editor to open when the user presses `e` on a file.
@@ -584,6 +625,7 @@ impl App {
             selected: None,
             status_msg: String::new(),
             snackbar: None,
+            copy_progress: None,
             cd_on_exit: opts.cd_on_exit,
             editor: opts.editor,
             open_with_editor: None,
@@ -878,19 +920,40 @@ impl App {
     pub fn do_paste_all(&mut self, srcs: &[PathBuf], dst_dir: &Path, is_cut: bool) {
         let mut errors: Vec<String> = Vec::new();
         let mut succeeded: usize = 0;
+        let total = srcs.len();
+        let verb_label = if is_cut { "Moving" } else { "Copying" };
+
+        // Initialise progress — visible immediately on the next render.
+        self.copy_progress = Some(CopyProgress::new(
+            format!("{verb_label} {total} item(s)…"),
+            total,
+        ));
 
         for src in srcs {
             let file_name = match src.file_name() {
                 Some(n) => n,
                 None => {
                     errors.push(format!("skipped (no filename): {}", src.display()));
+                    if let Some(p) = &mut self.copy_progress {
+                        p.done += 1;
+                    }
                     continue;
                 }
             };
+
+            // Update the "currently processing" label before the (potentially
+            // slow) copy so the UI reflects what is happening right now.
+            if let Some(p) = &mut self.copy_progress {
+                p.current_item = file_name.to_string_lossy().into_owned();
+            }
+
             let dst = dst_dir.join(file_name);
 
             // Skip same-dir cut silently.
             if is_cut && src.parent() == Some(dst_dir) {
+                if let Some(p) = &mut self.copy_progress {
+                    p.done += 1;
+                }
                 continue;
             }
 
@@ -918,7 +981,14 @@ impl App {
                     ));
                 }
             }
+
+            if let Some(p) = &mut self.copy_progress {
+                p.done += 1;
+            }
         }
+
+        // Clear progress now that the operation has finished.
+        self.copy_progress = None;
 
         if is_cut && errors.is_empty() {
             self.clipboard = None;

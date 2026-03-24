@@ -14,13 +14,15 @@
 use crate::{render_themed, Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
-use crate::app::{App, Modal, Pane, Snackbar};
+use crate::app::{App, CopyProgress, Modal, Pane, Snackbar};
+#[cfg(feature = "full")]
+use tui_slider::{style::SliderStyle, Slider, SliderOrientation, SliderState};
 
 // ── Top-level draw ────────────────────────────────────────────────────────────
 
@@ -134,6 +136,11 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         render_modal(frame, full, modal, &theme);
     }
 
+    // ── Copy progress overlay ─────────────────────────────────────────────────
+    if let Some(progress) = &app.copy_progress {
+        render_copy_progress(frame, full, progress, &theme);
+    }
+
     // ── Snackbar overlay ──────────────────────────────────────────────────────
     // Expire stale snackbars first, then render if one is still active.
     if app.snackbar.as_ref().is_some_and(|s| s.is_expired()) {
@@ -196,6 +203,87 @@ pub fn render_snackbar(frame: &mut Frame, area: Rect, snackbar: &Snackbar, theme
             .border_style(Style::default().fg(border_color)),
     );
     frame.render_widget(paragraph, snackbar_area);
+}
+
+// ── Copy progress overlay ─────────────────────────────────────────────────────
+
+/// Render a centred floating progress panel while a copy/move is in progress.
+///
+/// Shows:
+/// - A titled border with the operation label (e.g. "Copying 3 item(s)…")
+/// - A `tui-slider` progress bar driven by `progress.fraction()`
+/// - The name of the file currently being processed
+pub fn render_copy_progress(frame: &mut Frame, area: Rect, progress: &CopyProgress, theme: &Theme) {
+    let width = (area.width / 2).max(50).min(area.width.saturating_sub(4));
+    let height = 7u16;
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let popup_area = Rect::new(x, y, width, height);
+
+    frame.render_widget(Clear, popup_area);
+
+    let outer = Block::default()
+        .title(Span::styled(
+            format!(" ⟳  {} ", progress.label),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.accent));
+    frame.render_widget(outer, popup_area);
+
+    // Inner layout: progress bar (3 rows) + current-item label (1 row).
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Length(1)])
+        .margin(1)
+        .split(popup_area);
+
+    // ── Slider progress bar ───────────────────────────────────────────────────
+    #[cfg(feature = "full")]
+    {
+        let pct = (progress.fraction() * 100.0) as f64;
+        let state = SliderState::new(pct, 0.0, 100.0);
+        let style = SliderStyle::horizontal_thick();
+        let slider = Slider::from_state(&state)
+            .orientation(SliderOrientation::Horizontal)
+            .filled_symbol(style.filled_symbol)
+            .empty_symbol(style.empty_symbol)
+            .handle_symbol(style.handle_symbol)
+            .filled_color(theme.success)
+            .empty_color(theme.dim)
+            .handle_color(theme.accent)
+            .show_handle(true)
+            .show_value(true);
+        frame.render_widget(slider, inner[0]);
+    }
+    #[cfg(not(feature = "full"))]
+    {
+        // Fallback: plain ASCII bar when tui-slider is not available.
+        let pct = progress.fraction();
+        let bar_width = inner[0].width.saturating_sub(2) as usize;
+        let filled = (bar_width as f64 * pct).round() as usize;
+        let empty = bar_width.saturating_sub(filled);
+        let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
+        let para = Paragraph::new(Span::styled(bar, Style::default().fg(theme.success)));
+        frame.render_widget(para, inner[0]);
+    }
+
+    // ── Current item label ────────────────────────────────────────────────────
+    let done_label = format!(
+        " {}/{} — {}",
+        progress.done,
+        progress.total,
+        if progress.current_item.is_empty() {
+            "…".to_string()
+        } else {
+            progress.current_item.clone()
+        }
+    );
+    let item_para = Paragraph::new(Span::styled(done_label, Style::default().fg(theme.dim)));
+    frame.render_widget(item_para, inner[1]);
 }
 
 // ── Theme panel ───────────────────────────────────────────────────────────────

@@ -1475,6 +1475,18 @@ dependencies = [
  "libc",
  "ratatui",
  "tempfile",
+ "tui-slider",
+]
+
+[[package]]
+name = "tui-slider"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f76c70800086b617c58a229855b8188c4a3782116fd31d963e41a42f0c7d0209"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "unicode-width",
 ]
 
 [[package]]
