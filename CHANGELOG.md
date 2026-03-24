@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## [0.8.6] - 2026-03-24
 
+### Miscellaneous
+- Bump version to 0.8.6
+
 ### Refactor
 - Remove 'full' feature — library always exposes complete API
 
