@@ -855,14 +855,18 @@ impl App {
                 }
                 self.left.reload();
                 self.right.reload();
-                self.status_msg = format!(
+                let msg = format!(
                     "{} '{}'",
                     if is_cut { "Moved" } else { "Pasted" },
                     dst.file_name().unwrap_or_default().to_string_lossy()
                 );
+                self.status_msg = msg.clone();
+                self.notify(msg);
             }
             Err(e) => {
-                self.status_msg = format!("Error: {e}");
+                let msg = format!("Paste failed: {e}");
+                self.status_msg = format!("Error: {msg}");
+                self.notify_error(msg);
             }
         }
     }
@@ -925,14 +929,18 @@ impl App {
 
         if errors.is_empty() {
             let verb = if is_cut { "Moved" } else { "Pasted" };
-            self.status_msg = format!("{verb} {succeeded} item(s).");
+            let msg = format!("{verb} {succeeded} item(s).");
+            self.status_msg = msg.clone();
+            self.notify(msg);
         } else {
-            self.status_msg = format!(
-                "{} {succeeded}, {} error(s): {}",
-                if is_cut { "Moved" } else { "Pasted" },
+            let verb = if is_cut { "Moved" } else { "Pasted" };
+            let msg = format!(
+                "{verb} {succeeded}, {} error(s): {}",
                 errors.len(),
                 errors.join("; ")
             );
+            self.status_msg = format!("Error: {msg}");
+            self.notify_error(msg);
         }
     }
 
@@ -2352,6 +2360,162 @@ mod tests {
         let clip = app.clipboard.expect("clipboard should be set");
         assert_eq!(clip.paths.len(), 1, "should fall back to cursor entry");
         assert!(clip.paths[0].ends_with("only.txt"));
+    }
+
+    #[test]
+    fn paste_success_sets_snackbar_notification() {
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("hello.txt"), b"world").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+        app.yank(ClipOp::Copy);
+        app.active = Pane::Right;
+        app.paste();
+
+        assert!(
+            app.snackbar.is_some(),
+            "paste success should set a snackbar notification"
+        );
+        let sb = app.snackbar.as_ref().unwrap();
+        assert!(
+            !sb.is_error,
+            "success paste snackbar should not be an error"
+        );
+        assert!(
+            sb.message.contains("Pasted") || sb.message.contains("Moved"),
+            "snackbar message should mention paste result, got: {}",
+            sb.message
+        );
+    }
+
+    #[test]
+    fn paste_error_sets_error_snackbar_notification() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        // Clipboard with a non-existent source path → copy will fail.
+        app.clipboard = Some(ClipboardItem {
+            paths: vec![dir.path().join("does_not_exist.txt")],
+            op: ClipOp::Copy,
+        });
+        app.paste();
+
+        assert!(
+            app.snackbar.is_some(),
+            "paste failure should set a snackbar notification"
+        );
+        let sb = app.snackbar.as_ref().unwrap();
+        assert!(
+            sb.is_error,
+            "error paste snackbar should be flagged as error"
+        );
+    }
+
+    #[test]
+    fn paste_error_status_starts_with_error_prefix() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.clipboard = Some(ClipboardItem {
+            paths: vec![dir.path().join("ghost.txt")],
+            op: ClipOp::Copy,
+        });
+        app.paste();
+
+        assert!(
+            app.status_msg.starts_with("Error"),
+            "error status should start with 'Error' so it persists on navigation, got: {}",
+            app.status_msg
+        );
+    }
+
+    #[test]
+    fn paste_multi_success_sets_snackbar() {
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(src_dir.path().join("b.txt"), b"b").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+        app.left.toggle_mark();
+        app.left.toggle_mark();
+        app.yank(ClipOp::Copy);
+        app.active = Pane::Right;
+        app.paste();
+
+        assert!(
+            app.snackbar.is_some(),
+            "multi-file paste should set a snackbar"
+        );
+        let sb = app.snackbar.as_ref().unwrap();
+        assert!(
+            !sb.is_error,
+            "successful paste snackbar should not be error"
+        );
+        assert!(
+            sb.message.contains("2"),
+            "snackbar should mention item count, got: {}",
+            sb.message
+        );
+    }
+
+    #[test]
+    fn copy_dir_skips_symlinks_without_failing() {
+        use std::os::unix::fs::symlink;
+
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+
+        // Create a real file and a dangling symlink inside the source dir.
+        fs::write(src_dir.path().join("real.txt"), b"content").expect("write real");
+        symlink("/nonexistent/path", src_dir.path().join("broken_link")).expect("create symlink");
+
+        // copy_dir_all should succeed, skipping the symlink.
+        let result = crate::fs::copy_dir_all(src_dir.path(), dst_dir.path());
+        assert!(
+            result.is_ok(),
+            "copy_dir_all should not fail on symlinks, got: {:?}",
+            result
+        );
+
+        // The real file must be copied.
+        assert!(
+            dst_dir.path().join("real.txt").exists(),
+            "real.txt should be copied"
+        );
+        // The symlink should be silently skipped.
+        assert!(
+            !dst_dir.path().join("broken_link").exists(),
+            "broken symlink should be skipped, not copied"
+        );
+    }
+
+    #[test]
+    fn copy_dir_skips_valid_symlink_to_file() {
+        use std::os::unix::fs::symlink;
+
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        let target = src_dir.path().join("target.txt");
+
+        fs::write(&target, b"target content").expect("write target");
+        fs::write(src_dir.path().join("normal.txt"), b"normal").expect("write normal");
+        symlink(&target, src_dir.path().join("link_to_target")).expect("create symlink");
+
+        let result = crate::fs::copy_dir_all(src_dir.path(), dst_dir.path());
+        assert!(result.is_ok(), "should succeed skipping symlinks");
+
+        // Normal file is copied.
+        assert!(dst_dir.path().join("normal.txt").exists());
+        // Symlink is skipped.
+        assert!(!dst_dir.path().join("link_to_target").exists());
     }
 
     #[test]

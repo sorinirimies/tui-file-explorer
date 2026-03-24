@@ -38,6 +38,11 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
     for entry in fs::read_dir(src)?.flatten() {
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
+        // Skip symlinks — they would require platform-specific handling and
+        // are common in build artefact directories (e.g. Android `build/`).
+        if src_path.is_symlink() {
+            continue;
+        }
         if src_path.is_dir() {
             copy_dir_all(&src_path, &dst_path)?;
         } else {
