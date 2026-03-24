@@ -709,20 +709,54 @@ impl App {
 
     /// Yank (copy or cut) into the clipboard.
     ///
-    /// When the active pane has space-marked entries, all of them are yanked
-    /// and the marks are cleared.  Otherwise the single highlighted entry is
-    /// used.
+    /// Marks are checked in priority order:
+    /// 1. Active pane marks — the normal single-pane workflow.
+    /// 2. Inactive pane marks — handles the common dual-pane workflow where
+    ///    the user marks files in the source pane, tabs to the destination
+    ///    pane, and then presses `y`.
+    /// 3. Active pane cursor entry — fallback when nothing is marked.
+    ///
+    /// Marks on whichever pane was used are cleared after the yank.
     pub fn yank(&mut self, op: ClipOp) {
-        let marked: Vec<PathBuf> = self.active_pane().marked.iter().cloned().collect();
+        let active_marks: Vec<PathBuf> = self.active_pane().marked.iter().cloned().collect();
+        let inactive_marks: Vec<PathBuf> = match self.active {
+            Pane::Left => self.right.marked.iter().cloned().collect(),
+            Pane::Right => self.left.marked.iter().cloned().collect(),
+        };
 
-        let paths: Vec<PathBuf> = if !marked.is_empty() {
-            let mut sorted = marked;
-            sorted.sort();
-            sorted
-        } else if let Some(entry) = self.active_pane().current_entry() {
-            vec![entry.path.clone()]
+        // Determine which set of paths to use and which pane to clear marks from.
+        enum Source {
+            ActiveMarks,
+            InactiveMarks,
+            Cursor,
+        }
+
+        let source = if !active_marks.is_empty() {
+            Source::ActiveMarks
+        } else if !inactive_marks.is_empty() {
+            Source::InactiveMarks
         } else {
-            return;
+            Source::Cursor
+        };
+
+        let paths: Vec<PathBuf> = match source {
+            Source::ActiveMarks => {
+                let mut sorted = active_marks;
+                sorted.sort();
+                sorted
+            }
+            Source::InactiveMarks => {
+                let mut sorted = inactive_marks;
+                sorted.sort();
+                sorted
+            }
+            Source::Cursor => {
+                if let Some(entry) = self.active_pane().current_entry() {
+                    vec![entry.path.clone()]
+                } else {
+                    return;
+                }
+            }
         };
 
         let count = paths.len();
@@ -742,8 +776,16 @@ impl App {
         };
 
         self.clipboard = Some(ClipboardItem { paths, op });
-        // Clear marks on both panes after yanking.
-        self.active_pane_mut().clear_marks();
+
+        // Clear marks from whichever pane was the source.
+        match source {
+            Source::ActiveMarks | Source::Cursor => self.active_pane_mut().clear_marks(),
+            Source::InactiveMarks => match self.active {
+                Pane::Left => self.right.clear_marks(),
+                Pane::Right => self.left.clear_marks(),
+            },
+        }
+
         self.status_msg = format!("{verb} {label} — press p to {hint}");
     }
 
@@ -2137,6 +2179,179 @@ mod tests {
             "status should mention item count, got: {}",
             app.status_msg
         );
+    }
+
+    #[test]
+    fn yank_uses_inactive_pane_marks_when_active_pane_has_none() {
+        // Typical dual-pane workflow: mark files in LEFT, tab to RIGHT, press y.
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(src_dir.path().join("b.txt"), b"b").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+
+        // Mark both files in the LEFT pane.
+        app.left.toggle_mark(); // mark a.txt
+        app.left.toggle_mark(); // mark b.txt
+
+        // Tab to RIGHT pane (no marks there).
+        app.active = Pane::Right;
+
+        // Press y — should pick up left pane's marks even though active is right.
+        app.yank(ClipOp::Copy);
+
+        let clip = app.clipboard.expect("clipboard should be set");
+        assert_eq!(
+            clip.paths.len(),
+            2,
+            "both marked files should be in clipboard"
+        );
+        assert_eq!(clip.op, ClipOp::Copy);
+    }
+
+    #[test]
+    fn yank_inactive_pane_marks_clears_inactive_pane_marks() {
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("a.txt"), b"a").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+
+        // Mark in LEFT, switch to RIGHT, yank.
+        app.left.toggle_mark();
+        app.active = Pane::Right;
+        app.yank(ClipOp::Copy);
+
+        assert!(
+            app.left.marked.is_empty(),
+            "marks on the inactive (source) pane should be cleared after yank"
+        );
+        assert!(
+            app.right.marked.is_empty(),
+            "right pane should have no marks"
+        );
+    }
+
+    #[test]
+    fn yank_inactive_pane_marks_does_not_clear_active_pane_marks() {
+        // Active pane has NO marks; inactive pane has marks.
+        // After yank, only the inactive pane's marks should be cleared.
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("x.txt"), b"x").expect("write");
+        fs::write(dst_dir.path().join("y.txt"), b"y").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+
+        // Mark in LEFT, switch to RIGHT (no marks in right).
+        app.left.toggle_mark(); // mark x.txt
+        app.active = Pane::Right;
+
+        app.yank(ClipOp::Copy);
+
+        // LEFT marks cleared because they were the source.
+        assert!(app.left.marked.is_empty(), "left marks should be cleared");
+        // RIGHT marks untouched (were already empty, and should not be affected).
+        assert!(
+            app.right.marked.is_empty(),
+            "right marks should remain empty"
+        );
+    }
+
+    #[test]
+    fn yank_active_pane_marks_take_priority_over_inactive_pane_marks() {
+        // Both panes have marks — active pane's marks take priority.
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("left.txt"), b"l").expect("write");
+        fs::write(dst_dir.path().join("right.txt"), b"r").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+
+        // Mark in LEFT (active).
+        app.left.toggle_mark(); // mark left.txt
+
+        // Also mark in RIGHT (inactive).
+        app.right.toggle_mark(); // mark right.txt
+
+        // Active pane is LEFT — its marks should win.
+        app.yank(ClipOp::Copy);
+
+        let clip = app.clipboard.expect("clipboard should be set");
+        assert_eq!(
+            clip.paths.len(),
+            1,
+            "only active pane's mark should be used"
+        );
+        assert!(
+            clip.paths[0].ends_with("left.txt"),
+            "should have yanked the active (left) pane's marked file"
+        );
+    }
+
+    #[test]
+    fn yank_inactive_marks_from_right_pane_when_active_is_left_with_no_marks() {
+        // Reverse of the main scenario: marks in RIGHT, active pane is LEFT.
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(dst_dir.path().join("c.txt"), b"c").expect("write");
+        fs::write(dst_dir.path().join("d.txt"), b"d").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+
+        // Mark in RIGHT pane.
+        app.right.toggle_mark(); // mark c.txt
+        app.right.toggle_mark(); // mark d.txt
+
+        // Active pane is LEFT (no marks).
+        assert_eq!(app.active, Pane::Left);
+
+        app.yank(ClipOp::Copy);
+
+        let clip = app.clipboard.expect("clipboard should be set");
+        assert_eq!(clip.paths.len(), 2, "right pane marks should be used");
+        assert!(
+            app.right.marked.is_empty(),
+            "right marks cleared after yank"
+        );
+    }
+
+    #[test]
+    fn yank_falls_back_to_cursor_when_no_marks_in_either_pane() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("only.txt"), b"x").expect("write");
+
+        let mut app = make_app(dir.path().to_path_buf());
+        // No marks anywhere.
+        assert!(app.left.marked.is_empty());
+        assert!(app.right.marked.is_empty());
+
+        app.yank(ClipOp::Copy);
+
+        let clip = app.clipboard.expect("clipboard should be set");
+        assert_eq!(clip.paths.len(), 1, "should fall back to cursor entry");
+        assert!(clip.paths[0].ends_with("only.txt"));
     }
 
     #[test]
