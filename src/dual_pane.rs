@@ -205,6 +205,15 @@ impl DualPane {
     /// assert_eq!(dual.handle_key(key), DualPaneOutcome::Pending);
     /// ```
     pub fn handle_key(&mut self, key: KeyEvent) -> DualPaneOutcome {
+        // Only react to key-press events.  On Windows (and terminals that
+        // negotiate the kitty keyboard protocol) crossterm delivers both
+        // Press *and* Release events for every physical key-press.  Without
+        // this guard the handler runs twice per key — which double-toggles
+        // marks, double-navigates, etc.
+        if key.kind != crossterm::event::KeyEventKind::Press {
+            return DualPaneOutcome::Pending;
+        }
+
         // ── DualPane-level keys (handled before the active pane sees them) ────
         match key.code {
             // Switch active pane.

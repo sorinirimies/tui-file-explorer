@@ -263,6 +263,15 @@ impl FileExplorer {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
+        // Only react to key-press events.  On Windows (and terminals that
+        // negotiate the kitty keyboard protocol) crossterm delivers both
+        // Press *and* Release events for every physical key-press.  Without
+        // this guard the handler runs twice per key — which double-toggles
+        // marks, double-navigates, etc.
+        if key.kind != crossterm::event::KeyEventKind::Press {
+            return ExplorerOutcome::Pending;
+        }
+
         // ── Rename-mode interception ──────────────────────────────────────────
         // When rename mode is active every printable character feeds the new
         // name.  Enter confirms the rename; Esc cancels.

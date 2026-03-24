@@ -1115,6 +1115,17 @@ impl App {
     /// }
     /// ```
     pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> io::Result<bool> {
+        // Only react to key-press events.  On Windows (and terminals that
+        // negotiate the kitty keyboard protocol) crossterm delivers both
+        // Press *and* Release events for every physical key-press.  Without
+        // this guard the handler runs twice per key — once on press and once
+        // on release — which silently clobbers multi-item clipboard state
+        // (the release re-runs yank after marks have been cleared, falling
+        // back to the single cursor entry).
+        if key.kind != crossterm::event::KeyEventKind::Press {
+            return Ok(false);
+        }
+
         // Always handle Ctrl-C.
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return Ok(true);
@@ -2594,6 +2605,136 @@ mod tests {
         let mut app = make_app(dir.path().to_path_buf());
         app.yank(ClipOp::Copy);
         assert!(app.clipboard.is_none());
+    }
+
+    // ── Key-release regression tests ──────────────────────────────────────────
+    //
+    // On Windows (and terminals negotiating the kitty keyboard protocol)
+    // crossterm delivers both Press *and* Release events for every physical
+    // key-press.  Before the KeyEventKind::Press guard was added, the
+    // Release event would re-run yank after marks had already been cleared,
+    // silently replacing the multi-item clipboard with just the cursor entry.
+
+    #[test]
+    fn key_release_after_yank_does_not_clobber_clipboard() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(dir.path().join("b.txt"), b"b").expect("write");
+        fs::write(dir.path().join("c.txt"), b"c").expect("write");
+        let mut app = make_app(dir.path().to_path_buf());
+
+        // Mark all three files.
+        app.left.toggle_mark();
+        app.left.toggle_mark();
+        app.left.toggle_mark();
+        assert_eq!(app.left.marked.len(), 3);
+
+        // Simulate key PRESS for 'y' — should yank all 3 marked items.
+        let press = KeyEvent {
+            code: KeyCode::Char('y'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        app.handle_key(press).unwrap();
+
+        let clip = app
+            .clipboard
+            .as_ref()
+            .expect("clipboard should be set after press");
+        assert_eq!(clip.paths.len(), 3, "press should yank all 3 marked items");
+
+        // Simulate key RELEASE for 'y' — must NOT overwrite the clipboard.
+        let release = KeyEvent {
+            code: KeyCode::Char('y'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Release,
+            state: KeyEventState::empty(),
+        };
+        app.handle_key(release).unwrap();
+
+        let clip = app
+            .clipboard
+            .as_ref()
+            .expect("clipboard should still be set after release");
+        assert_eq!(
+            clip.paths.len(),
+            3,
+            "release event must not clobber the multi-item clipboard"
+        );
+    }
+
+    #[test]
+    fn key_repeat_after_yank_does_not_clobber_clipboard() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(dir.path().join("b.txt"), b"b").expect("write");
+        let mut app = make_app(dir.path().to_path_buf());
+
+        app.left.toggle_mark();
+        app.left.toggle_mark();
+
+        // Press 'y' — yank 2 items.
+        let press = KeyEvent {
+            code: KeyCode::Char('y'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        app.handle_key(press).unwrap();
+        assert_eq!(app.clipboard.as_ref().unwrap().paths.len(), 2);
+
+        // Repeat event — must be ignored.
+        let repeat = KeyEvent {
+            code: KeyCode::Char('y'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Repeat,
+            state: KeyEventState::empty(),
+        };
+        app.handle_key(repeat).unwrap();
+        assert_eq!(
+            app.clipboard.as_ref().unwrap().paths.len(),
+            2,
+            "repeat event must not clobber the multi-item clipboard"
+        );
+    }
+
+    #[test]
+    fn space_release_does_not_double_toggle_mark() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(dir.path().join("b.txt"), b"b").expect("write");
+        let mut app = make_app(dir.path().to_path_buf());
+
+        // Press Space — should mark first entry and advance cursor.
+        let press = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        };
+        app.handle_key(press).unwrap();
+        assert_eq!(app.left.marked.len(), 1, "press should mark one entry");
+
+        // Release Space — must NOT toggle (which would mark a second entry).
+        let release = KeyEvent {
+            code: KeyCode::Char(' '),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Release,
+            state: KeyEventState::empty(),
+        };
+        app.handle_key(release).unwrap();
+        assert_eq!(
+            app.left.marked.len(),
+            1,
+            "release event must not toggle an additional mark"
+        );
     }
 
     // ── paste ─────────────────────────────────────────────────────────────────
