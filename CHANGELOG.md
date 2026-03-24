@@ -1,6 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.8.4] - 2026-03-24
+
+### Bug Fixes
+- Yank checks both panes for marks — handles dual-pane mark-then-tab-then-y workflow
+
+## [0.8.3] - 2026-03-24
+
+### Bug Fixes
+- Multi-selection yank — y/x now copies/cuts all marked entries
+
+### Miscellaneous
+- Bump version to 0.8.3
+
 ## [0.8.2] - 2026-03-23
 
 ### Miscellaneous
