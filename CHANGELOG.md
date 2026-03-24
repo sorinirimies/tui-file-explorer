@@ -1,10 +1,27 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.8.6] - 2026-03-24
+
+### Refactor
+- Remove 'full' feature — library always exposes complete API
+
+## [0.8.5] - 2026-03-24
+
+### Bug Fixes
+- Paste feedback and symlink handling
+- Clippy — remove unused Color import and redundant f64 cast
+
+### Features
+- Copy/move progress overlay using tui-slider
+
 ## [0.8.4] - 2026-03-24
 
 ### Bug Fixes
 - Yank checks both panes for marks — handles dual-pane mark-then-tab-then-y workflow
+
+### Miscellaneous
+- Bump version to 0.8.4
 
 ## [0.8.3] - 2026-03-24
 
