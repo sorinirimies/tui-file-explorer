@@ -14,7 +14,7 @@
 use crate::{render_themed, Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
@@ -244,7 +244,7 @@ pub fn render_copy_progress(frame: &mut Frame, area: Rect, progress: &CopyProgre
     // ── Slider progress bar ───────────────────────────────────────────────────
     #[cfg(feature = "full")]
     {
-        let pct = (progress.fraction() * 100.0) as f64;
+        let pct = progress.fraction() * 100.0;
         let state = SliderState::new(pct, 0.0, 100.0);
         let style = SliderStyle::horizontal_thick();
         let slider = Slider::from_state(&state)
