@@ -406,11 +406,13 @@ pub enum ClipOp {
 
 // ── ClipboardItem ─────────────────────────────────────────────────────────────
 
-/// An entry that has been yanked (copied or cut) and is waiting to be pasted.
+/// An entry (or entries) that have been yanked (copied or cut) and are waiting
+/// to be pasted.  When the user space-marks multiple files before pressing
+/// `y`/`x`, all marked paths are stored here.
 #[derive(Debug, Clone)]
 pub struct ClipboardItem {
-    /// Absolute path of the source file or directory.
-    pub path: PathBuf,
+    /// One or more source paths waiting to be pasted.
+    pub paths: Vec<PathBuf>,
     /// Whether this is a copy or a cut operation.
     pub op: ClipOp,
 }
@@ -430,6 +432,16 @@ impl ClipboardItem {
             ClipOp::Copy => "Copy",
             ClipOp::Cut => "Cut ",
         }
+    }
+
+    /// Number of paths in the clipboard.
+    pub fn count(&self) -> usize {
+        self.paths.len()
+    }
+
+    /// The first (or only) path — convenience accessor for single-item clipboard.
+    pub fn first_path(&self) -> Option<&PathBuf> {
+        self.paths.first()
     }
 }
 
@@ -695,21 +707,44 @@ impl App {
 
     // ── File operations ───────────────────────────────────────────────────────
 
-    /// Yank (copy or cut) the currently highlighted entry into the clipboard.
+    /// Yank (copy or cut) into the clipboard.
+    ///
+    /// When the active pane has space-marked entries, all of them are yanked
+    /// and the marks are cleared.  Otherwise the single highlighted entry is
+    /// used.
     pub fn yank(&mut self, op: ClipOp) {
-        if let Some(entry) = self.active_pane().current_entry() {
-            let label = entry.name.clone();
-            self.clipboard = Some(ClipboardItem {
-                path: entry.path.clone(),
-                op,
-            });
-            let (verb, hint) = if op == ClipOp::Copy {
-                ("Copied", "paste a copy")
-            } else {
-                ("Cut", "move it")
-            };
-            self.status_msg = format!("{verb} '{label}' — press p in other pane to {hint}");
-        }
+        let marked: Vec<PathBuf> = self.active_pane().marked.iter().cloned().collect();
+
+        let paths: Vec<PathBuf> = if !marked.is_empty() {
+            let mut sorted = marked;
+            sorted.sort();
+            sorted
+        } else if let Some(entry) = self.active_pane().current_entry() {
+            vec![entry.path.clone()]
+        } else {
+            return;
+        };
+
+        let count = paths.len();
+        let (verb, hint) = if op == ClipOp::Copy {
+            ("Copied", "paste a copy")
+        } else {
+            ("Cut", "move")
+        };
+
+        let label = if count == 1 {
+            format!(
+                "'{}'",
+                paths[0].file_name().unwrap_or_default().to_string_lossy()
+            )
+        } else {
+            format!("{count} items")
+        };
+
+        self.clipboard = Some(ClipboardItem { paths, op });
+        // Clear marks on both panes after yanking.
+        self.active_pane_mut().clear_marks();
+        self.status_msg = format!("{verb} {label} — press p to {hint}");
     }
 
     /// Paste the clipboard item into the active pane's current directory.
@@ -723,36 +758,42 @@ impl App {
         };
 
         let dst_dir = self.active_pane().current_dir.clone();
-        let file_name = match clip.path.file_name() {
-            Some(n) => n.to_owned(),
-            None => {
-                self.status_msg = "Cannot paste: clipboard path has no filename.".into();
+
+        // For a single-item clipboard check for same-dir cut and overwrite modal.
+        if clip.paths.len() == 1 {
+            let src = &clip.paths[0];
+            let file_name = match src.file_name() {
+                Some(n) => n.to_owned(),
+                None => {
+                    self.status_msg = "Cannot paste: clipboard path has no filename.".into();
+                    return;
+                }
+            };
+            let dst = dst_dir.join(&file_name);
+
+            if clip.op == ClipOp::Cut && src.parent() == Some(&dst_dir) {
+                self.status_msg = "Source and destination are the same — skipped.".into();
                 return;
             }
-        };
-        let dst = dst_dir.join(&file_name);
 
-        // Don't paste into the same location for Cut.
-        if clip.op == ClipOp::Cut && clip.path.parent() == Some(&dst_dir) {
-            self.status_msg = "Source and destination are the same — skipped.".into();
-            return;
+            if dst.exists() {
+                self.modal = Some(Modal::Overwrite {
+                    src: src.clone(),
+                    dst,
+                    is_cut: clip.op == ClipOp::Cut,
+                });
+                return;
+            }
         }
 
-        if dst.exists() {
-            self.modal = Some(Modal::Overwrite {
-                src: clip.path,
-                dst,
-                is_cut: clip.op == ClipOp::Cut,
-            });
-        } else {
-            self.do_paste(&clip.path, &dst, clip.op == ClipOp::Cut);
-        }
+        // Multi-item (or single with no conflict): paste all paths.
+        self.do_paste_all(&clip.paths.clone(), &dst_dir, clip.op == ClipOp::Cut);
     }
 
-    /// Perform the actual copy/move on disk and refresh both panes.
+    /// Perform the actual copy/move for a single src→dst pair.
     ///
-    /// For a cut operation the source is removed after a successful copy and
-    /// the clipboard is cleared.
+    /// Used by the overwrite-confirmation modal path (single file only).
+    /// For multi-file paste use [`App::do_paste_all`].
     pub fn do_paste(&mut self, src: &Path, dst: &Path, is_cut: bool) {
         let result = if src.is_dir() {
             copy_dir_all(src, dst)
@@ -781,6 +822,75 @@ impl App {
             Err(e) => {
                 self.status_msg = format!("Error: {e}");
             }
+        }
+    }
+
+    /// Paste all `srcs` into `dst_dir`, performing copy or move for each.
+    ///
+    /// Errors are collected and reported in the status message alongside the
+    /// success count.  On a fully successful cut the clipboard is cleared.
+    pub fn do_paste_all(&mut self, srcs: &[PathBuf], dst_dir: &Path, is_cut: bool) {
+        let mut errors: Vec<String> = Vec::new();
+        let mut succeeded: usize = 0;
+
+        for src in srcs {
+            let file_name = match src.file_name() {
+                Some(n) => n,
+                None => {
+                    errors.push(format!("skipped (no filename): {}", src.display()));
+                    continue;
+                }
+            };
+            let dst = dst_dir.join(file_name);
+
+            // Skip same-dir cut silently.
+            if is_cut && src.parent() == Some(dst_dir) {
+                continue;
+            }
+
+            let result = if src.is_dir() {
+                copy_dir_all(src, &dst)
+            } else {
+                fs::copy(src, &dst).map(|_| ())
+            };
+
+            match result {
+                Ok(()) => {
+                    if is_cut {
+                        let _ = if src.is_dir() {
+                            fs::remove_dir_all(src)
+                        } else {
+                            fs::remove_file(src)
+                        };
+                    }
+                    succeeded += 1;
+                }
+                Err(e) => {
+                    errors.push(format!(
+                        "'{}': {e}",
+                        src.file_name().unwrap_or_default().to_string_lossy()
+                    ));
+                }
+            }
+        }
+
+        if is_cut && errors.is_empty() {
+            self.clipboard = None;
+        }
+
+        self.left.reload();
+        self.right.reload();
+
+        if errors.is_empty() {
+            let verb = if is_cut { "Moved" } else { "Pasted" };
+            self.status_msg = format!("{verb} {succeeded} item(s).");
+        } else {
+            self.status_msg = format!(
+                "{} {succeeded}, {} error(s): {}",
+                if is_cut { "Moved" } else { "Pasted" },
+                errors.len(),
+                errors.join("; ")
+            );
         }
     }
 
@@ -1440,7 +1550,7 @@ mod tests {
     #[test]
     fn clipboard_item_copy_icon_and_label() {
         let item = ClipboardItem {
-            path: PathBuf::from("/tmp/foo"),
+            paths: vec![PathBuf::from("/tmp/foo")],
             op: ClipOp::Copy,
         };
         assert_eq!(item.icon(), "\u{1F4CB}");
@@ -1450,11 +1560,29 @@ mod tests {
     #[test]
     fn clipboard_item_cut_icon_and_label() {
         let item = ClipboardItem {
-            path: PathBuf::from("/tmp/foo"),
+            paths: vec![PathBuf::from("/tmp/foo")],
             op: ClipOp::Cut,
         };
         assert_eq!(item.icon(), "\u{2702} ");
         assert_eq!(item.label(), "Cut ");
+    }
+
+    #[test]
+    fn clipboard_item_count_single() {
+        let item = ClipboardItem {
+            paths: vec![PathBuf::from("/tmp/foo")],
+            op: ClipOp::Copy,
+        };
+        assert_eq!(item.count(), 1);
+    }
+
+    #[test]
+    fn clipboard_item_count_multi() {
+        let item = ClipboardItem {
+            paths: vec![PathBuf::from("/tmp/a"), PathBuf::from("/tmp/b")],
+            op: ClipOp::Copy,
+        };
+        assert_eq!(item.count(), 2);
     }
 
     // ── App::new ──────────────────────────────────────────────────────────────
@@ -1906,6 +2034,7 @@ mod tests {
         app.yank(ClipOp::Copy);
         let clip = app.clipboard.expect("clipboard should be set");
         assert_eq!(clip.op, ClipOp::Copy);
+        assert_eq!(clip.paths.len(), 1);
     }
 
     #[test]
@@ -1916,6 +2045,7 @@ mod tests {
         app.yank(ClipOp::Cut);
         let clip = app.clipboard.expect("clipboard should be set");
         assert_eq!(clip.op, ClipOp::Cut);
+        assert_eq!(clip.paths.len(), 1);
     }
 
     #[test]
@@ -1964,6 +2094,52 @@ mod tests {
     }
 
     #[test]
+    fn yank_with_marks_yanks_all_marked_files() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(dir.path().join("b.txt"), b"b").expect("write");
+        fs::write(dir.path().join("c.txt"), b"c").expect("write");
+        let mut app = make_app(dir.path().to_path_buf());
+        // Mark a.txt and b.txt (cursor starts at index 0).
+        app.left.toggle_mark();
+        app.left.toggle_mark(); // advances cursor — mark b.txt
+        app.yank(ClipOp::Copy);
+        let clip = app.clipboard.expect("clipboard should be set");
+        assert_eq!(clip.paths.len(), 2, "should have 2 paths in clipboard");
+        assert_eq!(clip.op, ClipOp::Copy);
+    }
+
+    #[test]
+    fn yank_with_marks_clears_marks_after_yank() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(dir.path().join("b.txt"), b"b").expect("write");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.left.toggle_mark();
+        app.yank(ClipOp::Copy);
+        assert!(
+            app.left.marked.is_empty(),
+            "marks should be cleared after yank"
+        );
+    }
+
+    #[test]
+    fn yank_with_marks_status_mentions_count() {
+        let dir = tempdir().expect("tempdir");
+        fs::write(dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(dir.path().join("b.txt"), b"b").expect("write");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.left.toggle_mark();
+        app.left.toggle_mark();
+        app.yank(ClipOp::Copy);
+        assert!(
+            app.status_msg.contains("2 items"),
+            "status should mention item count, got: {}",
+            app.status_msg
+        );
+    }
+
+    #[test]
     fn yank_on_empty_dir_does_not_set_clipboard() {
         let dir = tempdir().expect("tempdir");
         let mut app = make_app(dir.path().to_path_buf());
@@ -2003,6 +2179,79 @@ mod tests {
         assert!(dst_dir.path().join("hello.txt").exists());
         // Source file must still exist after a copy.
         assert!(src_dir.path().join("hello.txt").exists());
+    }
+
+    #[test]
+    fn paste_multi_copy_creates_all_files_in_destination() {
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(src_dir.path().join("b.txt"), b"b").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+
+        // Mark both files and yank.
+        app.left.toggle_mark();
+        app.left.toggle_mark();
+        app.yank(ClipOp::Copy);
+
+        app.active = Pane::Right;
+        app.paste();
+
+        assert!(
+            dst_dir.path().join("a.txt").exists(),
+            "a.txt should be copied"
+        );
+        assert!(
+            dst_dir.path().join("b.txt").exists(),
+            "b.txt should be copied"
+        );
+        // Sources must survive a copy.
+        assert!(src_dir.path().join("a.txt").exists());
+        assert!(src_dir.path().join("b.txt").exists());
+    }
+
+    #[test]
+    fn paste_multi_cut_moves_all_files_and_clears_clipboard() {
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("a.txt"), b"a").expect("write");
+        fs::write(src_dir.path().join("b.txt"), b"b").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+
+        app.left.toggle_mark();
+        app.left.toggle_mark();
+        app.yank(ClipOp::Cut);
+
+        app.active = Pane::Right;
+        app.paste();
+
+        assert!(
+            dst_dir.path().join("a.txt").exists(),
+            "a.txt should be moved"
+        );
+        assert!(
+            dst_dir.path().join("b.txt").exists(),
+            "b.txt should be moved"
+        );
+        assert!(
+            !src_dir.path().join("a.txt").exists(),
+            "a.txt should be gone from src"
+        );
+        assert!(
+            !src_dir.path().join("b.txt").exists(),
+            "b.txt should be gone from src"
+        );
+        assert!(app.clipboard.is_none(), "clipboard cleared after cut-paste");
     }
 
     #[test]
@@ -2097,7 +2346,7 @@ mod tests {
         let mut app = make_app(dir.path().to_path_buf());
         // Put something in clipboard so it can be cleared.
         app.clipboard = Some(ClipboardItem {
-            path: src.clone(),
+            paths: vec![src.clone()],
             op: ClipOp::Cut,
         });
         app.do_paste(&src, &dst, true);
@@ -2245,7 +2494,7 @@ mod tests {
         let mut app = make_app(dir.path().to_path_buf());
         // A path with no filename component (e.g. "/" on Unix).
         app.clipboard = Some(ClipboardItem {
-            path: PathBuf::from("/"),
+            paths: vec![PathBuf::from("/")],
             op: ClipOp::Copy,
         });
         app.paste();

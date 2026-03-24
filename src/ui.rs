@@ -847,7 +847,15 @@ pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
 
     // ── Left: clipboard info or status message ────────────────────────────────
     if let Some(clip) = &app.clipboard {
-        let name = clip.path.file_name().unwrap_or_default().to_string_lossy();
+        let display_name = if clip.count() > 1 {
+            format!("{} items", clip.count())
+        } else {
+            clip.first_path()
+                .and_then(|p| p.file_name())
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string()
+        };
         let line = Line::from(vec![
             Span::styled(
                 format!(" {} {}: ", clip.icon(), clip.label()),
@@ -856,7 +864,7 @@ pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                name.to_string(),
+                display_name,
                 Style::default()
                     .fg(theme.accent)
                     .add_modifier(Modifier::BOLD),
