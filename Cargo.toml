@@ -1,6 +1,6 @@
 [package]
 name         = "tui-file-explorer"
-version      = "0.8.4"
+version      = "0.8.5"
 edition      = "2021"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
@@ -29,16 +29,13 @@ exclude      = [
 #   tui-file-explorer = { version = "0.1", default-features = false }
 #
 [features]
-default = ["cli", "full"]
-cli     = ["dep:clap"]
-# Exposes the complete standalone-app surface (App, Editor, Pane, ClipOp,
-# ClipboardItem, Modal, Snackbar, AppOptions, AppState, persistence helpers,
-# filesystem helpers, and all UI rendering functions) as public library API.
-# Enabled by default. Library users who only want the core widget can opt out:
+default = ["cli"]
+# The `cli` feature pulls in `clap` and enables the `tfe` binary.
+# Library users who only want the widget can opt out:
 #
 #   [dependencies]
 #   tui-file-explorer = { version = "...", default-features = false }
-full    = ["dep:tui-slider"]
+cli = ["dep:clap"]
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
@@ -46,7 +43,7 @@ full    = ["dep:tui-slider"]
 ratatui    = "0.30"
 crossterm  = "0.29"
 clap       = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
-tui-slider = { version = "0.3.2", optional = true }
+tui-slider = "0.3.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

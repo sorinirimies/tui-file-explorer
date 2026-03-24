@@ -21,7 +21,6 @@ use ratatui::{
 };
 
 use crate::app::{App, CopyProgress, Modal, Pane, Snackbar};
-#[cfg(feature = "full")]
 use tui_slider::{style::SliderStyle, Slider, SliderOrientation, SliderState};
 
 // ── Top-level draw ────────────────────────────────────────────────────────────
@@ -242,34 +241,20 @@ pub fn render_copy_progress(frame: &mut Frame, area: Rect, progress: &CopyProgre
         .split(popup_area);
 
     // ── Slider progress bar ───────────────────────────────────────────────────
-    #[cfg(feature = "full")]
-    {
-        let pct = progress.fraction() * 100.0;
-        let state = SliderState::new(pct, 0.0, 100.0);
-        let style = SliderStyle::horizontal_thick();
-        let slider = Slider::from_state(&state)
-            .orientation(SliderOrientation::Horizontal)
-            .filled_symbol(style.filled_symbol)
-            .empty_symbol(style.empty_symbol)
-            .handle_symbol(style.handle_symbol)
-            .filled_color(theme.success)
-            .empty_color(theme.dim)
-            .handle_color(theme.accent)
-            .show_handle(true)
-            .show_value(true);
-        frame.render_widget(slider, inner[0]);
-    }
-    #[cfg(not(feature = "full"))]
-    {
-        // Fallback: plain ASCII bar when tui-slider is not available.
-        let pct = progress.fraction();
-        let bar_width = inner[0].width.saturating_sub(2) as usize;
-        let filled = (bar_width as f64 * pct).round() as usize;
-        let empty = bar_width.saturating_sub(filled);
-        let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
-        let para = Paragraph::new(Span::styled(bar, Style::default().fg(theme.success)));
-        frame.render_widget(para, inner[0]);
-    }
+    let pct = progress.fraction() * 100.0;
+    let state = SliderState::new(pct, 0.0, 100.0);
+    let style = SliderStyle::horizontal_thick();
+    let slider = Slider::from_state(&state)
+        .orientation(SliderOrientation::Horizontal)
+        .filled_symbol(style.filled_symbol)
+        .empty_symbol(style.empty_symbol)
+        .handle_symbol(style.handle_symbol)
+        .filled_color(theme.success)
+        .empty_color(theme.dim)
+        .handle_color(theme.accent)
+        .show_handle(true)
+        .show_value(true);
+    frame.render_widget(slider, inner[0]);
 
     // ── Current item label ────────────────────────────────────────────────────
     let done_label = format!(
