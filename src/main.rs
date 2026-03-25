@@ -91,7 +91,11 @@ SHELL INTEGRATION (cd on exit):\n\
   NUL-delimited output:              command tfe -0 | xargs -0 wc -l"
 )]
 struct Cli {
-    /// Starting directory [default: current directory]
+    /// Starting directory or file to open [default: current directory]
+    ///
+    /// If PATH is a directory, the TUI file explorer opens there.
+    /// If PATH is a file and an editor is configured (--editor or persisted),
+    /// the file is opened directly in that editor without launching the TUI.
     #[arg(value_name = "PATH")]
     path: Option<PathBuf>,
 
@@ -237,14 +241,35 @@ fn run() -> io::Result<()> {
         .unwrap_or_else(|| "default".to_string());
     let theme_idx = resolve_theme_idx(&theme_name, &themes);
 
+    // Resolve editor early — needed before path handling so `tfe <file>` can
+    // open the file directly in the editor without launching the TUI.
+    //
+    // Priority: CLI flag > persisted value > compiled-in default.
+    let editor = if let Some(ref raw) = cli.editor {
+        Editor::from_key(raw).unwrap_or_else(|| Editor::Custom(raw.clone()))
+    } else if let Some(ref raw) = saved.editor {
+        Editor::from_key(raw).unwrap_or_default()
+    } else {
+        Editor::default()
+    };
+
     // Priority: explicit --path arg > persisted last directory > cwd.
+    //
+    // When PATH points to a file (not a directory), open it directly in the
+    // configured editor without launching the TUI.  This lets `tfe myfile.rs`
+    // behave like a quick "open in editor" shortcut.
     let start_dir = match cli.path {
         Some(ref p) => {
             let c = p.canonicalize().unwrap_or_else(|_| p.clone());
             if c.is_dir() {
                 c
+            } else if c.is_file() {
+                // File path — try to open it directly in the editor.
+                open_file_directly(&c, &editor)?;
+                // open_file_directly either exits or returns Ok(()) on success.
+                return Ok(());
             } else {
-                eprintln!("tfe: {:?} is not a directory", p);
+                eprintln!("tfe: {:?} — no such file or directory", p);
                 process::exit(2);
             }
         }
@@ -283,15 +308,6 @@ fn run() -> io::Result<()> {
         false
     } else {
         saved.cd_on_exit.unwrap_or(true)
-    };
-
-    // Resolve editor: CLI flag > persisted value > compiled-in default (Helix).
-    let editor = if let Some(ref raw) = cli.editor {
-        Editor::from_key(raw).unwrap_or_else(|| Editor::Custom(raw.clone()))
-    } else if let Some(ref raw) = saved.editor {
-        Editor::from_key(raw).unwrap_or_default()
-    } else {
-        Editor::default()
     };
 
     // Terminal setup.
@@ -554,4 +570,77 @@ fn run_loop<W: io::Write>(
         }
     }
     Ok(())
+}
+
+// ── Direct file opening ──────────────────────────────────────────────────────
+
+/// Open a file directly in the configured editor (no TUI).
+///
+/// Called when the user runs `tfe <file>` instead of `tfe <directory>`.
+/// Prints informative messages to stderr and exits with the editor's exit code.
+fn open_file_directly(path: &std::path::Path, editor: &Editor) -> io::Result<()> {
+    let binary_str = match editor.binary() {
+        Some(b) => b,
+        None => {
+            let fname = path.file_name().unwrap_or_default().to_string_lossy();
+            eprintln!("tfe: cannot open '{fname}' — no editor configured.");
+            eprintln!();
+            eprintln!("  Set an editor with one of:");
+            eprintln!("    tfe --editor nvim          # use Neovim");
+            eprintln!("    tfe --editor vim           # use Vim");
+            eprintln!("    tfe --editor helix         # use Helix");
+            eprintln!("    tfe --editor nano          # use Nano");
+            eprintln!("    tfe --editor \"code --wait\"  # use VS Code");
+            eprintln!();
+            eprintln!("  Or pick one interactively: run tfe, then press Shift+E.");
+            eprintln!("  The selection is persisted across sessions.");
+            process::exit(2);
+        }
+    };
+
+    let fname = path.file_name().unwrap_or_default().to_string_lossy();
+    let editor_label = editor.label();
+
+    eprintln!("tfe: opening '{fname}' in {editor_label}…");
+
+    // Shell-split so Custom("code --wait") works correctly.
+    let mut parts = binary_str.split_whitespace();
+    let binary = parts.next().unwrap_or(&binary_str).to_string();
+    let extra_args: Vec<&str> = parts.collect();
+
+    let status = {
+        #[cfg(windows)]
+        {
+            let mut cmd = std::process::Command::new("cmd");
+            cmd.arg("/C").arg(&binary);
+            for a in &extra_args {
+                cmd.arg(a);
+            }
+            cmd.arg(path).status()
+        }
+        #[cfg(not(windows))]
+        {
+            let mut cmd = std::process::Command::new(&binary);
+            for a in &extra_args {
+                cmd.arg(a);
+            }
+            cmd.arg(path).status()
+        }
+    };
+
+    match status {
+        Ok(s) if s.success() => Ok(()),
+        Ok(s) => {
+            let code = s.code().unwrap_or(1);
+            eprintln!("tfe: {editor_label} exited with status {code}");
+            process::exit(code);
+        }
+        Err(e) => {
+            eprintln!("tfe: failed to launch '{binary}': {e}");
+            eprintln!();
+            eprintln!("  Make sure '{binary}' is installed and on your PATH.");
+            eprintln!("  Change the editor with: tfe --editor <name>");
+            process::exit(2);
+        }
+    }
 }
