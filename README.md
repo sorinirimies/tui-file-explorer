@@ -90,7 +90,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 
 ```toml
 [dependencies]
-tui-file-explorer = "0.3"
+tui-file-explorer = "0.8"
 ratatui = "0.30"
 ```
 
@@ -98,7 +98,7 @@ Library-only (no `clap`-powered CLI binary):
 
 ```toml
 [dependencies]
-tui-file-explorer = { version = "0.3", default-features = false }
+tui-file-explorer = { version = "0.8", default-features = false }
 ```
 
 ### As a CLI tool
@@ -113,7 +113,64 @@ Installs the `tfe` binary onto your `PATH`.
 
 ## Quick Start
 
-### Single-pane
+The library exposes **three API tiers** — pick the level that matches your needs:
+
+| Tier | Entry point | What you get | What you wire yourself |
+|------|-------------|-------------|----------------------|
+| **Widget** | `FileExplorer` | Single-pane navigation, search, sort, marks, mkdir, touch, rename | Everything else (rendering, clipboard, multi-pane, panels) |
+| **Dual-pane widget** | `DualPane` | Two independent panes + `Tab` / `w` toggle | Clipboard, copy/paste, delete, theme/options/editor panels |
+| **Full app** | `App` + `draw()` | **Everything** — identical to the `tfe` binary | Nothing — all features work via keyboard out of the box |
+
+### Full app (batteries included)
+
+The easiest way to embed the complete `tfe` experience in your own application.
+All features — dual-pane, copy/cut/paste with progress, delete with confirmation,
+theme picker, options panel, editor integration, snackbar notifications — work
+through keyboard shortcuts automatically with **zero extra code**:
+
+```rust
+use tui_file_explorer::{App, AppOptions, draw};
+use std::path::PathBuf;
+
+// 1. Create once.
+let mut app = App::new(AppOptions {
+    left_dir: std::env::current_dir().unwrap(),
+    right_dir: PathBuf::from("/tmp"),
+    ..AppOptions::default()
+});
+
+// 2. Event loop — that's it:
+loop {
+    terminal.draw(|frame| draw(&mut app, frame))?;
+    if app.handle_event()? {
+        break;
+    }
+}
+```
+
+Every feature from the `tfe` binary is available without any manual wiring:
+
+| Feature | Key | Automatic? |
+|---------|-----|:----------:|
+| Dual-pane | `Tab` | ✅ |
+| Single/dual toggle | `w` | ✅ |
+| Multi-select | `Space` | ✅ |
+| Copy (yank) | `y` | ✅ |
+| Cut | `x` | ✅ |
+| Paste (with progress) | `p` | ✅ |
+| Delete (with confirmation) | `d` | ✅ |
+| Theme picker panel | `T` | ✅ |
+| Theme cycling | `t` / `[` | ✅ |
+| Options panel | `O` | ✅ |
+| Editor picker panel | `E` | ✅ |
+| Open file in editor | `e` | ✅ |
+| cd-on-exit toggle | `C` | ✅ |
+| Search, sort, mkdir, touch, rename | `/` `s` `n` `N` `r` | ✅ |
+
+### Single-pane widget
+
+Use `FileExplorer` when you only need a file-browser widget and want to handle
+outcomes yourself:
 
 ```rust
 use tui_file_explorer::{FileExplorer, ExplorerOutcome, SortMode, render};
@@ -139,7 +196,10 @@ match explorer.handle_key(key) {
 }
 ```
 
-### Dual-pane
+### Dual-pane widget
+
+Use `DualPane` when you want two panes with focus switching but prefer to build
+your own clipboard / file-ops layer:
 
 ```rust
 use tui_file_explorer::{DualPane, DualPaneOutcome, render_dual_pane_themed, Theme};
@@ -931,15 +991,16 @@ command tfe -0 | xargs -0 wc -l
 
 ## Public API
 
-The public surface is intentionally narrow for stability:
+The library exposes three tiers — from a lightweight embeddable widget to the
+full-featured app that powers the `tfe` binary.
 
-### Single-pane
+### Single-pane widget
 
 | Item | Kind | Description |
 |------|------|-------------|
 | `FileExplorer` | `struct` | Core state machine — cursor, entries, search, sort state |
 | `FileExplorerBuilder` | `struct` | Fluent builder for `FileExplorer` |
-| `ExplorerOutcome` | `enum` | Result of `handle_key` — `Selected`, `Dismissed`, `Pending`, `Unhandled` |
+| `ExplorerOutcome` | `enum` | Result of `handle_key` — `Selected`, `Dismissed`, `Pending`, `Unhandled`, `MkdirCreated`, `TouchCreated`, `RenameCompleted` |
 | `FsEntry` | `struct` | A single directory entry (name, path, size, extension, is_dir) |
 | `SortMode` | `enum` | `Name` \| `SizeDesc` \| `Extension` |
 | `Theme` | `struct` | Colour palette with builder methods and 27 named presets |
@@ -948,22 +1009,56 @@ The public surface is intentionally narrow for stability:
 | `entry_icon` | `fn` | Map an `FsEntry` to its Unicode icon |
 | `fmt_size` | `fn` | Format a byte count as a human-readable string (`1.5 KB`) |
 
-### Dual-pane
+### Dual-pane widget
 
 | Item | Kind | Description |
 |------|------|-------------|
 | `DualPane` | `struct` | Owns `left` + `right: FileExplorer`; routes keys; manages focus and single-pane mode |
 | `DualPaneBuilder` | `struct` | Fluent builder for `DualPane` — independent dirs, shared filter/sort/hidden |
 | `DualPaneActive` | `enum` | `Left` \| `Right` — which pane has focus; `.other()` flips it |
-| `DualPaneOutcome` | `enum` | Result of `DualPane::handle_key` — `Selected`, `Dismissed`, `Pending`, `Unhandled` |
+| `DualPaneOutcome` | `enum` | Result of `DualPane::handle_key` — `Selected`, `Dismissed`, `Pending`, `Unhandled`, `MkdirCreated`, `TouchCreated`, `RenameCompleted` |
 | `render_dual_pane` | `fn` | Render both panes using the default theme |
 | `render_dual_pane_themed` | `fn` | Render both panes with a custom `Theme` |
+
+### Full app (same feature set as the `tfe` binary)
+
+All of these are re-exported from `lib.rs` — library consumers get the **exact
+same functionality** as the CLI binary. Use `App::new()` + `app.handle_event()`
+\+ `draw()` and every feature works through keyboard shortcuts automatically.
+
+| Item | Kind | Description |
+|------|------|-------------|
+| `App` | `struct` | Top-level state: two panes, clipboard, modals, themes, editor, snackbar, progress |
+| `AppOptions` | `struct` | Configuration for `App::new` — dirs, extensions, theme, editor, single-pane, cd-on-exit |
+| `Pane` | `enum` | `Left` \| `Right` — which pane is active |
+| `ClipOp` | `enum` | `Copy` \| `Cut` — clipboard operation type |
+| `ClipboardItem` | `struct` | One or more yanked paths + their `ClipOp` |
+| `CopyProgress` | `struct` | Tracks label, done/total count, and current item during paste |
+| `Modal` | `enum` | `Delete` \| `MultiDelete` \| `Overwrite` — blocking confirmation dialogs |
+| `Editor` | `enum` | `None`, `Helix`, `Neovim`, `Vim`, `Nano`, `Micro`, `Emacs`, `Sublime`, `VSCode`, … |
+| `Snackbar` | `struct` | Auto-expiring notification (info or error) |
+| `draw` | `fn` | Render the complete app UI (panes + action bar + panels + modals + snackbar + progress) |
+| `render_theme_panel` | `fn` | Theme picker side-panel |
+| `render_options_panel` | `fn` | Options / key-reference side-panel |
+| `render_editor_panel` | `fn` | Editor picker side-panel |
+| `render_modal` | `fn` | Delete / overwrite confirmation overlay |
+| `render_snackbar` | `fn` | Floating notification overlay |
+| `render_copy_progress` | `fn` | Copy/move progress bar overlay |
+| `render_action_bar` | `fn` | Bottom status bar (clipboard, pane, editor info) |
+| `render_nav_hints` | `fn` | Key-binding hint rows |
+| `copy_dir_all` | `fn` | Recursive directory copy (skips symlinks) |
+| `resolve_output_path` | `fn` | Resolve file → parent dir when `--print-dir` is active |
+| `AppState` | `struct` | Persisted state (theme, dirs, sort, hidden, editor, cd-on-exit) |
+| `load_state` / `save_state` | `fn` | Read/write `AppState` from/to `~/.config/tfe/state.json` |
 
 ---
 
 ## Module Layout
 
-### Library (`src/lib.rs` re-exports)
+All modules are re-exported from `lib.rs` — library consumers have access to
+the full feature set, from lightweight widgets to the complete app.
+
+### Core widget modules
 
 | Module | Contents |
 |--------|----------|
@@ -975,15 +1070,20 @@ The public surface is intentionally narrow for stability:
 
 Because rendering is fully decoupled from state, you can slot either widget into any Ratatui layout, render it conditionally as an overlay, or build a completely custom renderer by reading `FileExplorer`'s public fields directly.
 
-### Binary (`tfe` CLI, not part of the public library API)
+### Full-app modules (also available to library consumers)
+
+| Module | Contents |
+|--------|----------|
+| `app` | `App`, `AppOptions`, `Pane`, `ClipOp`, `ClipboardItem`, `Modal`, `CopyProgress`, `Editor`, `Snackbar`, `handle_key`, `handle_event` |
+| `ui` | `draw()`, `render_theme_panel()`, `render_editor_panel()`, `render_options_panel()`, `render_nav_hints()`, `render_action_bar()`, `render_modal()`, `render_snackbar()`, `render_copy_progress()` |
+| `fs` | `copy_dir_all()`, `resolve_output_path()` |
+| `persistence` | `AppState`, `load_state()`, `save_state()`, `resolve_theme_idx()` |
+
+### Binary-only (not re-exported)
 
 | Module | Contents |
 |--------|----------|
 | `main` | `Cli` struct (argument parsing), `run()`, `run_loop()` — thin entry-point only |
-| `app` | `App` state, `Pane`, `ClipOp`, `ClipboardItem`, `Modal`, `handle_event` |
-| `ui` | `draw()`, `render_theme_panel()`, `render_editor_panel()`, `render_options_panel()`, `render_nav_hints()`, `render_nav_hints_spans()`, `render_action_bar()`, `render_action_bar_spans()`, `render_modal()`, `render_snackbar()` |
-| `fs` | `copy_dir_all()`, `resolve_output_path()` |
-| `persistence` | `AppState`, `load_state()`, `save_state()`, `resolve_theme_idx()` |
 | `shell_init` | `Shell`, `detect_shell()`, `snippet()`, `rc_path_with()`, `is_installed()`, `install()`, `install_or_print()` |
 
 ---
