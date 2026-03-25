@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.9.1] - 2026-03-25
+
+### Bug Fixes
+- Detect and correct --editor <file> misparse
+
 ## [0.9.0] - 2026-03-25
 
 ### Documentation
@@ -8,6 +13,9 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 - Tfe <file> opens directly in configured editor
+
+### Miscellaneous
+- Bump version to 0.9.0
 
 ## [0.8.8] - 2026-03-24
 
