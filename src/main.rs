@@ -241,11 +241,68 @@ fn run() -> io::Result<()> {
         .unwrap_or_else(|| "default".to_string());
     let theme_idx = resolve_theme_idx(&theme_name, &themes);
 
+    // ── Fix misparse: `tfe --editor file.txt` ─────────────────────────────────
+    //
+    // When the user types `tfe --editor file.txt`, clap consumes `file.txt` as
+    // the value for `--editor` and leaves `path` as None.  Detect this case:
+    //   • `--editor` value is NOT a known editor name
+    //   • `--editor` value exists on disk as a file
+    //   • no PATH argument was provided
+    // When all three are true, treat the editor value as the PATH and fall back
+    // to the persisted (or default) editor.
+    // Known editor names that `--editor` legitimately accepts.
+    // Anything NOT in this list that also exists as a file on disk
+    // was almost certainly meant as the PATH argument.
+    const KNOWN_EDITORS: &[&str] = &[
+        "none",
+        "helix",
+        "hx",
+        "nvim",
+        "vim",
+        "nano",
+        "micro",
+        "emacs",
+        "vscode",
+        "code",
+        "zed",
+        "xcode",
+        "android-studio",
+        "rustrover",
+        "intellij",
+        "webstorm",
+        "pycharm",
+        "goland",
+        "clion",
+        "fleet",
+        "sublime",
+        "rubymine",
+        "phpstorm",
+        "rider",
+        "eclipse",
+    ];
+
+    let (cli_editor, cli_path) = match (&cli.editor, &cli.path) {
+        (Some(editor_val), None) => {
+            let is_known_editor = KNOWN_EDITORS
+                .iter()
+                .any(|&name| name.eq_ignore_ascii_case(editor_val));
+            let exists_as_file = std::path::Path::new(editor_val).is_file();
+
+            if !is_known_editor && exists_as_file {
+                // `--editor` swallowed the file path — correct it.
+                (None, Some(PathBuf::from(editor_val)))
+            } else {
+                (Some(editor_val.clone()), None)
+            }
+        }
+        _ => (cli.editor.clone(), cli.path.clone()),
+    };
+
     // Resolve editor early — needed before path handling so `tfe <file>` can
     // open the file directly in the editor without launching the TUI.
     //
     // Priority: CLI flag > persisted value > compiled-in default.
-    let editor = if let Some(ref raw) = cli.editor {
+    let editor = if let Some(ref raw) = cli_editor {
         Editor::from_key(raw).unwrap_or_else(|| Editor::Custom(raw.clone()))
     } else if let Some(ref raw) = saved.editor {
         Editor::from_key(raw).unwrap_or_default()
@@ -258,7 +315,7 @@ fn run() -> io::Result<()> {
     // When PATH points to a file (not a directory), open it directly in the
     // configured editor without launching the TUI.  This lets `tfe myfile.rs`
     // behave like a quick "open in editor" shortcut.
-    let start_dir = match cli.path {
+    let start_dir = match cli_path {
         Some(ref p) => {
             let c = p.canonicalize().unwrap_or_else(|_| p.clone());
             if c.is_dir() {
