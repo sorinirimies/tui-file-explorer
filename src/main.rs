@@ -43,6 +43,8 @@
 //!   0 — path printed to stdout (file selected, or dismissed with a current dir)
 //!   2 — bad arguments / I/O error
 
+mod doctor;
+mod info;
 mod shell_init;
 
 use tui_file_explorer::app::Editor;
@@ -151,6 +153,16 @@ struct Cli {
     #[arg(long = "no-cd", overrides_with = "cd_on_exit")]
     no_cd: bool,
 
+    /// Print version, platform, and environment info, then exit.
+    #[arg(long)]
+    info: bool,
+
+    /// Run diagnostic checks (environment, shell integration, config,
+    /// terminal, editor) and exit.  Each check is assessed with
+    /// pass / warn / fail indicators and actionable advice.
+    #[arg(long)]
+    doctor: bool,
+
     /// Editor to open when pressing `e` on a file.
     ///
     /// Accepted values: helix (hx), nvim, vim, nano, micro, or any binary
@@ -175,6 +187,18 @@ fn main() {
 
 fn run() -> io::Result<()> {
     let cli = Cli::parse();
+
+    // --info: print version / platform / environment and exit.
+    if cli.info {
+        info::print_info();
+        return Ok(());
+    }
+
+    // --doctor: run diagnostic checks and exit.
+    if cli.doctor {
+        doctor::run_doctor();
+        return Ok(());
+    }
 
     // --init: install the shell wrapper (or print it as fallback) then exit.
     if let Some(ref shell_name) = cli.init {

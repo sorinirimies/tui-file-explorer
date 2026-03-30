@@ -113,7 +113,7 @@ fn config_dir() -> Option<PathBuf> {
 }
 
 /// Path of the unified state file (`$XDG_CONFIG_HOME/tfe/state`).
-pub(crate) fn state_path() -> Option<PathBuf> {
+pub fn state_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("state"))
 }
 
