@@ -133,7 +133,10 @@ impl InfoReport {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-/// Print version, platform, environment, and config info then return.
+/// Print version, platform, environment, and config info to stderr, then return.
+///
+/// Diagnostic output goes to stderr so the shell wrapper (which captures
+/// stdout for cd-on-exit) does not try to `cd` into each info line.
 ///
 /// This is a lightweight dump (no pass/warn/fail assessment).  Use
 /// `--doctor` for the full diagnostic report.
@@ -188,8 +191,8 @@ pub fn print_info() {
     let sp_exists = sp.as_deref().map(|p| p.exists()).unwrap_or(false);
     r.section_config(sp.as_deref(), sp_exists);
 
-    // Print everything
-    let _ = r.write_to(&mut io::stdout().lock());
+    // Print everything to stderr — stdout is reserved for paths.
+    let _ = r.write_to(&mut io::stderr().lock());
 }
 
 #[cfg(test)]

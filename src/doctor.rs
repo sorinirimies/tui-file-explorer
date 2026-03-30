@@ -346,11 +346,14 @@ impl DoctorReport {
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
-/// Run all diagnostic checks, print the report to stdout, and return.
+/// Run all diagnostic checks, print the report to stderr, and return.
+///
+/// Diagnostic output goes to stderr so the shell wrapper (which captures
+/// stdout for cd-on-exit) does not try to `cd` into each report line.
 pub fn run_doctor() {
     let version = env!("CARGO_PKG_VERSION");
-    println!("tfe doctor  v{version}");
-    println!();
+    eprintln!("tfe doctor  v{version}");
+    eprintln!();
 
     let mut r = DoctorReport::new();
 
@@ -443,8 +446,8 @@ pub fn run_doctor() {
     // Summary
     r.summary();
 
-    // Print everything
-    let _ = r.write_to(&mut io::stdout().lock());
+    // Print everything to stderr — stdout is reserved for paths.
+    let _ = r.write_to(&mut io::stderr().lock());
 }
 
 #[cfg(test)]
