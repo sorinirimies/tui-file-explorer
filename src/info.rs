@@ -153,16 +153,29 @@ pub fn print_info() {
         std::env::consts::FAMILY,
     );
 
-    // Environment
-    let env_keys = [
-        "HOME",
-        "SHELL",
-        "TERM",
-        "TERM_PROGRAM",
-        "XDG_CONFIG_HOME",
-        "ZDOTDIR",
-        "NU_VERSION",
-    ];
+    // Environment — include platform-relevant variables.
+    let env_keys: Vec<&str> = if cfg!(windows) {
+        vec![
+            "USERPROFILE",
+            "APPDATA",
+            "PSModulePath",
+            "CARGO_HOME",
+            "TERM",
+            "TERM_PROGRAM",
+            "NU_VERSION",
+        ]
+    } else {
+        vec![
+            "HOME",
+            "SHELL",
+            "TERM",
+            "TERM_PROGRAM",
+            "XDG_CONFIG_HOME",
+            "ZDOTDIR",
+            "NU_VERSION",
+            "CARGO_HOME",
+        ]
+    };
     let env_values: Vec<Option<String>> = env_keys.iter().map(|k| std::env::var(k).ok()).collect();
     let vars: Vec<(&str, Option<&str>)> = env_keys
         .iter()

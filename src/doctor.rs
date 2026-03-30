@@ -110,10 +110,12 @@ impl DoctorReport {
             if path_dirs.iter().any(|d| d == cb) {
                 self.pass(&format!("{} is on $PATH", cb.display()));
             } else {
-                self.warn(
-                    &format!("{} is NOT on $PATH", cb.display()),
-                    r#"add to your shell rc:  export PATH="$HOME/.cargo/bin:$PATH""#,
-                );
+                let hint = if cfg!(windows) {
+                    "ensure the Rust/Cargo bin directory is in your PATH"
+                } else {
+                    r#"add to your shell rc:  export PATH="$HOME/.cargo/bin:$PATH""#
+                };
+                self.warn(&format!("{} is NOT on $PATH", cb.display()), hint);
             }
         }
         self.blank();
@@ -128,15 +130,27 @@ impl DoctorReport {
     ) {
         self.heading("Environment");
         match home {
-            Some(h) => self.pass(&format!("$HOME = {h}")),
-            None => self.fail("$HOME is not set", "many features depend on $HOME"),
+            Some(h) => self.pass(&format!("home directory = {h}")),
+            None => self.fail(
+                "home directory is not set ($HOME / %USERPROFILE%)",
+                "many features depend on a known home directory",
+            ),
         }
         match shell_var {
-            Some(s) => self.pass(&format!("$SHELL = {s}")),
-            None => self.warn(
-                "$SHELL is not set",
-                "shell auto-detection will not work; use: tfe --init <shell>",
-            ),
+            Some(s) => self.pass(&format!("shell = {s}")),
+            None => {
+                if cfg!(windows) {
+                    // On Windows $SHELL is never set; detection uses $PSModulePath.
+                    self.pass(
+                        "$SHELL not set (normal on Windows; PowerShell detected via $PSModulePath)",
+                    );
+                } else {
+                    self.warn(
+                        "$SHELL is not set",
+                        "shell auto-detection will not work; use: tfe --init <shell>",
+                    );
+                }
+            }
         }
         match cwd {
             Some(d) => self.pass(&format!("working directory: {}", d.display())),
@@ -288,7 +302,11 @@ impl DoctorReport {
             }
             None => self.fail(
                 "could not determine state file path",
-                "is $HOME or $XDG_CONFIG_HOME set?",
+                if cfg!(windows) {
+                    "is %USERPROFILE% or %APPDATA% set?"
+                } else {
+                    "is $HOME or $XDG_CONFIG_HOME set?"
+                },
             ),
         }
         self.blank();
@@ -366,17 +384,23 @@ pub fn run_doctor() {
 
     // 2. Binary / PATH
     let exe_path = std::env::current_exe().ok();
-    let home_os = std::env::var_os("HOME");
-    let cargo_bin = home_os
-        .as_ref()
-        .map(|h| PathBuf::from(h).join(".cargo").join("bin"));
+    let home_os = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
+    let cargo_bin = std::env::var_os("CARGO_HOME")
+        .map(|c| PathBuf::from(c).join("bin"))
+        .or_else(|| {
+            home_os
+                .as_ref()
+                .map(|h| PathBuf::from(h).join(".cargo").join("bin"))
+        });
     let path_dirs: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
     r.check_binary(exe_path.as_deref(), cargo_bin.as_deref(), &path_dirs);
 
     // 3. Environment
-    let home_str = std::env::var("HOME").ok();
+    let home_str = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok();
     let shell_str = std::env::var("SHELL").ok();
     let cwd = std::env::current_dir().ok();
     r.check_environment(home_str.as_deref(), shell_str.as_deref(), cwd.as_deref());
@@ -389,7 +413,9 @@ pub fn run_doctor() {
     // 5. Shell integration
     let detected = shell_init::detect_shell();
     let (rc_path, rc_exists, wrapper_installed) = if let Some(shell) = detected {
-        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from);
         let xdg = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
         let zdotdir = std::env::var_os("ZDOTDIR").map(PathBuf::from);
         let bash_profile = home.as_deref().map(|h| h.join(".bash_profile"));
@@ -434,7 +460,8 @@ pub fn run_doctor() {
         .as_ref()
         .map(|b| {
             let name = b.split_whitespace().next().unwrap_or(b);
-            std::process::Command::new("which")
+            let lookup = if cfg!(windows) { "where" } else { "which" };
+            std::process::Command::new(lookup)
                 .arg(name)
                 .output()
                 .map(|o| o.status.success())
@@ -644,16 +671,22 @@ mod tests {
         r.check_environment(None, Some("/bin/zsh"), Some(&cwd));
         assert_eq!(r.failures, 1);
         assert!(r.output().contains("[FAIL]"));
-        assert!(r.output().contains("$HOME is not set"));
+        assert!(r.output().contains("home directory is not set"));
     }
 
     #[test]
-    fn check_environment_shell_missing_is_warn() {
+    fn check_environment_shell_missing_is_warn_on_unix_pass_on_windows() {
         let mut r = DoctorReport::new();
         let cwd = PathBuf::from("/tmp");
         r.check_environment(Some("/home/user"), None, Some(&cwd));
-        assert_eq!(r.warnings, 1);
-        assert!(r.output().contains("$SHELL is not set"));
+        if cfg!(windows) {
+            // On Windows $SHELL is never set; the check accepts this as normal.
+            assert_eq!(r.warnings, 0);
+            assert_eq!(r.oks, 3); // home + shell-ok + cwd
+        } else {
+            assert_eq!(r.warnings, 1);
+            assert!(r.output().contains("$SHELL is not set"));
+        }
     }
 
     #[test]
