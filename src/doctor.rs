@@ -402,10 +402,7 @@ pub fn run_doctor() {
             nu_config.as_deref(),
         );
         let exists = rc.as_deref().map(|p| p.exists()).unwrap_or(false);
-        let installed = rc
-            .as_deref()
-            .map(|p| shell_init::is_installed(p))
-            .unwrap_or(false);
+        let installed = rc.as_deref().map(shell_init::is_installed).unwrap_or(false);
         (rc, exists, installed)
     } else {
         (None, false, false)
