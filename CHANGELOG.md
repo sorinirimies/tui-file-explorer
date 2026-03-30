@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 - Detect and correct --editor <file> misparse
 
+### Miscellaneous
+- Bump version to 0.9.1
+
 ## [0.9.0] - 2026-03-25
 
 ### Documentation
