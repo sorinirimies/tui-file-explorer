@@ -164,8 +164,10 @@ struct Cli {
     #[arg(long)]
     doctor: bool,
 
-    /// Print verbose startup diagnostics to stderr and then launch normally.
-    /// Useful for debugging why the TUI fails to appear.
+    /// Enable verbose mode: print startup diagnostics to stderr, write all
+    /// logs to a file (path printed at launch), and show a debug log panel
+    /// inside the TUI.  Use `tail -f /tmp/tfe-debug.log` from another
+    /// terminal for real-time monitoring.
     #[arg(long, short = 'v')]
     verbose: bool,
 
@@ -191,6 +193,9 @@ fn main() {
     }
 }
 
+/// Process-start instant used by [`vlog!`] to stamp every log line.
+static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
 /// Conditionally log a message to stderr, a buffer, and an optional file.
 ///
 /// Uses `\r\n` line endings so the output is readable even after
@@ -199,7 +204,11 @@ fn main() {
 macro_rules! vlog {
     ($verbose:expr, $log:expr, $file:expr, $($arg:tt)*) => {
         if $verbose {
-            let msg = format!("[tfe] {}", format!($($arg)*));
+            let elapsed = START
+                .get_or_init(std::time::Instant::now)
+                .elapsed()
+                .as_secs_f64();
+            let msg = format!("[tfe {elapsed:.3}s] {}", format!($($arg)*));
             let _ = std::io::Write::write_all(
                 &mut std::io::stderr(),
                 format!("{}\r\n", msg).as_bytes(),
@@ -216,8 +225,15 @@ macro_rules! vlog {
 /// Open (or create) the debug log file when `--verbose` is active.
 fn open_debug_log_file() -> Option<File> {
     let path = std::env::temp_dir().join("tfe-debug.log");
-    match File::create(&path) {
-        Ok(f) => {
+    match File::options().create(true).append(true).open(&path) {
+        Ok(mut f) => {
+            // Write a session separator so consecutive runs are easy to tell apart.
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = writeln!(f, "\n--- tfe session {timestamp} ---");
+            let _ = f.flush();
             eprintln!("[tfe] debug log: {}\r", path.display());
             Some(f)
         }

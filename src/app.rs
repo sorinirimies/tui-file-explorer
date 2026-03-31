@@ -1184,6 +1184,22 @@ impl App {
             return Ok(false);
         }
 
+        // ── Debug-log scroll (Ctrl+Up / Ctrl+Down) ───────────────────────────
+        if self.verbose {
+            match key.code {
+                KeyCode::Up if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    let max = self.debug_log.len().saturating_sub(1);
+                    self.debug_scroll = (self.debug_scroll + 1).min(max);
+                    return Ok(false);
+                }
+                KeyCode::Down if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.debug_scroll = self.debug_scroll.saturating_sub(1);
+                    return Ok(false);
+                }
+                _ => {}
+            }
+        }
+
         // ── Global keys (always active) ───────────────────────────────────────
         // ── Editor panel navigation (arrows / j / k steal focus when open) ───
         if self.show_editor_panel {
@@ -3777,5 +3793,91 @@ mod tests {
         assert_eq!(app.debug_log.len(), 2);
         assert_eq!(app.debug_log[0], "startup");
         assert_eq!(app.debug_log[1], "runtime");
+    }
+
+    // ── Debug scroll key handling ────────────────────────────────────────
+
+    fn make_verbose_app_with_logs(n: usize) -> App {
+        let mut app = App::new(AppOptions {
+            left_dir: std::env::temp_dir(),
+            right_dir: std::env::temp_dir(),
+            verbose: true,
+            ..AppOptions::default()
+        });
+        for i in 0..n {
+            app.debug_log.push(format!("log line {i}"));
+        }
+        app
+    }
+
+    fn ctrl_up() -> crossterm::event::KeyEvent {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState};
+        KeyEvent {
+            code: KeyCode::Up,
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn ctrl_down() -> crossterm::event::KeyEvent {
+        use crossterm::event::{KeyEvent, KeyEventKind, KeyEventState};
+        KeyEvent {
+            code: KeyCode::Down,
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn debug_scroll_up_increments() {
+        let mut app = make_verbose_app_with_logs(10);
+        assert_eq!(app.debug_scroll, 0);
+        app.handle_key(ctrl_up()).unwrap();
+        assert_eq!(app.debug_scroll, 1);
+        app.handle_key(ctrl_up()).unwrap();
+        assert_eq!(app.debug_scroll, 2);
+    }
+
+    #[test]
+    fn debug_scroll_down_decrements() {
+        let mut app = make_verbose_app_with_logs(10);
+        app.debug_scroll = 5;
+        app.handle_key(ctrl_down()).unwrap();
+        assert_eq!(app.debug_scroll, 4);
+        app.handle_key(ctrl_down()).unwrap();
+        assert_eq!(app.debug_scroll, 3);
+    }
+
+    #[test]
+    fn debug_scroll_down_clamps_at_zero() {
+        let mut app = make_verbose_app_with_logs(10);
+        assert_eq!(app.debug_scroll, 0);
+        app.handle_key(ctrl_down()).unwrap();
+        assert_eq!(app.debug_scroll, 0);
+    }
+
+    #[test]
+    fn debug_scroll_up_clamps_at_log_length() {
+        let mut app = make_verbose_app_with_logs(5);
+        // max is debug_log.len().saturating_sub(1) == 4
+        for _ in 0..20 {
+            app.handle_key(ctrl_up()).unwrap();
+        }
+        assert_eq!(app.debug_scroll, 4);
+    }
+
+    #[test]
+    fn debug_scroll_ignored_when_not_verbose() {
+        let mut app = make_app(std::env::temp_dir());
+        assert!(!app.verbose);
+        // Manually add some log lines so there would be room to scroll.
+        app.debug_log.push("line".to_string());
+        app.debug_log.push("line".to_string());
+        app.handle_key(ctrl_up()).unwrap();
+        assert_eq!(app.debug_scroll, 0);
+        app.handle_key(ctrl_down()).unwrap();
+        assert_eq!(app.debug_scroll, 0);
     }
 }

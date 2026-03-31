@@ -37,12 +37,20 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
 
     // Vertical split: main area | [debug log panel] | action bar.
     // The debug panel only appears when --verbose is active.
+    let debug_height = if full.height >= 30 {
+        10
+    } else if full.height >= 20 {
+        6
+    } else {
+        3
+    };
+
     let v_chunks = if app.verbose {
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),
-                Constraint::Length(10),
+                Constraint::Length(debug_height),
                 Constraint::Length(6),
             ])
             .split(full)
@@ -1748,6 +1756,36 @@ mod tests {
         app.log("log line");
         // Very small terminal — layout must not crash.
         let backend = ratatui::backend::TestBackend::new(40, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+    }
+
+    #[test]
+    fn draw_with_verbose_tall_terminal_does_not_panic() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        app.log("tall terminal log");
+        // height >= 30 → full debug panel (Length(10))
+        let backend = ratatui::backend::TestBackend::new(80, 40);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+    }
+
+    #[test]
+    fn draw_with_verbose_medium_terminal_does_not_panic() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        app.log("medium terminal log");
+        // 20 <= height < 30 → compact debug panel (Length(6))
+        let backend = ratatui::backend::TestBackend::new(80, 25);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+    }
+
+    #[test]
+    fn draw_with_verbose_tiny_terminal_does_not_panic() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        app.log("tiny terminal log");
+        // height < 20 → minimal debug panel (Length(3))
+        let backend = ratatui::backend::TestBackend::new(80, 15);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         terminal.draw(|frame| draw(&mut app, frame)).unwrap();
     }

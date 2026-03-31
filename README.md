@@ -280,6 +280,7 @@ match dual.handle_key(key) {
 | `Shift+E` | Open **editor picker** panel; `↑`/`↓`/`j`/`k` navigate, `Enter` select, `Esc` cancel |
 | `Shift+O` | Toggle **options panel** |
 | `Shift+C` | Toggle `cd-on-exit` on/off |
+| `Ctrl+↑` / `Ctrl+↓` | Scroll debug log panel (verbose mode only) |
 
 ### Search mode (after pressing `/`)
 
@@ -867,6 +868,9 @@ tfe [OPTIONS] [PATH]
 | `--cd` | Enable cd-on-exit: on dismiss, print the active pane's directory to stdout (persisted) |
 | `--no-cd` | Disable cd-on-exit (persisted) |
 | `--init <SHELL>` | Install the shell wrapper for cd-on-exit and exit. Shells: `bash`, `zsh`, `fish`, `powershell`, `nushell` |
+| `--info` | Print version, platform, environment info and exit |
+| `--doctor` | Run diagnostic checks (environment, shell, config, terminal, editor) with pass/warn/fail indicators and exit |
+| `-v, --verbose` | Enable verbose mode: startup diagnostics on stderr, debug log file at `$TMPDIR/tfe-debug.log`, and a debug panel inside the TUI |
 | `-h, --help` | Show help |
 | `-V, --version` | Show version |
 
@@ -986,6 +990,61 @@ command tfe -0 | xargs -0 wc -l
 
 > **Theme names** are case-insensitive and hyphens/spaces are interchangeable:  
 > `catppuccin-mocha`, `Catppuccin Mocha`, and `catppuccin mocha` all resolve to the same preset.
+
+---
+
+## Troubleshooting
+
+Three built-in tools help diagnose problems — especially on a fresh install
+where the TUI fails to appear.
+
+### Quick info (`--info`)
+
+```bash
+command tfe --info
+```
+
+Prints version, platform, environment variables, terminal capabilities,
+detected shell, and config file paths to stderr, then exits.  Useful for
+quickly checking which `tfe` binary is running and what it sees.
+
+### Doctor (`--doctor`)
+
+```bash
+command tfe --doctor
+```
+
+Runs structured diagnostic checks and prints a pass / warn / fail report:
+
+- **Platform** — os, arch
+- **Binary** — executable location, `~/.cargo/bin` on `$PATH`
+- **Environment** — `$HOME`, `$SHELL`, working directory
+- **Terminal** — size, stderr tty status
+- **Shell integration** — detected shell, rc file, wrapper installed
+- **Config** — state file, persisted settings
+- **Editor** — configured editor, binary on `$PATH`
+
+Each failing check includes an actionable hint on how to fix it.
+
+### Verbose mode (`-v` / `--verbose`)
+
+```bash
+command tfe -v
+```
+
+Enables detailed startup logging:
+- **stderr** — each startup step is logged with timestamps (visible before
+  the TUI takes over)
+- **Log file** — all logs written to `$TMPDIR/tfe-debug.log` (survives the
+  alternate screen).  Monitor from another terminal:
+  ```bash
+  tail -f /tmp/tfe-debug.log
+  ```
+- **Debug panel** — a scrollable log panel appears at the bottom of the TUI
+  (use `Ctrl+↑` / `Ctrl+↓` to scroll)
+
+> **Tip:** Use `command tfe` (not bare `tfe`) to bypass the shell wrapper
+> when debugging, so the wrapper doesn't intercept diagnostic output.
 
 ---
 
