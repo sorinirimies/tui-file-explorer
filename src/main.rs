@@ -50,6 +50,7 @@ mod shell_init;
 use tui_file_explorer::app::Editor;
 
 use std::{
+    fs::File,
     io::{self, stdout, Write},
     path::PathBuf,
     process,
@@ -190,35 +191,83 @@ fn main() {
     }
 }
 
-/// Conditionally log a message to stderr when verbose mode is on.
+/// Conditionally log a message to stderr, a buffer, and an optional file.
+///
+/// Uses `\r\n` line endings so the output is readable even after
+/// `enable_raw_mode()` (which disables output processing, meaning a bare
+/// `\n` no longer implies a carriage return).
 macro_rules! vlog {
-    ($verbose:expr, $($arg:tt)*) => {
+    ($verbose:expr, $log:expr, $file:expr, $($arg:tt)*) => {
         if $verbose {
-            eprintln!("[tfe] {}", format!($($arg)*));
+            let msg = format!("[tfe] {}", format!($($arg)*));
+            let _ = std::io::Write::write_all(
+                &mut std::io::stderr(),
+                format!("{}\r\n", msg).as_bytes(),
+            );
+            $log.push(msg.clone());
+            if let Some(ref mut f) = $file {
+                let _ = writeln!(f, "{msg}");
+                let _ = f.flush();
+            }
         }
     };
+}
+
+/// Open (or create) the debug log file when `--verbose` is active.
+fn open_debug_log_file() -> Option<File> {
+    let path = std::env::temp_dir().join("tfe-debug.log");
+    match File::create(&path) {
+        Ok(f) => {
+            eprintln!("[tfe] debug log: {}\r", path.display());
+            Some(f)
+        }
+        Err(e) => {
+            eprintln!("[tfe] warning: could not create log file: {e}\r");
+            None
+        }
+    }
 }
 
 fn run() -> io::Result<()> {
     let cli = Cli::parse();
     let verbose = cli.verbose;
+    let mut log_buf: Vec<String> = Vec::new();
+    let mut log_file: Option<File> = if verbose { open_debug_log_file() } else { None };
 
-    vlog!(verbose, "version {}", env!("CARGO_PKG_VERSION"));
     vlog!(
         verbose,
+        log_buf,
+        log_file,
+        "version {}",
+        env!("CARGO_PKG_VERSION")
+    );
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
         "os={} arch={}",
         std::env::consts::OS,
         std::env::consts::ARCH
     );
-    vlog!(verbose, "args: {:?}", std::env::args().collect::<Vec<_>>());
     vlog!(
         verbose,
+        log_buf,
+        log_file,
+        "args: {:?}",
+        std::env::args().collect::<Vec<_>>()
+    );
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
         "$HOME={:?} $SHELL={:?}",
         std::env::var("HOME").ok(),
         std::env::var("SHELL").ok()
     );
     vlog!(
         verbose,
+        log_buf,
+        log_file,
         "terminal size={:?} stderr_is_tty={}",
         crossterm::terminal::size().ok(),
         crossterm::tty::IsTty::is_tty(&io::stderr())
@@ -237,7 +286,7 @@ fn run() -> io::Result<()> {
     }
 
     // --init: install the shell wrapper (or print it as fallback) then exit.
-    vlog!(verbose, "checking --init flag");
+    vlog!(verbose, log_buf, log_file, "checking --init flag");
     if let Some(ref shell_name) = cli.init {
         let shell = match shell_init::Shell::from_str(shell_name) {
             Some(s) => Some(s),
@@ -277,12 +326,23 @@ fn run() -> io::Result<()> {
     // Note: shell_init::auto_install() internally calls nu_config_dir_default()
     // to resolve the Nushell config path on all platforms, so no extra argument
     // is needed at this call site.
-    vlog!(verbose, "running auto_install (shell wrapper)");
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
+        "running auto_install (shell wrapper)"
+    );
     let auto_install_outcome = shell_init::auto_install();
-    vlog!(verbose, "auto_install outcome: {:?}", auto_install_outcome);
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
+        "auto_install outcome: {:?}",
+        auto_install_outcome
+    );
 
     let themes = Theme::all_presets();
-    vlog!(verbose, "loaded {} themes", themes.len());
+    vlog!(verbose, log_buf, log_file, "loaded {} themes", themes.len());
 
     // --list-themes: print catalogue and exit.
     if cli.list_themes {
@@ -296,10 +356,12 @@ fn run() -> io::Result<()> {
     }
 
     // Load all persisted state once at startup.
-    vlog!(verbose, "loading persisted state");
+    vlog!(verbose, log_buf, log_file, "loading persisted state");
     let saved = load_state();
     vlog!(
         verbose,
+        log_buf,
+        log_file,
         "state: theme={:?} last_dir={:?} cd_on_exit={:?} editor={:?}",
         saved.theme,
         saved.last_dir,
@@ -315,6 +377,8 @@ fn run() -> io::Result<()> {
     let theme_idx = resolve_theme_idx(&theme_name, &themes);
     vlog!(
         verbose,
+        log_buf,
+        log_file,
         "resolved theme: '{}' (index {})",
         theme_name,
         theme_idx
@@ -390,6 +454,8 @@ fn run() -> io::Result<()> {
     };
     vlog!(
         verbose,
+        log_buf,
+        log_file,
         "editor: {} (binary: {:?})",
         editor.label(),
         editor.binary()
@@ -402,6 +468,8 @@ fn run() -> io::Result<()> {
     // behave like a quick "open in editor" shortcut.
     vlog!(
         verbose,
+        log_buf,
+        log_file,
         "resolving start directory (cli_path={:?})",
         cli_path
     );
@@ -409,11 +477,19 @@ fn run() -> io::Result<()> {
         Some(ref p) => {
             let c = p.canonicalize().unwrap_or_else(|_| p.clone());
             if c.is_dir() {
-                vlog!(verbose, "cli path is directory: {}", c.display());
+                vlog!(
+                    verbose,
+                    log_buf,
+                    log_file,
+                    "cli path is directory: {}",
+                    c.display()
+                );
                 c
             } else if c.is_file() {
                 vlog!(
                     verbose,
+                    log_buf,
+                    log_file,
                     "cli path is file, opening directly: {}",
                     c.display()
                 );
@@ -431,7 +507,13 @@ fn run() -> io::Result<()> {
             .clone()
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))),
     };
-    vlog!(verbose, "start_dir: {}", start_dir.display());
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
+        "start_dir: {}",
+        start_dir.display()
+    );
 
     // Right pane: use the persisted right-pane directory when available,
     // otherwise mirror the left pane's starting directory.
@@ -439,7 +521,13 @@ fn run() -> io::Result<()> {
         .last_dir_right
         .clone()
         .unwrap_or_else(|| start_dir.clone());
-    vlog!(verbose, "right_start_dir: {}", right_start_dir.display());
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
+        "right_start_dir: {}",
+        right_start_dir.display()
+    );
 
     // CLI flags win when explicitly set (true); otherwise fall back to
     // persisted values.  Simple bool flags can't distinguish "not passed" from
@@ -466,6 +554,8 @@ fn run() -> io::Result<()> {
     };
     vlog!(
         verbose,
+        log_buf,
+        log_file,
         "show_hidden={} single_pane={} cd_on_exit={}",
         show_hidden,
         single_pane,
@@ -484,18 +574,26 @@ fn run() -> io::Result<()> {
     //   CONOUT$ or any other Windows-specific console API.
     // * The final directory/file path is written to real stdout after the
     //   TUI exits, where the shell wrapper's $() captures it correctly.
-    vlog!(verbose, "setting up terminal (backend=stderr)");
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
+        "setting up terminal (backend=stderr)"
+    );
     let backend = CrosstermBackend::new(io::stderr());
 
-    vlog!(verbose, "enable_raw_mode");
+    vlog!(verbose, log_buf, log_file, "enable_raw_mode");
     enable_raw_mode()?;
-    vlog!(verbose, "entering alternate screen");
+    vlog!(verbose, log_buf, log_file, "enable_raw_mode ok");
+    vlog!(verbose, log_buf, log_file, "entering alternate screen");
     execute!(io::stderr(), EnterAlternateScreen, EnableMouseCapture)?;
+    vlog!(verbose, log_buf, log_file, "alternate screen ok");
 
-    vlog!(verbose, "creating terminal");
+    vlog!(verbose, log_buf, log_file, "creating terminal");
     let mut terminal = Terminal::new(backend)?;
+    vlog!(verbose, log_buf, log_file, "terminal created ok");
 
-    vlog!(verbose, "creating App");
+    vlog!(verbose, log_buf, log_file, "creating App");
     let mut app = App::new(AppOptions {
         left_dir: start_dir,
         right_dir: right_start_dir,
@@ -507,14 +605,26 @@ fn run() -> io::Result<()> {
         sort_mode,
         cd_on_exit,
         editor,
+        verbose,
+        startup_log: log_buf,
     });
-    vlog!(verbose, "app created, entering run loop");
+    // From here on, use app.log() — the startup buffer has been moved into App.
+    // Re-bind log_buf to app's debug_log for the vlog! macro.
+    app.log("app created, entering run loop".to_string());
+    app.log(format!(
+        "left pane: {} entries, right pane: {} entries",
+        app.left.entry_count(),
+        app.right.entry_count()
+    ));
 
-    let result = run_loop(&mut terminal, &mut app, verbose);
-    vlog!(verbose, "run loop exited (result ok={})", result.is_ok());
+    let result = run_loop(&mut terminal, &mut app, &mut log_file);
+    app.log(format!("run loop exited (result ok={})", result.is_ok()));
+    if let Err(ref e) = result {
+        app.log(format!("run loop error: {e}"));
+    }
 
     // Always restore terminal, even on error.
-    vlog!(verbose, "restoring terminal");
+    app.log("restoring terminal (leave alternate screen, disable raw mode)".to_string());
     let _ = disable_raw_mode();
     let _ = execute!(
         terminal.backend_mut(),
@@ -525,7 +635,10 @@ fn run() -> io::Result<()> {
     // Drop the terminal before writing to stdout so the alternate screen is
     // fully restored before the path appears.
     drop(terminal);
-    vlog!(verbose, "terminal restored");
+    // stderr is normal again after this point — can use eprintln safely.
+    if verbose {
+        eprintln!("[tfe] terminal restored");
+    }
 
     result?;
 
@@ -545,11 +658,9 @@ fn run() -> io::Result<()> {
     // terminator regardless of --null, because it is a control message
     // consumed by the wrapper, not a data path consumed by the caller.
     if let shell_init::InitOutcome::Installed(ref rc_path) = auto_install_outcome {
-        vlog!(
-            verbose,
-            "emitting source directive for {}",
-            rc_path.display()
-        );
+        if verbose {
+            eprintln!("[tfe] emitting source directive for {}", rc_path.display());
+        }
         shell_init::emit_source_directive(rc_path);
         eprintln!("tfe: shell integration installed to {}", rc_path.display());
         eprintln!("  The wrapper function has been sourced into this session automatically.");
@@ -571,7 +682,9 @@ fn run() -> io::Result<()> {
         Some(app.right.current_dir.clone())
     };
 
-    vlog!(verbose, "saving state");
+    if verbose {
+        eprintln!("[tfe] saving state");
+    }
     save_state(&AppState {
         theme: Some(app.theme_name().to_string()),
         last_dir: Some(app.left.current_dir.clone()),
@@ -596,7 +709,9 @@ fn run() -> io::Result<()> {
     // * Dismissed + !cd_on_exit  -> print nothing, exit 1 (classic behaviour).
     match app.selected {
         Some(path) => {
-            vlog!(verbose, "file selected: {}", path.display());
+            if verbose {
+                eprintln!("[tfe] file selected: {}", path.display());
+            }
             let output = resolve_output_path(path, cli.print_dir);
             let mut out = stdout();
             write!(out, "{}", output.display())?;
@@ -605,7 +720,9 @@ fn run() -> io::Result<()> {
         }
         // Use app.cd_on_exit — reflects both CLI flags and any in-TUI toggle.
         None if app.cd_on_exit => {
-            vlog!(verbose, "dismissed with cd_on_exit=true");
+            if verbose {
+                eprintln!("[tfe] dismissed with cd_on_exit=true");
+            }
             let output = app.active_pane().current_dir.clone();
             let mut out = stdout();
             write!(out, "{}", output.display())?;
@@ -613,10 +730,9 @@ fn run() -> io::Result<()> {
             out.flush()?;
         }
         None => {
-            vlog!(
-                verbose,
-                "dismissed without selection, cd_on_exit=false, exit 1"
-            );
+            if verbose {
+                eprintln!("[tfe] dismissed without selection, cd_on_exit=false, exit 1");
+            }
             process::exit(1);
         }
     }
@@ -627,13 +743,16 @@ fn run() -> io::Result<()> {
 fn run_loop<W: io::Write>(
     terminal: &mut Terminal<CrosstermBackend<W>>,
     app: &mut App,
-    verbose: bool,
+    log_file: &mut Option<File>,
 ) -> io::Result<()> {
     loop {
         terminal.draw(|frame| draw(app, frame))?;
 
         if app.handle_event()? {
-            vlog!(verbose, "handle_event signalled exit");
+            app.log("handle_event signalled exit".to_string());
+            if let Some(ref mut f) = log_file {
+                let _ = writeln!(f, "[tfe] handle_event signalled exit");
+            }
             break;
         }
 
@@ -646,13 +765,16 @@ fn run_loop<W: io::Write>(
             // but if it somehow does, silently discard and move on.
             if let Some(binary_str) = app.editor.binary() {
                 let editor_label = app.editor.label().to_string();
-                vlog!(
-                    verbose,
+                let launch_msg = format!(
                     "launching editor '{}' ({}) for {}",
                     editor_label,
                     binary_str,
                     path.display()
                 );
+                app.log(launch_msg.clone());
+                if let Some(ref mut f) = log_file {
+                    let _ = writeln!(f, "[tfe] {launch_msg}");
+                }
 
                 // Shell-split the binary string so that Custom("code --wait")
                 // is correctly parsed into binary="code" + extra_arg="--wait".
@@ -739,7 +861,7 @@ fn run_loop<W: io::Write>(
                 let _ = terminal.clear();
 
                 // 4. Reload both panes so any on-disk changes are visible.
-                vlog!(verbose, "reloading panes after editor exit");
+                app.log("reloading panes after editor exit".to_string());
                 app.left.reload();
                 app.right.reload();
 

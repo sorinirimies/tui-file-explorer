@@ -352,6 +352,12 @@ pub struct AppOptions {
     pub cd_on_exit: bool,
     /// Which editor to open when the user presses `e` on a file.
     pub editor: Editor,
+    /// When `true`, show a debug log panel in the TUI and write logs to a
+    /// file.  Activated by `--verbose` / `-v`.
+    pub verbose: bool,
+    /// Pre-App log lines collected during startup (before the App existed).
+    /// These are drained into [`App::debug_log`] on construction.
+    pub startup_log: Vec<String>,
 }
 
 impl Default for AppOptions {
@@ -367,6 +373,8 @@ impl Default for AppOptions {
             sort_mode: SortMode::default(),
             cd_on_exit: false,
             editor: Editor::default(),
+            verbose: false,
+            startup_log: Vec::new(),
         }
     }
 }
@@ -596,6 +604,12 @@ pub struct App {
     pub show_editor_panel: bool,
     /// Highlighted row index in the editor-picker panel (cursor position).
     pub editor_panel_idx: usize,
+    /// Whether the debug log panel is visible (`--verbose` / `-v`).
+    pub verbose: bool,
+    /// Accumulated debug log lines shown in the log panel.
+    pub debug_log: Vec<String>,
+    /// Scroll offset for the debug log panel (0 = pinned to bottom).
+    pub debug_scroll: usize,
 }
 
 impl App {
@@ -631,6 +645,17 @@ impl App {
             open_with_editor: None,
             show_editor_panel: false,
             editor_panel_idx: 0,
+            verbose: opts.verbose,
+            debug_log: opts.startup_log,
+            debug_scroll: 0,
+        }
+    }
+
+    /// Append a line to the debug log (visible in the log panel when
+    /// `--verbose` is active).
+    pub fn log(&mut self, msg: impl Into<String>) {
+        if self.verbose {
+            self.debug_log.push(msg.into());
         }
     }
 
@@ -3647,5 +3672,110 @@ mod tests {
     #[test]
     fn app_options_default_cd_on_exit_false() {
         assert!(!AppOptions::default().cd_on_exit);
+    }
+
+    // ── Verbose / debug log ──────────────────────────────────────────────
+
+    #[test]
+    fn app_options_default_verbose_is_false() {
+        assert!(!AppOptions::default().verbose);
+    }
+
+    #[test]
+    fn app_options_default_startup_log_is_empty() {
+        assert!(AppOptions::default().startup_log.is_empty());
+    }
+
+    #[test]
+    fn app_new_verbose_false_by_default() {
+        let app = make_app(std::env::temp_dir());
+        assert!(!app.verbose);
+    }
+
+    #[test]
+    fn app_new_debug_log_empty_by_default() {
+        let app = make_app(std::env::temp_dir());
+        assert!(app.debug_log.is_empty());
+    }
+
+    #[test]
+    fn app_new_debug_scroll_zero_by_default() {
+        let app = make_app(std::env::temp_dir());
+        assert_eq!(app.debug_scroll, 0);
+    }
+
+    #[test]
+    fn app_new_inherits_verbose_from_options() {
+        let app = App::new(AppOptions {
+            left_dir: std::env::temp_dir(),
+            right_dir: std::env::temp_dir(),
+            verbose: true,
+            ..AppOptions::default()
+        });
+        assert!(app.verbose);
+    }
+
+    #[test]
+    fn app_new_drains_startup_log_into_debug_log() {
+        let startup = vec!["line 1".to_string(), "line 2".to_string()];
+        let app = App::new(AppOptions {
+            left_dir: std::env::temp_dir(),
+            right_dir: std::env::temp_dir(),
+            startup_log: startup.clone(),
+            ..AppOptions::default()
+        });
+        assert_eq!(app.debug_log, startup);
+    }
+
+    #[test]
+    fn app_log_appends_when_verbose() {
+        let mut app = App::new(AppOptions {
+            left_dir: std::env::temp_dir(),
+            right_dir: std::env::temp_dir(),
+            verbose: true,
+            ..AppOptions::default()
+        });
+        app.log("hello");
+        app.log("world");
+        assert_eq!(app.debug_log.len(), 2);
+        assert_eq!(app.debug_log[0], "hello");
+        assert_eq!(app.debug_log[1], "world");
+    }
+
+    #[test]
+    fn app_log_does_nothing_when_not_verbose() {
+        let mut app = make_app(std::env::temp_dir());
+        assert!(!app.verbose);
+        app.log("should be ignored");
+        assert!(app.debug_log.is_empty());
+    }
+
+    #[test]
+    fn app_log_accepts_string_and_str() {
+        let mut app = App::new(AppOptions {
+            left_dir: std::env::temp_dir(),
+            right_dir: std::env::temp_dir(),
+            verbose: true,
+            ..AppOptions::default()
+        });
+        app.log("static str");
+        app.log(String::from("owned string"));
+        app.log(format!("formatted {}", 42));
+        assert_eq!(app.debug_log.len(), 3);
+    }
+
+    #[test]
+    fn app_log_preserves_startup_log_order() {
+        let mut app = App::new(AppOptions {
+            left_dir: std::env::temp_dir(),
+            right_dir: std::env::temp_dir(),
+            verbose: true,
+            startup_log: vec!["startup".to_string()],
+            ..AppOptions::default()
+        });
+        app.log("runtime");
+        assert_eq!(app.debug_log.len(), 2);
+        assert_eq!(app.debug_log[0], "startup");
+        assert_eq!(app.debug_log[1], "runtime");
     }
 }

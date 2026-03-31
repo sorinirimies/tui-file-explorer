@@ -16,7 +16,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
@@ -35,29 +35,45 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     let theme = app.theme().clone();
     let full = frame.area();
 
-    // Vertical split: main area | action bar (9 rows = hints row 1 + hints row 2 + status row).
-    let v_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(9)])
-        .split(full);
+    // Vertical split: main area | [debug log panel] | action bar.
+    // The debug panel only appears when --verbose is active.
+    let v_chunks = if app.verbose {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(10),
+                Constraint::Length(6),
+            ])
+            .split(full)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(6)])
+            .split(full)
+    };
 
     let main_area = v_chunks[0];
-    let action_area = v_chunks[1];
+    let action_area = if app.verbose {
+        v_chunks[2]
+    } else {
+        v_chunks[1]
+    };
 
     // Split the action bar vertically into three rows of 3:
     //   row 0 — Navigate | File Ops
     //   row 1 — Global   | Status
     let action_rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(3),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Length(3), Constraint::Length(3)])
         .split(action_area);
     let nav_fileops_area = action_rows[0];
     let global_status_area = action_rows[1];
-    // action_rows[2] is spare slack — not used but keeps the layout pinned.
+
+    // ── Debug log panel (verbose only) ────────────────────────────────────────
+    if app.verbose {
+        render_debug_panel(frame, v_chunks[1], app, &theme);
+    }
 
     // Horizontal split: left pane | [right pane] | [theme panel].
     let mut h_constraints = vec![];
@@ -148,6 +164,44 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     if let Some(snackbar) = &app.snackbar {
         render_snackbar(frame, full, snackbar, &theme);
     }
+}
+
+// ── Debug log panel ───────────────────────────────────────────────────────────
+
+/// Render a scrollable debug log panel showing the most recent log lines.
+///
+/// The panel auto-scrolls to the bottom unless the user has scrolled up
+/// (tracked by `app.debug_scroll`).  Only rendered when `--verbose` is active.
+pub fn render_debug_panel(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+    let block = Block::default()
+        .title(Span::styled(
+            format!(" Debug Log ({} lines) ", app.debug_log.len()),
+            Style::default().fg(theme.accent),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme.dim));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if app.debug_log.is_empty() || inner.height == 0 {
+        return;
+    }
+
+    // Show the most recent lines that fit in the panel.
+    let visible_lines = inner.height as usize;
+    let total = app.debug_log.len();
+    let start = total.saturating_sub(visible_lines + app.debug_scroll);
+    let end = total.saturating_sub(app.debug_scroll);
+
+    let lines: Vec<Line> = app.debug_log[start..end]
+        .iter()
+        .map(|msg| Line::from(Span::styled(msg.as_str(), Style::default().fg(theme.dim))))
+        .collect();
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
 }
 
 // ── Snackbar ──────────────────────────────────────────────────────────────────
@@ -1566,6 +1620,189 @@ mod tests {
         assert!(
             sb.is_expired(),
             "snackbar past its deadline must be expired"
+        );
+    }
+
+    // ── Debug log panel ───────────────────────────────────────────────────────
+
+    fn make_app_in(dir: std::path::PathBuf) -> App {
+        App::new(crate::app::AppOptions {
+            left_dir: dir.clone(),
+            right_dir: dir,
+            ..crate::app::AppOptions::default()
+        })
+    }
+
+    fn make_verbose_app_in(dir: std::path::PathBuf) -> App {
+        App::new(crate::app::AppOptions {
+            left_dir: dir.clone(),
+            right_dir: dir,
+            verbose: true,
+            ..crate::app::AppOptions::default()
+        })
+    }
+
+    #[test]
+    fn default_app_verbose_is_false() {
+        let app = make_app_in(std::env::temp_dir());
+        assert!(!app.verbose);
+    }
+
+    #[test]
+    fn default_app_debug_log_is_empty() {
+        let app = make_app_in(std::env::temp_dir());
+        assert!(app.debug_log.is_empty());
+    }
+
+    #[test]
+    fn verbose_app_has_verbose_true() {
+        let app = make_verbose_app_in(std::env::temp_dir());
+        assert!(app.verbose);
+    }
+
+    #[test]
+    fn verbose_app_log_accumulates() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        app.log("first");
+        app.log("second");
+        assert_eq!(app.debug_log.len(), 2);
+        assert_eq!(app.debug_log[0], "first");
+        assert_eq!(app.debug_log[1], "second");
+    }
+
+    #[test]
+    fn non_verbose_app_log_is_noop() {
+        let mut app = make_app_in(std::env::temp_dir());
+        app.log("ignored");
+        assert!(app.debug_log.is_empty());
+    }
+
+    #[test]
+    fn startup_log_transferred_into_debug_log() {
+        let app = App::new(crate::app::AppOptions {
+            left_dir: std::env::temp_dir(),
+            right_dir: std::env::temp_dir(),
+            verbose: true,
+            startup_log: vec!["boot 1".into(), "boot 2".into()],
+            ..crate::app::AppOptions::default()
+        });
+        assert_eq!(app.debug_log.len(), 2);
+        assert_eq!(app.debug_log[0], "boot 1");
+        assert_eq!(app.debug_log[1], "boot 2");
+    }
+
+    #[test]
+    fn startup_log_followed_by_runtime_log_preserves_order() {
+        let mut app = App::new(crate::app::AppOptions {
+            left_dir: std::env::temp_dir(),
+            right_dir: std::env::temp_dir(),
+            verbose: true,
+            startup_log: vec!["startup".into()],
+            ..crate::app::AppOptions::default()
+        });
+        app.log("runtime");
+        assert_eq!(app.debug_log, vec!["startup", "runtime"]);
+    }
+
+    #[test]
+    fn draw_without_verbose_does_not_panic() {
+        let mut app = make_app_in(std::env::temp_dir());
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+        // No debug panel should have been rendered — just verify no panic.
+    }
+
+    #[test]
+    fn draw_with_verbose_does_not_panic() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        app.log("test log line");
+        let backend = ratatui::backend::TestBackend::new(80, 30);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+        // Debug panel should have been rendered — just verify no panic.
+    }
+
+    #[test]
+    fn draw_with_verbose_empty_log_does_not_panic() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        let backend = ratatui::backend::TestBackend::new(80, 30);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+    }
+
+    #[test]
+    fn draw_with_verbose_many_log_lines_does_not_panic() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        for i in 0..100 {
+            app.log(format!("line {i}"));
+        }
+        let backend = ratatui::backend::TestBackend::new(80, 30);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+    }
+
+    #[test]
+    fn draw_with_verbose_small_terminal_does_not_panic() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        app.log("log line");
+        // Very small terminal — layout must not crash.
+        let backend = ratatui::backend::TestBackend::new(40, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+    }
+
+    /// Read all cell symbols from a test backend buffer into a single string.
+    fn buffer_text(terminal: &ratatui::Terminal<ratatui::backend::TestBackend>) -> String {
+        let buf = terminal.backend().buffer().clone();
+        let mut text = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                text.push_str(buf[(x, y)].symbol());
+            }
+        }
+        text
+    }
+
+    #[test]
+    fn render_debug_panel_contains_log_line() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        app.log("hello from debug");
+        let theme = Theme::default();
+        let backend = ratatui::backend::TestBackend::new(80, 12);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_debug_panel(frame, area, &app, &theme);
+            })
+            .unwrap();
+        let text = buffer_text(&terminal);
+        assert!(
+            text.contains("hello from debug"),
+            "debug panel should contain the log message"
+        );
+    }
+
+    #[test]
+    fn render_debug_panel_shows_line_count() {
+        let mut app = make_verbose_app_in(std::env::temp_dir());
+        app.log("a");
+        app.log("b");
+        app.log("c");
+        let theme = Theme::default();
+        let backend = ratatui::backend::TestBackend::new(80, 12);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_debug_panel(frame, area, &app, &theme);
+            })
+            .unwrap();
+        let text = buffer_text(&terminal);
+        assert!(
+            text.contains("3 lines"),
+            "debug panel title should show the line count"
         );
     }
 }
