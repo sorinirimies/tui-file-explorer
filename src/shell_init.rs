@@ -1476,6 +1476,16 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+
+            // Root bypasses Unix permission checks entirely, so this test
+            // cannot be made to work reliably in CI containers that run as
+            // root.  Skip rather than produce a spurious failure.
+            // SAFETY: getuid() is always safe to call.
+            let uid = unsafe { libc::getuid() };
+            if uid == 0 {
+                return;
+            }
+
             let mut perms = fs::metadata(&ro_dir).unwrap().permissions();
             perms.set_mode(0o444);
             fs::set_permissions(&ro_dir, perms).unwrap();
