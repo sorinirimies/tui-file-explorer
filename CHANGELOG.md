@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-04-17
+
+### Bug Fixes
+- Use sort_by_key to satisfy clippy 1.95 unnecessary_sort_by lint
+
+## [1.0.1] - 2026-04-17
+
+### Miscellaneous
+- Bump version to 1.0.1
+
 ## [1.0.0] - 2026-04-17
 
 ### Miscellaneous
