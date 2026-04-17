@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.9.8] - 2026-03-31
+
+### Miscellaneous
+- Bump version to 0.9.8
+
 ## [0.9.6] - 2026-03-31
 
 ### Miscellaneous
