@@ -1036,15 +1036,15 @@ pub(crate) fn load_entries(
 
     // Sort each group according to the active mode.
     // Directories always sort alphabetically among themselves.
-    dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    dirs.sort_by_key(|a| a.name.to_lowercase());
 
     match sort_mode {
         SortMode::Name => {
-            files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            files.sort_by_key(|a| a.name.to_lowercase());
         }
         SortMode::SizeDesc => {
             // Largest first; treat missing size as 0.
-            files.sort_by(|a, b| b.size.unwrap_or(0).cmp(&a.size.unwrap_or(0)));
+            files.sort_by_key(|b| std::cmp::Reverse(b.size.unwrap_or(0)));
         }
         SortMode::Extension => {
             // By extension first, then by name within each extension group.
