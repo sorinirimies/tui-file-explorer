@@ -47,7 +47,7 @@ mod doctor;
 mod info;
 mod shell_init;
 
-use tui_file_explorer::app::Editor;
+use tui_file_explorer::app::{Editor, Pane};
 
 use std::{
     fs::File,
@@ -624,6 +624,14 @@ fn run() -> io::Result<()> {
         verbose,
         startup_log: log_buf,
     });
+    // Restore persisted active pane.
+    if let Some(ref pane_str) = saved.active_pane {
+        match pane_str.as_str() {
+            "right" => app.active = Pane::Right,
+            _ => app.active = Pane::Left,
+        }
+    }
+
     // From here on, use app.log() — the startup buffer has been moved into App.
     // Re-bind log_buf to app's debug_log for the vlog! macro.
     app.log("app created, entering run loop".to_string());
@@ -714,6 +722,13 @@ fn run() -> io::Result<()> {
         // Persist whichever editor the user ended up on (including any cycling
         // done through the options panel).
         editor: Some(app.editor.to_key()),
+        active_pane: Some(
+            match app.active {
+                Pane::Left => "left",
+                Pane::Right => "right",
+            }
+            .to_string(),
+        ),
     });
 
     // Emit a path to stdout so a shell wrapper can act on it (e.g. `cd`).

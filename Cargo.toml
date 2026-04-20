@@ -44,6 +44,7 @@ ratatui    = "0.30"
 crossterm  = "0.29"
 clap       = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
 tui-slider = "0.3.2"
+redb       = "4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

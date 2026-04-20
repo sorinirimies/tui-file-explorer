@@ -2410,130 +2410,40 @@ mod tests {
         }
     }
 
-    #[test]
-    fn entry_icon_iso_returns_disc() {
-        let e = make_file_entry("release.iso");
-        assert_eq!(entry_icon(&e), "💿");
+    macro_rules! assert_entry_icon {
+        ($( $test_name:ident : $filename:expr => $icon:expr ),+ $(,)?) => {
+            $(
+                #[test]
+                fn $test_name() {
+                    let e = make_file_entry($filename);
+                    assert_eq!(entry_icon(&e), $icon);
+                }
+            )+
+        };
     }
 
-    #[test]
-    fn entry_icon_dmg_returns_disc() {
-        let e = make_file_entry("app.dmg");
-        assert_eq!(entry_icon(&e), "💿");
-    }
-
-    #[test]
-    fn entry_icon_zip_returns_package() {
-        let e = make_file_entry("archive.zip");
-        assert_eq!(entry_icon(&e), "📦");
-    }
-
-    #[test]
-    fn entry_icon_tar_returns_package() {
-        let e = make_file_entry("src.tar");
-        assert_eq!(entry_icon(&e), "📦");
-    }
-
-    #[test]
-    fn entry_icon_gz_returns_package() {
-        let e = make_file_entry("data.gz");
-        assert_eq!(entry_icon(&e), "📦");
-    }
-
-    #[test]
-    fn entry_icon_pdf_returns_book() {
-        let e = make_file_entry("manual.pdf");
-        assert_eq!(entry_icon(&e), "📕");
-    }
-
-    #[test]
-    fn entry_icon_md_returns_memo() {
-        let e = make_file_entry("README.md");
-        assert_eq!(entry_icon(&e), "📝");
-    }
-
-    #[test]
-    fn entry_icon_toml_returns_gear() {
-        let e = make_file_entry("Cargo.toml");
-        assert_eq!(entry_icon(&e), "⚙ ");
-    }
-
-    #[test]
-    fn entry_icon_json_returns_gear() {
-        let e = make_file_entry("config.json");
-        assert_eq!(entry_icon(&e), "⚙ ");
-    }
-
-    #[test]
-    fn entry_icon_lock_returns_lock() {
-        let e = make_file_entry("Cargo.lock");
-        assert_eq!(entry_icon(&e), "🔒");
-    }
-
-    #[test]
-    fn entry_icon_py_returns_snake() {
-        let e = make_file_entry("script.py");
-        assert_eq!(entry_icon(&e), "🐍");
-    }
-
-    #[test]
-    fn entry_icon_html_returns_globe() {
-        let e = make_file_entry("index.html");
-        assert_eq!(entry_icon(&e), "🌐");
-    }
-
-    #[test]
-    fn entry_icon_css_returns_palette() {
-        let e = make_file_entry("style.css");
-        assert_eq!(entry_icon(&e), "🎨");
-    }
-
-    #[test]
-    fn entry_icon_svg_returns_palette() {
-        let e = make_file_entry("logo.svg");
-        assert_eq!(entry_icon(&e), "🎨");
-    }
-
-    #[test]
-    fn entry_icon_png_returns_image() {
-        let e = make_file_entry("photo.png");
-        assert_eq!(entry_icon(&e), "🖼 ");
-    }
-
-    #[test]
-    fn entry_icon_jpg_returns_image() {
-        let e = make_file_entry("photo.jpg");
-        assert_eq!(entry_icon(&e), "🖼 ");
-    }
-
-    #[test]
-    fn entry_icon_mp4_returns_film() {
-        let e = make_file_entry("video.mp4");
-        assert_eq!(entry_icon(&e), "🎬");
-    }
-
-    #[test]
-    fn entry_icon_mp3_returns_music() {
-        let e = make_file_entry("song.mp3");
-        assert_eq!(entry_icon(&e), "🎵");
-    }
-
-    #[test]
-    fn entry_icon_ttf_returns_font() {
-        let e = make_file_entry("font.ttf");
-        assert_eq!(entry_icon(&e), "🔤");
-    }
-
-    #[test]
-    fn entry_icon_exe_returns_gear() {
-        let e = make_file_entry("setup.exe");
-        assert_eq!(entry_icon(&e), "⚙ ");
-    }
-
-    #[test]
-    fn entry_icon_unknown_extension_returns_document() {
-        let e = make_file_entry("mystery.xyz");
-        assert_eq!(entry_icon(&e), "📄");
+    assert_entry_icon! {
+        entry_icon_iso_returns_disc:                      "release.iso"  => "💿",
+        entry_icon_dmg_returns_disc:                      "app.dmg"      => "💿",
+        entry_icon_zip_returns_package:                   "archive.zip"  => "📦",
+        entry_icon_tar_returns_package:                   "src.tar"      => "📦",
+        entry_icon_gz_returns_package:                    "data.gz"      => "📦",
+        entry_icon_pdf_returns_book:                      "manual.pdf"   => "📕",
+        entry_icon_md_returns_memo:                       "README.md"    => "📝",
+        entry_icon_toml_returns_gear:                     "Cargo.toml"   => "⚙ ",
+        entry_icon_json_returns_gear:                     "config.json"  => "⚙ ",
+        entry_icon_lock_returns_lock:                     "Cargo.lock"   => "🔒",
+        entry_icon_py_returns_snake:                      "script.py"    => "🐍",
+        entry_icon_html_returns_globe:                    "index.html"   => "🌐",
+        entry_icon_css_returns_palette:                   "style.css"    => "🎨",
+        entry_icon_svg_returns_palette:                   "logo.svg"     => "🎨",
+        entry_icon_png_returns_image:                     "photo.png"    => "🖼 ",
+        entry_icon_jpg_returns_image:                     "photo.jpg"    => "🖼 ",
+        entry_icon_mp4_returns_film:                      "video.mp4"    => "🎬",
+        entry_icon_mp3_returns_music:                     "song.mp3"     => "🎵",
+        entry_icon_ttf_returns_font:                      "font.ttf"     => "🔤",
+        entry_icon_exe_returns_gear:                      "setup.exe"    => "⚙ ",
+        entry_icon_unknown_extension_returns_document:    "mystery.xyz"  => "📄",
     }
 
     #[test]

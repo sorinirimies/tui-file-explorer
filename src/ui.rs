@@ -23,6 +23,23 @@ use ratatui::{
 use crate::app::{App, CopyProgress, Modal, Pane, Snackbar};
 use tui_slider::{style::SliderStyle, Slider, SliderOrientation, SliderState};
 
+// ── Styled-span helpers ───────────────────────────────────────────────────────
+
+/// Create a bold-accent styled span for key-binding labels.
+fn key_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
+    Span::styled(
+        s,
+        Style::default()
+            .fg(theme.accent)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
+/// Create a dim styled span for descriptions.
+fn dim_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
+    Span::styled(s, Style::default().fg(theme.dim))
+}
+
 // ── Top-level draw ────────────────────────────────────────────────────────────
 
 /// Draw the entire application UI into `frame`.
@@ -809,15 +826,8 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
 ///   Row 0  ╭─ Navigate ──────────────────╮╭─ File Ops ──────────────────╮
 ///   Row 1  ╭─ Global ────────────────────╮╭─ Status ────────────────────╮
 pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, theme: &Theme) {
-    let k = |s: &'static str| {
-        Span::styled(
-            s,
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD),
-        )
-    };
-    let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
+    let k = |s: &'static str| key_span(s, theme);
+    let d = |s: &'static str| dim_span(s, theme);
 
     // ── Row 0: Navigate (left 50%) | File Ops (right 50%) ────────────────────
     let row0_cols = Layout::default()
@@ -929,15 +939,8 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
 /// Extracted so the spans can be tested independently of a real [`Frame`].
 #[cfg(test)]
 pub fn render_nav_hints_spans(theme: &Theme) -> Vec<Span<'_>> {
-    let k = |s: &'static str| {
-        Span::styled(
-            s,
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD),
-        )
-    };
-    let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
+    let k = |s: &'static str| key_span(s, theme);
+    let d = |s: &'static str| dim_span(s, theme);
     vec![
         k("↑"),
         d("/"),
@@ -1080,15 +1083,8 @@ pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
 /// Extracted so the spans can be tested independently of a real [`Frame`].
 #[cfg(test)]
 pub fn render_action_bar_spans(theme: &Theme) -> Vec<Span<'_>> {
-    let k = |s: &'static str| {
-        Span::styled(
-            s,
-            Style::default()
-                .fg(theme.accent)
-                .add_modifier(Modifier::BOLD),
-        )
-    };
-    let d = |s: &'static str| Span::styled(s, Style::default().fg(theme.dim));
+    let k = |s: &'static str| key_span(s, theme);
+    let d = |s: &'static str| dim_span(s, theme);
     vec![
         k("Tab"),
         d(" pane │ "),

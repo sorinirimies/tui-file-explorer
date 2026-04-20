@@ -720,6 +720,18 @@ impl App {
         self.snackbar = Some(Snackbar::info(msg));
     }
 
+    /// Reload both panes and show a notification with the entry name.
+    fn reload_and_notify(&mut self, path: &std::path::Path, verb: &str) {
+        self.left.reload();
+        self.right.reload();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        self.notify(format!("{verb} '{name}'"));
+    }
+
     /// Show an error snackbar with the given message (auto-expires after 4 s).
     pub fn notify_error(&mut self, msg: impl Into<String>) {
         self.snackbar = Some(Snackbar::error(msg));
@@ -1360,36 +1372,9 @@ impl App {
                 return Ok(false);
             }
             ExplorerOutcome::Dismissed => return Ok(true),
-            ExplorerOutcome::MkdirCreated(path) => {
-                self.left.reload();
-                self.right.reload();
-                let name = path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                self.notify(format!("Created folder '{name}'"));
-            }
-            ExplorerOutcome::TouchCreated(path) => {
-                self.left.reload();
-                self.right.reload();
-                let name = path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                self.notify(format!("Created file '{name}'"));
-            }
-            ExplorerOutcome::RenameCompleted(path) => {
-                self.left.reload();
-                self.right.reload();
-                let name = path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                self.notify(format!("Renamed to '{name}'"));
-            }
+            ExplorerOutcome::MkdirCreated(path) => self.reload_and_notify(&path, "Created folder"),
+            ExplorerOutcome::TouchCreated(path) => self.reload_and_notify(&path, "Created file"),
+            ExplorerOutcome::RenameCompleted(path) => self.reload_and_notify(&path, "Renamed to"),
             ExplorerOutcome::Pending => {
                 if self.status_msg.starts_with("Error") || self.status_msg.starts_with("Delete") {
                     // keep error messages visible
@@ -3879,5 +3864,41 @@ mod tests {
         assert_eq!(app.debug_scroll, 0);
         app.handle_key(ctrl_down()).unwrap();
         assert_eq!(app.debug_scroll, 0);
+    }
+
+    // ── CopyProgress tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn copy_progress_new_starts_at_zero() {
+        let p = CopyProgress::new("test.txt", 5);
+        assert_eq!(p.done, 0);
+        assert_eq!(p.total, 5);
+    }
+
+    #[test]
+    fn copy_progress_fraction_at_start_is_zero() {
+        let p = CopyProgress::new("test.txt", 10);
+        assert!((p.fraction() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn copy_progress_fraction_at_midpoint() {
+        let mut p = CopyProgress::new("test.txt", 10);
+        p.done = 5;
+        assert!((p.fraction() - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn copy_progress_fraction_when_total_is_zero_returns_one() {
+        let p = CopyProgress::new("test.txt", 0);
+        assert!((p.fraction() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn copy_progress_is_complete_when_done_equals_total() {
+        let mut p = CopyProgress::new("test.txt", 3);
+        assert!(!p.is_complete());
+        p.done = 3;
+        assert!(p.is_complete());
     }
 }
