@@ -106,9 +106,9 @@ changelog-unreleased: check-git-cliff
 
 # Generate changelog for a specific version tag
 changelog-version version: check-git-cliff
-    @echo "Generating changelog for version {{version}}..."
-    git-cliff --tag v{{version}} -o CHANGELOG.md
-    @echo "✅ Changelog generated for v{{version}}!"
+    @echo "Generating changelog for version {{ version }}..."
+    git-cliff --tag v{{ version }} -o CHANGELOG.md
+    @echo "✅ Changelog generated for v{{ version }}!"
 
 # Regenerate full changelog from all history
 changelog-update: check-git-cliff
@@ -123,9 +123,10 @@ version: check-nu
     @nu scripts/version.nu
 
 # Bump version interactively — prompts for confirmation, runs checks, commits and tags.
+
 # Use `just release <version>` for fully automated non-interactive release.
 bump version: check-all check-git-cliff check-nu
-    nu scripts/bump_version.nu {{version}}
+    nu scripts/bump_version.nu {{ version }}
 
 # Run pre-publish readiness checks
 release-check: check-nu
@@ -140,42 +141,70 @@ publish: release-check
     cargo publish
 
 # ── Full release workflows ────────────────────────────────────────────────────
-
 # Full automated release to GitHub — bumps version, commits, tags, and pushes.
 # This is the single command you run to cut a release:
-#   just release 0.2.0
+
+# just release 0.2.0
 release version: check-all check-git-cliff check-nu
-    nu scripts/bump_version.nu --yes {{version}}
+    nu scripts/bump_version.nu --yes {{ version }}
     @echo "Pushing branch and tag to GitHub..."
     git push origin main
-    git push origin v{{version}}
-    @echo "✅ Release v{{version}} pushed — GitHub Actions will handle the rest."
+    git push origin v{{ version }}
+    @echo "✅ Release v{{ version }} pushed — GitHub Actions will handle the rest."
 
 # Full automated release to Gitea only.
 release-gitea version: check-all check-git-cliff check-nu
-    nu scripts/bump_version.nu --yes {{version}}
+    nu scripts/bump_version.nu --yes {{ version }}
     @echo "Pushing branch and tag to Gitea..."
     git push gitea main
-    git push gitea v{{version}}
-    @echo "✅ Release v{{version}} pushed to Gitea."
+    git push gitea v{{ version }}
+    @echo "✅ Release v{{ version }} pushed to Gitea."
 
-# Full automated release to both GitHub and Gitea.
+# Full automated release to Gitea Starscream only.
+release-gitea-starscream version: check-all check-git-cliff check-nu
+    nu scripts/bump_version.nu --yes {{ version }}
+    @echo "Pushing branch and tag to Gitea Starscream..."
+    git push gitea_starscream main
+    git push gitea_starscream v{{ version }}
+    @echo "✅ Release v{{ version }} pushed to Gitea Starscream."
+
+# Full automated release to all remotes (continues on failure).
 release-all version: check-all check-git-cliff check-nu
-    nu scripts/bump_version.nu --yes {{version}}
-    @echo "Pushing branch and tag to GitHub and Gitea..."
-    git push origin main
-    git push gitea main
-    git push origin v{{version}}
-    git push gitea v{{version}}
-    @echo "✅ Release v{{version}} pushed to both remotes."
+    #!/usr/bin/env sh
+    set -e
+    nu scripts/bump_version.nu --yes {{ version }}
+    set +e
+    echo "Pushing release v{{ version }} to all remotes…"
+    failed=""
+    git push --follow-tags origin main             || failed="$failed origin"
+    git push --follow-tags gitea main              || failed="$failed gitea"
+    git push --follow-tags gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Release v{{ version }} failed to push to:$failed"
+    else
+        echo "✅ Release v{{ version }} pushed to GitHub, Gitea, and Gitea Starscream!"
+    fi
+
+# Push the latest commit and all tags to every remote (no bump, continues on failure).
+push-release-all: check-all
+    #!/usr/bin/env sh
+    failed=""
+    git push --follow-tags origin main             || failed="$failed origin"
+    git push --follow-tags gitea main              || failed="$failed gitea"
+    git push --follow-tags gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to push to:$failed"
+    else
+        echo "✅ Latest commit + tags pushed to all remotes."
+    fi
 
 # ── VHS / Demo GIFs ──────────────────────────────────────────────────────────
 
 # Generate a single demo GIF (usage: just vhs basic)
 vhs name:
-    @echo "Recording {{name}}.tape..."
-    vhs examples/vhs/{{name}}.tape
-    @echo "✅ examples/vhs/generated/{{name}}.gif created"
+    @echo "Recording {{ name }}.tape..."
+    vhs examples/vhs/{{ name }}.tape
+    @echo "✅ examples/vhs/generated/{{ name }}.gif created"
 
 # Generate all demo GIFs (requires VHS: https://github.com/charmbracelet/vhs)
 vhs-all:
@@ -196,22 +225,21 @@ vhs-all:
     vhs examples/vhs/create_entries.tape
     @echo "✅ All GIFs generated in examples/vhs/generated/"
 
-# ── Git helpers ───────────────────────────────────────────────────────────────
+# ── Git remotes & pushing ────────────────────────────────────────────────────
 
 # Show current git remotes
 remotes:
-    @echo "Configured git remotes:"
     @git remote -v
 
 # Add a Gitea remote (usage: just setup-gitea https://gitea.example.com/user/repo.git)
 setup-gitea url:
-    git remote add gitea {{url}}
+    git remote add gitea {{ url }}
     @echo "✅ Gitea remote added! Test with: git push gitea main"
 
 # Commit all staged changes
 commit message:
     git add .
-    git commit -m "{{message}}"
+    git commit -m "{{ message }}"
 
 # Pull from GitHub
 pull:
@@ -221,11 +249,22 @@ pull:
 pull-gitea:
     git pull gitea main
 
-# Pull from both remotes
+# Pull from Gitea Starscream
+pull-gitea-starscream:
+    git pull gitea_starscream main
+
+# Pull from all remotes (continues on failure)
 pull-all:
-    git pull origin main
-    git pull gitea main
-    @echo "✅ Pulled from both!"
+    #!/usr/bin/env sh
+    failed=""
+    git pull origin main             || failed="$failed origin"
+    git pull gitea main              || failed="$failed gitea"
+    git pull gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to pull from:$failed"
+    else
+        echo "✅ Pulled from GitHub, Gitea, and Gitea Starscream!"
+    fi
 
 # Push to GitHub
 push:
@@ -235,27 +274,78 @@ push:
 push-gitea:
     git push gitea main
 
-# Push to both GitHub and Gitea
+# Push to Gitea Starscream
+push-gitea-starscream:
+    git push gitea_starscream main
+
+# Push to all remotes (continues on failure)
 push-all:
-    git push origin main
-    git push gitea main
-    @echo "✅ Pushed to both!"
+    #!/usr/bin/env sh
+    failed=""
+    git push origin main             || failed="$failed origin"
+    git push gitea main              || failed="$failed gitea"
+    git push gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to push to:$failed"
+    else
+        echo "✅ Pushed to GitHub, Gitea, and Gitea Starscream!"
+    fi
+
+# Force-push to all remotes
+push-all-force:
+    #!/usr/bin/env sh
+    failed=""
+    git push --force origin main             || failed="$failed origin"
+    git push --force gitea main              || failed="$failed gitea"
+    git push --force gitea_starscream main   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to force-push to:$failed"
+    else
+        echo "✅ Force-pushed to GitHub, Gitea, and Gitea Starscream!"
+    fi
 
 # Push tags to GitHub
 push-tags:
     git push origin --tags
 
-# Push tags to both remotes
+# Push tags to all remotes (continues on failure)
 push-tags-all:
-    git push origin --tags
-    git push gitea --tags
-    @echo "✅ Tags pushed to both!"
+    #!/usr/bin/env sh
+    failed=""
+    git push origin --tags             || failed="$failed origin"
+    git push gitea --tags              || failed="$failed gitea"
+    git push gitea_starscream --tags   || failed="$failed gitea_starscream"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to push tags to:$failed"
+    else
+        echo "✅ Tags pushed to all remotes!"
+    fi
 
 # Force-sync Gitea from GitHub
 sync-gitea:
     git push gitea main --force
     git push gitea --tags --force
     @echo "✅ Gitea synced!"
+
+# Force-sync Gitea Starscream from GitHub
+sync-gitea-starscream:
+    git push gitea_starscream main --force
+    git push gitea_starscream --tags --force
+    @echo "✅ Gitea Starscream synced!"
+
+# Force-sync all Gitea instances from GitHub (continues on failure)
+sync-all-gitea:
+    #!/usr/bin/env sh
+    failed=""
+    git push gitea main --force                  || failed="$failed gitea"
+    git push gitea --tags --force                || failed="$failed gitea-tags"
+    git push gitea_starscream main --force       || failed="$failed gitea_starscream"
+    git push gitea_starscream --tags --force     || failed="$failed gitea_starscream-tags"
+    if [ -n "$failed" ]; then
+        echo "⚠️  Failed to sync:$failed"
+    else
+        echo "✅ All Gitea instances force-synced with GitHub."
+    fi
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 
