@@ -1,8 +1,8 @@
-name: Weekly Dependency Update
+name: Nightly Dependency Update
 
 on:
   schedule:
-    - cron: "0 0 * * 3"
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 env:
@@ -26,7 +26,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run cargo update
-        run: cargo update
+        run: cargo update 2>&1
 
       - name: Check for changes
         id: check
@@ -52,14 +52,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH="deps/weekly-cargo-update"
+          BRANCH="deps/nightly-cargo-update"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git checkout -B "$BRANCH"
           git add Cargo.lock
-          git commit -m "chore(deps): weekly cargo update"
+          git commit -m "chore(deps): nightly cargo update"
           git push --force origin "$BRANCH"
 
           # Check if an open PR from this branch already exists
@@ -76,8 +76,8 @@ jobs:
               -H "Authorization: token $GITHUB_TOKEN" \
               -H "Content-Type: application/json" \
               -d '{
-                "title": "chore(deps): weekly cargo update",
-                "body": "Automated weekly update of Cargo dependencies via `cargo update`.\n\nThis PR was created automatically by the **Weekly Dependency Update** workflow.",
+                "title": "chore(deps): nightly cargo update",
+                "body": "Automated nightly update of Cargo dependencies via `cargo update`.\n\nThis PR was created automatically by the **Nightly Dependency Update** workflow.",
                 "head": "'"$BRANCH"'",
                 "base": "main"
               }' \
