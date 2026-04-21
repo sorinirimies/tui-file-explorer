@@ -391,7 +391,7 @@ fn open_in_editor(
 // ── Drawing ───────────────────────────────────────────────────────────────────
 
 fn draw(frame: &mut Frame, app: &mut App) {
-    let theme = app.theme().clone();
+    let theme = *app.theme();
     let area = frame.area();
 
     // Horizontal split: file explorer (fill) | editor panel (42 cols, when open).

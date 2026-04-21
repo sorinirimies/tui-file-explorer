@@ -792,7 +792,7 @@ mod tests {
     #[test]
     fn builder_does_not_mutate_other_fields() {
         let original = Theme::default();
-        let modified = original.clone().brand(Color::Red);
+        let modified = original.brand(Color::Red);
         // All other fields survive unchanged.
         assert_eq!(modified.accent, original.accent);
         assert_eq!(modified.success, original.success);

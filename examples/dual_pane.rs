@@ -215,7 +215,7 @@ fn event_loop(
 // ── Drawing ───────────────────────────────────────────────────────────────────
 
 fn draw(frame: &mut Frame, app: &mut App) {
-    let theme = app.theme.clone();
+    let theme = app.theme;
     let area = frame.area();
 
     // Outer layout: explorer area (fill) + status bar (3 rows).

@@ -177,7 +177,7 @@ fn event_loop(
 // ── Drawing ───────────────────────────────────────────────────────────────────
 
 fn draw(frame: &mut Frame, app: &mut ThemeSwitcher) {
-    let theme = app.theme().clone();
+    let theme = *app.theme();
     let area = frame.area();
 
     // Split horizontally: explorer (fill) | sidebar (32 cols).

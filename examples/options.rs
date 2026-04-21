@@ -421,7 +421,7 @@ fn open_in_editor(
 // ── Drawing ───────────────────────────────────────────────────────────────────
 
 fn draw(frame: &mut Frame, app: &mut App) {
-    let theme = app.theme().clone();
+    let theme = *app.theme();
     let area = frame.area();
 
     // Vertical split: main area (fill) | status bar (3 rows) when a status exists.
