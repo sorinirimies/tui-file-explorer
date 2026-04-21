@@ -69,7 +69,7 @@ pub const C_MATCH: Color = Color::Rgb(80, 220, 120);
 /// //     render_themed(&mut explorer, frame, frame.area(), &theme);
 /// // });
 /// ```
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Theme {
     /// Widget title colour (e.g. "📁 File Explorer").
     pub brand: Color,

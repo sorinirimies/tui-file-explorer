@@ -387,7 +387,7 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
                     format!("{icon} "),
                     Style::default().fg(if entry.is_dir { theme.dir } else { theme.fg }),
                 ),
-                Span::styled(entry.name.clone(), name_style),
+                Span::styled(entry.name.as_str(), name_style),
             ];
 
             if !size_str.is_empty() {

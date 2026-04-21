@@ -49,7 +49,7 @@ fn dim_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
 /// - A fixed-height action bar at the bottom.
 /// - An optional modal overlay on top of everything.
 pub fn draw(app: &mut App, frame: &mut Frame) {
-    let theme = app.theme().clone();
+    let theme = *app.theme();
     let full = frame.area();
 
     // Vertical split: main area | [debug log panel] | action bar.
@@ -123,8 +123,8 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         .split(main_area);
 
     // ── Panes ─────────────────────────────────────────────────────────────────
-    let active_theme = theme.clone();
-    let inactive_theme = theme.clone().accent(theme.dim).brand(theme.dim);
+    let active_theme = theme;
+    let inactive_theme = theme.accent(theme.dim).brand(theme.dim);
 
     let (left_theme, right_theme) = match app.active {
         Pane::Left => (&active_theme, &inactive_theme),
@@ -132,17 +132,24 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     };
 
     // Sync the current theme name and editor label into both panes so render_header can display them.
-    let theme_name = app.theme_name().to_string();
-    app.left.theme_name = theme_name.clone();
-    app.right.theme_name = theme_name;
+    // Only allocate when the value actually changed to avoid 4 string allocations per frame.
+    let theme_changed = app.left.theme_name != app.theme_name();
+    if theme_changed {
+        let theme_name = app.theme_name().to_string();
+        app.right.theme_name = theme_name.clone();
+        app.left.theme_name = theme_name;
+    }
 
-    let editor_name = if app.editor == crate::app::Editor::None {
-        String::new()
+    let editor_label = if app.editor == crate::app::Editor::None {
+        ""
     } else {
-        app.editor.label().to_string()
+        app.editor.label()
     };
-    app.left.editor_name = editor_name.clone();
-    app.right.editor_name = editor_name;
+    if app.left.editor_name != editor_label {
+        let editor_name = editor_label.to_string();
+        app.right.editor_name = editor_name.clone();
+        app.left.editor_name = editor_name;
+    }
 
     render_themed(&mut app.left, frame, h_chunks[0], left_theme);
 
