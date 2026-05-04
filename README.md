@@ -47,6 +47,9 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 ### Create entries
 ![create_entries](examples/vhs/generated/create_entries.gif)
 
+### Preview & editor
+<img src="examples/vhs/generated/preview.gif" alt="Preview demo" width="600"/>
+
 ---
 
 ## Features
@@ -58,13 +61,23 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 - 🎛️ **Extension filter** — only matching files are selectable; dirs are always navigable
 - 👁️ Toggle hidden dot-file visibility with `.`
 - ⌨️ Full keyboard navigation: Miller-columns `←`/`→` (ascend/descend), vim keys (`h/j/k/l`), `↑`/`↓`/`j`/`k`, `PgUp/PgDn`, `g/G` — `→` on a file moves down, never exits the TUI
-- 🎨 **27 named themes** — Catppuccin, Dracula, Nord, Tokyo Night, Kanagawa, Gruvbox, and more
+- 🎨 **43 named themes** — Catppuccin, Dracula, Nord, Tokyo Night, Kanagawa, Gruvbox, and more
 - 🎛️ **Live theme panel** — press `T` to open a sidebar, `t`/`[` to cycle themes; `↑`/`↓` navigate the list when the panel is open
 - 📝 **Editor picker** — `Shift+E` opens a panel listing Terminal Editors and IDEs & GUI Editors; `↑`/`↓` navigate, `Enter` selects, `Esc` cancels; `e` opens the highlighted file in the configured editor
 - ⚙️ **Options panel** — `Shift+O` opens a panel showing Toggles, Editor, and File Ops sections
 - 🔧 Fluent builder API for ergonomic embedding — both `FileExplorer` and `DualPane`
 - 📦 **`DualPane` library widget** — drop a full two-pane explorer into any Ratatui app with one struct
 - 🖥️ **`cd` on exit** — dismiss with `Esc`/`q` and your terminal jumps to the directory you were browsing; one-time setup with `tfe --init <shell>` (bash, zsh, fish, powershell)
+- 👀 **File preview** — press `P` to toggle a live preview pane showing text files
+  with line numbers, images via the best terminal graphics protocol (Kitty,
+  Sixel, iTerm2, or halfblocks), binary hex dumps, and directory stats.
+- 🖼️ **Image preview** — powered by [`ratatui-image`](https://github.com/ratatui/ratatui-image),
+  automatically detects your terminal's graphics capabilities for the sharpest
+  possible rendering.
+- ✏️ **Built-in editor** — press `i` to open a file in the inline editor for quick
+  changes without leaving the file explorer.  Ctrl+S saves, Esc exits.
+- 📜 **Scroll indicators** — semi-translucent scroll thumbs appear on every
+  scrollable area (file list, preview, editor, debug log).
 - ✅ Lean library — only `ratatui` + `crossterm` required (`clap` is opt-out)
 
 ---
@@ -74,7 +87,7 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 | Metric | Value |
 |--------|-------|
 | Library dependencies | 2 (`ratatui`, `crossterm`) |
-| Named colour themes | 27 |
+| Named colour themes | 43 |
 | Sort modes | 3 (`Name`, `Size ↓`, `Extension`) |
 | File operations | 4 (copy, cut, paste, delete) |
 | Key bindings | 20+ |
@@ -282,6 +295,17 @@ match dual.handle_key(key) {
 | `Shift+C` | Toggle `cd-on-exit` on/off |
 | `Ctrl+↑` / `Ctrl+↓` | Scroll debug log panel (verbose mode only) |
 
+### Preview & editor
+
+| Key | Action |
+|-----|--------|
+| `P` (Shift+P) | Toggle file preview panel |
+| `Ctrl+J` | Scroll preview down |
+| `Ctrl+K` | Scroll preview up |
+| `i` | Open inline editor for current file |
+| `Ctrl+S` (in editor) | Save file |
+| `Esc` (in editor) | Exit editor |
+
 ### Search mode (after pressing `/`)
 
 | Key | Action |
@@ -485,7 +509,7 @@ terminal.draw(|frame| {
 })?;
 ```
 
-### Named presets (27 included)
+### Named presets (43 included)
 
 All presets are available as associated constructors on `Theme`:
 
@@ -514,7 +538,7 @@ for (name, desc, _theme) in Theme::all_presets() {
 ```
 
 **Full preset list:**  
-`Default` · `Dracula` · `Nord` · `Solarized Dark` · `Solarized Light` · `Gruvbox Dark` · `Gruvbox Light` · `Catppuccin Latte` · `Catppuccin Frappé` · `Catppuccin Macchiato` · `Catppuccin Mocha` · `Tokyo Night` · `Tokyo Night Storm` · `Tokyo Night Light` · `Kanagawa Wave` · `Kanagawa Dragon` · `Kanagawa Lotus` · `Moonfly` · `Nightfly` · `Oxocarbon` · `Grape` · `Ocean` · `Sunset` · `Forest` · `Rose` · `Mono` · `Neon`
+`Default` · `Dracula` · `Nord` · `Solarized Dark` · `Solarized Light` · `Gruvbox Dark` · `Gruvbox Light` · `Catppuccin Latte` · `Catppuccin Frappé` · `Catppuccin Macchiato` · `Catppuccin Mocha` · `Tokyo Night` · `Tokyo Night Storm` · `Tokyo Night Light` · `Kanagawa Wave` · `Kanagawa Dragon` · `Kanagawa Lotus` · `Moonfly` · `Nightfly` · `Oxocarbon` · `Grape` · `Ocean` · `Sunset` · `Forest` · `Rose` · `Mono` · `Neon` · `Cyberpunk` · `Rosé Pine` · `Rosé Pine Moon` · `Rosé Pine Dawn` · `Ayu Mirage` · `Everforest Dark` · `Atom One Dark` · `Atom One Light` · `Night Owl` · `Poimandres` · `Flexoki Dark` · `Flexoki Light` · `Carbonfox` · `Andromeda` · `Synthwave '84` · `Default Light`
 
 ### Palette constants
 
@@ -743,7 +767,7 @@ Demonstrates the full **copy then paste** and **cut (move) then paste** workflow
 
 ![Theme switcher](examples/vhs/generated/theme_switcher.gif)
 
-Live theme cycling through all 27 named palettes with a real-time sidebar showing the catalogue and the active theme's description.
+Live theme cycling through all 43 named palettes with a real-time sidebar showing the catalogue and the active theme's description.
 
 ---
 
@@ -828,6 +852,22 @@ Demonstrates in-place file and directory creation:
 
 ---
 
+### Preview & Inline Editor
+
+<p align="center">
+  <img src="examples/vhs/generated/preview.gif" alt="Preview & editor demo" width="700"/>
+</p>
+
+| Action | Key |
+|--------|-----|
+| Toggle preview panel | `P` |
+| Scroll preview | `Ctrl+J` / `Ctrl+K` |
+| Open inline editor | `i` |
+| Save in editor | `Ctrl+S` |
+| Exit editor | `Esc` |
+
+---
+
 ## Demo Quick Reference
 
 | Demo | Command | Highlights |
@@ -839,7 +879,7 @@ Demonstrates in-place file and directory creation:
 | **Dual-pane (library)** | `cargo run --example dual_pane` | `DualPane` widget, Tab focus, `w` toggle, status bar |
 | **Dual-pane (right dir)** | `cargo run --example dual_pane -- /tmp` | Independent left/right starting directories |
 | File operations | `cargo run --bin tfe` | Copy, cut, paste, delete, overwrite modal |
-| Theme switcher | `cargo run --example theme_switcher` | 27 live themes, sidebar catalogue |
+| Theme switcher | `cargo run --example theme_switcher` | 43 live themes, sidebar catalogue |
 | Pane toggle | `cargo run --bin tfe` | Tab focus-switch, `w` single/two-pane, `T` theme panel |
 | **Options panel** | `cargo run --bin tfe` then `Shift+O` | Options panel, Shift+E editor picker, error snackbar |
 | **Editor picker** | `cargo run --example editor_picker` | Editor picker panel, Terminal Editors + IDEs |
@@ -860,7 +900,7 @@ tfe [OPTIONS] [PATH]
 | `-e, --ext <EXT>` | Only select files with this extension (repeatable) |
 | `-H, --hidden` | Show hidden dot-files on startup |
 | `-t, --theme <THEME>` | Colour theme — see `--list-themes` |
-| `--list-themes` | Print all 27 available themes and exit |
+| `--list-themes` | Print all 43 available themes and exit |
 | `--show-themes` | Open the theme panel on startup (`T` toggles it at runtime) |
 | `--single-pane` | Start in single-pane mode (default is two-pane; toggle at runtime with `w`) |
 | `--print-dir` | Print the **parent directory** of the selected file instead of the full path |
@@ -1062,7 +1102,7 @@ full-featured app that powers the `tfe` binary.
 | `ExplorerOutcome` | `enum` | Result of `handle_key` — `Selected`, `Dismissed`, `Pending`, `Unhandled`, `MkdirCreated`, `TouchCreated`, `RenameCompleted` |
 | `FsEntry` | `struct` | A single directory entry (name, path, size, extension, is_dir) |
 | `SortMode` | `enum` | `Name` \| `SizeDesc` \| `Extension` |
-| `Theme` | `struct` | Colour palette with builder methods and 27 named presets |
+| `Theme` | `struct` | Colour palette with builder methods and 43 named presets |
 | `render` | `fn` | Render one pane using the default theme |
 | `render_themed` | `fn` | Render one pane with a custom `Theme` |
 | `entry_icon` | `fn` | Map an `FsEntry` to its Unicode icon |
@@ -1122,10 +1162,12 @@ the full feature set, from lightweight widgets to the complete app.
 | Module | Contents |
 |--------|----------|
 | `types` | `FsEntry`, `ExplorerOutcome`, `SortMode` — data types only, no I/O |
-| `palette` | Palette constants + `Theme` builder + 27 named presets |
+| `palette` | Palette constants + `Theme` builder + 43 named presets |
 | `explorer` | `FileExplorer`, `FileExplorerBuilder`, `entry_icon`, `fmt_size` |
 | `dual_pane` | `DualPane`, `DualPaneBuilder`, `DualPaneActive`, `DualPaneOutcome` |
 | `render` | `render`, `render_themed`, `render_dual_pane`, `render_dual_pane_themed` — pure rendering, no state |
+| `preview` | `PreviewState`, `PreviewContent`, `render_preview` — file preview with image support |
+| `inline_editor` | `InlineEditor`, `EditorAction`, `render_inline_editor` — built-in text editor |
 
 Because rendering is fully decoupled from state, you can slot either widget into any Ratatui layout, render it conditionally as an overlay, or build a completely custom renderer by reading `FileExplorer`'s public fields directly.
 
@@ -1178,7 +1220,7 @@ GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
 | `sort.tape` | Name → Size ↓ → Extension cycling | `cargo run --example basic` |
 | `filter.tape` | Extension filter — selectable vs dimmed files | `cargo run --example basic -- rs toml` |
 | `file_ops.tape` | Copy, cut, paste, delete, overwrite modal | `cargo run --bin tfe` |
-| `theme_switcher.tape` | Live cycling of all 27 themes with sidebar | `cargo run --example theme_switcher` |
+| `theme_switcher.tape` | Live cycling of all 43 themes with sidebar | `cargo run --example theme_switcher` |
 | `pane_toggle.tape` | Tab focus-switch, `w` single/dual, `T` theme panel | `cargo run --bin tfe` |
 | `dual_pane.tape` | `DualPane` library widget — Tab, `w`, status bar | `cargo run --example dual_pane` |
 | `options.tape` | Options panel, Shift+E editor picker, toggles, error snackbar | `cargo run --bin tfe` |

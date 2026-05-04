@@ -11,9 +11,11 @@ Set Height 900
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
+Hide
 Type "cargo run --example dual_pane"
 Enter
 Sleep 4s
+Show
 
 # ── Left pane is active by default ───────────────────────────────────────────
 

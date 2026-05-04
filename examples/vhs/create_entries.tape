@@ -13,9 +13,11 @@ Set Height 700
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
+Hide
 Type "cargo run --example create_entries"
 Enter
 Sleep 4s
+Show
 
 # ── Show the default listing briefly ─────────────────────────────────────────
 

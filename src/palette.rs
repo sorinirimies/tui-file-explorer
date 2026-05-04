@@ -426,6 +426,230 @@ impl Theme {
         }
     }
 
+    /// Default Light — clean light background with vibrant accents.
+    pub fn default_light() -> Self {
+        Self {
+            brand: Color::Rgb(0, 140, 220),
+            accent: Color::Rgb(255, 100, 30),
+            dir: Color::Rgb(200, 140, 0),
+            sel_bg: Color::Rgb(200, 220, 255),
+            success: Color::Rgb(30, 160, 80),
+            match_file: Color::Rgb(30, 160, 80),
+            dim: Color::Rgb(130, 140, 160),
+            fg: Color::Rgb(30, 35, 50),
+        }
+    }
+
+    /// [Cyberpunk](https://github.com/max-uran/cyberpunk) — neon yellow on near-black.
+    pub fn cyberpunk() -> Self {
+        Self {
+            brand: Color::Rgb(252, 238, 10),
+            accent: Color::Rgb(0, 210, 235),
+            dir: Color::Rgb(255, 150, 0),
+            sel_bg: Color::Rgb(50, 48, 20),
+            success: Color::Rgb(0, 220, 180),
+            match_file: Color::Rgb(0, 220, 180),
+            dim: Color::Rgb(90, 90, 100),
+            fg: Color::Rgb(230, 230, 220),
+        }
+    }
+
+    /// [Rosé Pine](https://rosepinetheme.com/) — soho vibes for dark environments.
+    pub fn rose_pine() -> Self {
+        Self {
+            brand: Color::Rgb(196, 167, 231),
+            accent: Color::Rgb(156, 207, 216),
+            dir: Color::Rgb(246, 193, 119),
+            sel_bg: Color::Rgb(64, 61, 82),
+            success: Color::Rgb(49, 116, 143),
+            match_file: Color::Rgb(49, 116, 143),
+            dim: Color::Rgb(110, 106, 134),
+            fg: Color::Rgb(224, 222, 244),
+        }
+    }
+
+    /// [Rosé Pine Moon](https://rosepinetheme.com/) — slightly brighter Rosé Pine.
+    pub fn rose_pine_moon() -> Self {
+        Self {
+            brand: Color::Rgb(196, 167, 231),
+            accent: Color::Rgb(156, 207, 216),
+            dir: Color::Rgb(246, 193, 119),
+            sel_bg: Color::Rgb(68, 65, 90),
+            success: Color::Rgb(62, 143, 176),
+            match_file: Color::Rgb(62, 143, 176),
+            dim: Color::Rgb(110, 106, 134),
+            fg: Color::Rgb(224, 222, 244),
+        }
+    }
+
+    /// [Rosé Pine Dawn](https://rosepinetheme.com/) — light variant.
+    pub fn rose_pine_dawn() -> Self {
+        Self {
+            brand: Color::Rgb(144, 122, 169),
+            accent: Color::Rgb(86, 148, 159),
+            dir: Color::Rgb(234, 157, 52),
+            sel_bg: Color::Rgb(223, 218, 217),
+            success: Color::Rgb(40, 105, 131),
+            match_file: Color::Rgb(40, 105, 131),
+            dim: Color::Rgb(152, 147, 165),
+            fg: Color::Rgb(87, 82, 121),
+        }
+    }
+
+    /// [Ayu Mirage](https://github.com/ayu-theme/ayu-colors) — muted dark with warm accents.
+    pub fn ayu_mirage() -> Self {
+        Self {
+            brand: Color::Rgb(115, 208, 255),
+            accent: Color::Rgb(115, 208, 255),
+            dir: Color::Rgb(250, 204, 110),
+            sel_bg: Color::Rgb(64, 159, 255),
+            success: Color::Rgb(135, 217, 108),
+            match_file: Color::Rgb(135, 217, 108),
+            dim: Color::Rgb(104, 104, 104),
+            fg: Color::Rgb(204, 202, 194),
+        }
+    }
+
+    /// [Everforest Dark](https://github.com/sainnhe/everforest) — soft green tones.
+    pub fn everforest_dark() -> Self {
+        Self {
+            brand: Color::Rgb(167, 192, 128),
+            accent: Color::Rgb(127, 187, 179),
+            dir: Color::Rgb(219, 188, 127),
+            sel_bg: Color::Rgb(76, 55, 67),
+            success: Color::Rgb(167, 192, 128),
+            match_file: Color::Rgb(167, 192, 128),
+            dim: Color::Rgb(122, 132, 120),
+            fg: Color::Rgb(211, 198, 170),
+        }
+    }
+
+    /// [Atom One Dark](https://github.com/atom/one-dark-syntax) — classic dark editor theme.
+    pub fn atom_one_dark() -> Self {
+        Self {
+            brand: Color::Rgb(97, 175, 239),
+            accent: Color::Rgb(97, 175, 239),
+            dir: Color::Rgb(229, 192, 123),
+            sel_bg: Color::Rgb(50, 56, 68),
+            success: Color::Rgb(152, 195, 121),
+            match_file: Color::Rgb(152, 195, 121),
+            dim: Color::Rgb(118, 118, 118),
+            fg: Color::Rgb(171, 178, 191),
+        }
+    }
+
+    /// [Atom One Light](https://github.com/atom/one-light-syntax) — classic light editor theme.
+    pub fn atom_one_light() -> Self {
+        Self {
+            brand: Color::Rgb(47, 90, 243),
+            accent: Color::Rgb(47, 90, 243),
+            dir: Color::Rgb(210, 182, 124),
+            sel_bg: Color::Rgb(237, 237, 237),
+            success: Color::Rgb(63, 149, 58),
+            match_file: Color::Rgb(63, 149, 58),
+            dim: Color::Rgb(118, 118, 118),
+            fg: Color::Rgb(42, 44, 51),
+        }
+    }
+
+    /// [Night Owl](https://github.com/sdras/night-owl-vscode-theme) — deep blue with warm accents.
+    pub fn night_owl() -> Self {
+        Self {
+            brand: Color::Rgb(130, 170, 255),
+            accent: Color::Rgb(130, 170, 255),
+            dir: Color::Rgb(173, 219, 103),
+            sel_bg: Color::Rgb(95, 126, 151),
+            success: Color::Rgb(34, 218, 110),
+            match_file: Color::Rgb(34, 218, 110),
+            dim: Color::Rgb(87, 86, 86),
+            fg: Color::Rgb(214, 222, 235),
+        }
+    }
+
+    /// [Poimandres](https://github.com/drcmda/poimandres-theme) — dark blue with teal highlights.
+    pub fn poimandres() -> Self {
+        Self {
+            brand: Color::Rgb(93, 228, 199),
+            accent: Color::Rgb(137, 221, 255),
+            dir: Color::Rgb(255, 250, 194),
+            sel_bg: Color::Rgb(50, 55, 75),
+            success: Color::Rgb(93, 228, 199),
+            match_file: Color::Rgb(93, 228, 199),
+            dim: Color::Rgb(100, 106, 130),
+            fg: Color::Rgb(166, 172, 205),
+        }
+    }
+
+    /// [Flexoki Dark](https://stephango.com/flexoki) — inky warm dark.
+    pub fn flexoki_dark() -> Self {
+        Self {
+            brand: Color::Rgb(67, 133, 190),
+            accent: Color::Rgb(67, 133, 190),
+            dir: Color::Rgb(208, 162, 21),
+            sel_bg: Color::Rgb(64, 62, 60),
+            success: Color::Rgb(135, 154, 57),
+            match_file: Color::Rgb(135, 154, 57),
+            dim: Color::Rgb(87, 86, 83),
+            fg: Color::Rgb(206, 205, 195),
+        }
+    }
+
+    /// [Flexoki Light](https://stephango.com/flexoki) — warm light paper.
+    pub fn flexoki_light() -> Self {
+        Self {
+            brand: Color::Rgb(32, 94, 166),
+            accent: Color::Rgb(32, 94, 166),
+            dir: Color::Rgb(173, 131, 1),
+            sel_bg: Color::Rgb(206, 205, 195),
+            success: Color::Rgb(102, 128, 11),
+            match_file: Color::Rgb(102, 128, 11),
+            dim: Color::Rgb(111, 110, 105),
+            fg: Color::Rgb(16, 15, 15),
+        }
+    }
+
+    /// [Carbonfox](https://github.com/EdenEast/nightfox.nvim) — dark carbon with bright accents.
+    pub fn carbonfox() -> Self {
+        Self {
+            brand: Color::Rgb(120, 169, 255),
+            accent: Color::Rgb(120, 169, 255),
+            dir: Color::Rgb(8, 189, 186),
+            sel_bg: Color::Rgb(42, 42, 42),
+            success: Color::Rgb(37, 190, 106),
+            match_file: Color::Rgb(37, 190, 106),
+            dim: Color::Rgb(100, 100, 110),
+            fg: Color::Rgb(242, 244, 248),
+        }
+    }
+
+    /// [Andromeda](https://github.com/EliverLara/Andromeda) — purple-tinted dark with teal accents.
+    pub fn andromeda() -> Self {
+        Self {
+            brand: Color::Rgb(5, 188, 121),
+            accent: Color::Rgb(15, 168, 205),
+            dir: Color::Rgb(229, 229, 18),
+            sel_bg: Color::Rgb(90, 92, 98),
+            success: Color::Rgb(5, 188, 121),
+            match_file: Color::Rgb(5, 188, 121),
+            dim: Color::Rgb(102, 102, 102),
+            fg: Color::Rgb(229, 229, 229),
+        }
+    }
+
+    /// [Synthwave '84](https://github.com/robb0wen/synthwave-vscode) — retro neon synthwave.
+    pub fn synthwave() -> Self {
+        Self {
+            brand: Color::Rgb(246, 24, 143),
+            accent: Color::Rgb(18, 195, 226),
+            dir: Color::Rgb(253, 248, 52),
+            sel_bg: Color::Rgb(25, 50, 60),
+            success: Color::Rgb(30, 187, 43),
+            match_file: Color::Rgb(30, 187, 43),
+            dim: Color::Rgb(127, 112, 148),
+            fg: Color::Rgb(218, 217, 199),
+        }
+    }
+
     // ── Decorative / custom themes ────────────────────────────────────────────
 
     /// Grape — deep violet & soft blue, easy on the eyes in dark environments.
@@ -543,6 +767,11 @@ impl Theme {
                 "Default",
                 "The built-in palette — orange title, cyan borders, yellow dirs",
                 Theme::default(),
+            ),
+            (
+                "Default Light",
+                "Clean light background with vibrant accents",
+                Theme::default_light(),
             ),
             // ── Decorative ────────────────────────────────────────────────────
             (
@@ -667,6 +896,82 @@ impl Theme {
                 "Oxocarbon",
                 "IBM Carbon Design System inspired",
                 Theme::oxocarbon(),
+            ),
+            // ── New community themes ──────────────────────────────────────────
+            (
+                "Cyberpunk",
+                "Neon yellow & cyan on near-black — high contrast",
+                Theme::cyberpunk(),
+            ),
+            (
+                "Rosé Pine",
+                "Soho vibes for dark environments",
+                Theme::rose_pine(),
+            ),
+            (
+                "Rosé Pine Moon",
+                "Slightly brighter Rosé Pine variant",
+                Theme::rose_pine_moon(),
+            ),
+            (
+                "Rosé Pine Dawn",
+                "Rosé Pine on a light background",
+                Theme::rose_pine_dawn(),
+            ),
+            (
+                "Ayu Mirage",
+                "Muted dark with warm blue & yellow accents",
+                Theme::ayu_mirage(),
+            ),
+            (
+                "Everforest Dark",
+                "Soft green tones inspired by nature",
+                Theme::everforest_dark(),
+            ),
+            (
+                "Atom One Dark",
+                "Classic dark editor theme by GitHub",
+                Theme::atom_one_dark(),
+            ),
+            (
+                "Atom One Light",
+                "Classic light editor theme by GitHub",
+                Theme::atom_one_light(),
+            ),
+            (
+                "Night Owl",
+                "Deep blue with warm highlights for night coding",
+                Theme::night_owl(),
+            ),
+            (
+                "Poimandres",
+                "Dark blue with teal & pastel highlights",
+                Theme::poimandres(),
+            ),
+            (
+                "Flexoki Dark",
+                "Inky warm dark — minimal and intentional",
+                Theme::flexoki_dark(),
+            ),
+            (
+                "Flexoki Light",
+                "Warm light paper — minimal and intentional",
+                Theme::flexoki_light(),
+            ),
+            (
+                "Carbonfox",
+                "Dark carbon with bright blue & teal accents",
+                Theme::carbonfox(),
+            ),
+            (
+                "Andromeda",
+                "Purple-tinted dark with teal & green accents",
+                Theme::andromeda(),
+            ),
+            (
+                "Synthwave '84",
+                "Retro neon synthwave — pink, cyan & yellow",
+                Theme::synthwave(),
             ),
         ]
     }
@@ -863,10 +1168,11 @@ mod tests {
     }
 
     #[test]
-    fn all_presets_count_is_at_least_27() {
+    fn all_presets_count_is_at_least_43() {
         assert!(
-            Theme::all_presets().len() >= 27,
-            "expected at least 27 presets"
+            Theme::all_presets().len() >= 43,
+            "expected at least 43 presets, got {}",
+            Theme::all_presets().len()
         );
     }
 

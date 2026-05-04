@@ -14,9 +14,11 @@ Set Height 900
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
+Hide
 Type "cargo run --example editor_picker"
 Enter
 Sleep 4s
+Show
 
 # ── Panel opens automatically on launch ──────────────────────────────────────
 

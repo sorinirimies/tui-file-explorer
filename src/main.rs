@@ -65,7 +65,7 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use tui_file_explorer::{
     draw, load_state, resolve_output_path, resolve_theme_idx, save_state, App, AppOptions,
-    AppState, Theme,
+    AppState, PreviewState, Theme,
 };
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -596,6 +596,33 @@ fn run() -> io::Result<()> {
         log_file,
         "setting up terminal (backend=stderr)"
     );
+
+    // Query the terminal for image protocol support (Kitty, Sixel, iTerm2)
+    // **before** entering the alternate screen — the query escape sequences
+    // need a normal terminal state.
+    //
+    // The app renders the TUI on stderr (so the shell wrapper can capture
+    // stdout).  `from_query_stdio()` queries stdout/stdin which may be piped.
+    // We attempt the query anyway — when stdout IS the terminal it will detect
+    // Kitty/Sixel/iTerm2 properly; when it's piped it will time out and we
+    // fall back to halfblocks.
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
+        "querying image protocol support"
+    );
+    let image_picker = ratatui_image::picker::Picker::from_query_stdio()
+        .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+    vlog!(
+        verbose,
+        log_buf,
+        log_file,
+        "image picker ready: protocol={:?}, font_size={:?}",
+        image_picker.protocol_type(),
+        image_picker.font_size()
+    );
+
     let backend = CrosstermBackend::new(io::stderr());
 
     vlog!(verbose, log_buf, log_file, "enable_raw_mode");
@@ -624,6 +651,8 @@ fn run() -> io::Result<()> {
         verbose,
         startup_log: log_buf,
     });
+    // Inject the pre-queried image picker so preview uses the best protocol.
+    app.preview_state = PreviewState::with_picker(image_picker);
     // Restore persisted active pane.
     if let Some(ref pane_str) = saved.active_pane {
         match pane_str.as_str() {

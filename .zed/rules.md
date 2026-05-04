@@ -15,6 +15,8 @@ tui-file-explorer/
 │   ├── palette.rs      # Colour constants (all pub so callers can reference them)
 │   ├── explorer.rs     # FileExplorer state machine + filesystem helpers + unit tests
 │   ├── render.rs       # All ratatui Frame rendering (render / render_header / render_list / render_footer)
+│   ├── preview.rs      # File preview: text, image (halfblock), binary hex dump, directory stats
+│   ├── inline_editor.rs # Built-in text editor: load, edit, save, render
 │   │
 │   │   ── binary-only (not part of the public library API) ──
 │   ├── main.rs         # CLI entry-point (tfe binary): arg parsing, terminal setup, run loop
@@ -289,6 +291,10 @@ Every key binding that produces a non-trivial state change needs a test:
 | `e` on file (editor ≠ None) | Same as Enter on file with editor — sets `open_with_editor` | `app.rs` / `main.rs` |
 | `e` on dir or editor = None | Silent no-op — no status message | `app.rs` |
 | `e` in options panel | Cycle `Editor` variant, update status message | `app.rs` |
+| `P` (Shift+P) | Toggle preview panel | `app.rs` |
+| `i` | Open inline editor for current file | `app.rs` |
+| `Ctrl+J` | Scroll preview down | `app.rs` |
+| `Ctrl+K` | Scroll preview up | `app.rs` |
 | `n` | Activate mkdir mode | `explorer.rs` |
 | `N` | Activate touch mode | `explorer.rs` |
 | `r` | Activate rename mode (pre-filled) | `explorer.rs` |
@@ -923,3 +929,96 @@ just publish-dry     # cargo publish --dry-run
 - [ ] Commit messages follow Conventional Commits
 - [ ] `render.rs` smoke tests cover any new active-mode footer arm
 - [ ] `explorer.rs` macro arm tests cover any new input-mode that uses `handle_input_mode!`
+
+---
+
+## 18. File Preview
+
+### Overview
+
+The preview panel (toggled with `P`) shows a live preview of the currently
+highlighted file in the active pane.  The preview updates automatically when
+the cursor moves to a different entry.
+
+### Supported content types
+
+| Type | Detection | Rendering |
+|------|-----------|----------|
+| Text | No null bytes in first 8 KB | Line-numbered scrollable text |
+| Image | Extension: png, jpg, jpeg, gif, bmp, webp, tiff, tif, ico | Unicode half-block (▀) with per-pixel fg/bg colours |
+| Binary | Null bytes found in first 8 KB | Hex dump (16 bytes/line + ASCII sidebar) |
+| Directory | `path.is_dir()` | Entry count, file/dir breakdown, total size |
+
+### Performance rules
+
+- Preview content is **cached** by path + area dimensions.  `PreviewState::update()`
+  is a no-op when the path and area size haven't changed.
+- Call `PreviewState::invalidate()` after filesystem mutations (mkdir, touch,
+  rename, delete, paste) to force a reload on the next frame.
+- Text files are capped at 10,000 lines and 512 KB.
+- Image decoding uses `image::open()` → `resize()` with `FilterType::Triangle`
+  (bilinear) — fast and good enough for terminal resolution.
+- Image pixels are stored as flat `Vec<u8>` (RGB, 3 bytes per pixel) to avoid
+  per-pixel allocation.
+
+### Half-block image rendering
+
+Each terminal cell represents two vertical pixels.  The upper half-block
+character `▀` is rendered with:
+- Foreground colour = top pixel RGB
+- Background colour = bottom pixel RGB
+
+This gives 2× vertical resolution and works in **all** terminals — no sixel,
+kitty graphics protocol, or iTerm2 inline-image support required.
+
+### Key bindings
+
+| Key | Action |
+|-----|--------|
+| `P` (Shift+P) | Toggle preview panel |
+| `Ctrl+J` | Scroll preview down |
+| `Ctrl+K` | Scroll preview up |
+
+---
+
+## 19. Built-in Editor
+
+### Overview
+
+Press `i` on any text file to open it in the built-in editor.  The editor
+takes over the entire screen and provides basic editing capabilities for
+quick changes without leaving the file explorer.
+
+### Capabilities
+
+- Load text files up to 10 MB
+- Insert / delete characters, split / join lines
+- Cursor movement: arrows, Home/End, PgUp/PgDn
+- Tab inserts 4 spaces
+- Line numbers in the gutter
+- Cursor line highlighting
+- Modified-file indicator
+
+### Key bindings (editor mode)
+
+| Key | Action |
+|-----|--------|
+| Arrow keys | Move cursor |
+| Home / End | Move to line start / end |
+| PgUp / PgDn | Scroll by page |
+| Printable chars | Insert at cursor |
+| Enter | Split line |
+| Backspace | Delete before cursor (or join with previous line) |
+| Delete | Delete at cursor (or join with next line) |
+| Tab | Insert 4 spaces |
+| Ctrl+S | Save to disk |
+| Esc | Exit editor |
+
+### Design rules
+
+- The editor intercepts **all** keyboard input while active.  No other
+  key bindings (pane switching, theme cycling, etc.) are available.
+- When the editor exits (Esc) or saves (Ctrl+S), both panes are reloaded
+  and the preview state is invalidated.
+- The editor uses `std::io::Result` for errors — no external error crate.
+- UTF-8 safe: all column operations use `.chars()`, never byte indexing.

@@ -14,9 +14,11 @@ Set Height 900
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
+Hide
 Type "cargo run --example options"
 Enter
 Sleep 4s
+Show
 
 # ── Options panel is open by default — show it briefly ───────────────────────
 

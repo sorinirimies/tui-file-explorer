@@ -9,9 +9,11 @@ Set Height 750
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
+Hide
 Type "cargo run --example theme_switcher"
 Enter
 Sleep 3s
+Show
 
 # Navigate the file list a little in the default theme
 Sleep 500ms

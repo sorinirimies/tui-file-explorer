@@ -9,9 +9,11 @@ Set Height 700
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
+Hide
 Type "cargo run --example basic -- rs toml"
 Enter
 Sleep 3s
+Show
 
 # Footer shows the active filter (rs, toml)
 Sleep 800ms

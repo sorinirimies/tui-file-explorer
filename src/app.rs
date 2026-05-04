@@ -380,6 +380,8 @@ impl Default for AppOptions {
 }
 
 use crate::fs::copy_dir_all;
+use crate::inline_editor::{EditorAction, InlineEditor};
+use crate::preview::PreviewState;
 
 use crate::{ExplorerOutcome, FileExplorer, SortMode, Theme};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
@@ -610,6 +612,12 @@ pub struct App {
     pub debug_log: Vec<String>,
     /// Scroll offset for the debug log panel (0 = pinned to bottom).
     pub debug_scroll: usize,
+    /// Whether the preview panel is visible (toggled with `P`).
+    pub show_preview: bool,
+    /// Cached preview content for the currently highlighted file.
+    pub preview_state: PreviewState,
+    /// The active inline editor, if any (opened with `i`).
+    pub inline_editor: Option<InlineEditor>,
 }
 
 impl App {
@@ -648,6 +656,9 @@ impl App {
             verbose: opts.verbose,
             debug_log: opts.startup_log,
             debug_scroll: 0,
+            show_preview: false,
+            preview_state: PreviewState::new(),
+            inline_editor: None,
         }
     }
 
@@ -1163,6 +1174,35 @@ impl App {
             return Ok(false);
         }
 
+        // ── Inline editor intercepts all input ───────────────────────────────
+        if let Some(ref mut editor) = self.inline_editor {
+            match editor.handle_key(key) {
+                EditorAction::Continue => return Ok(false),
+                EditorAction::Saved => {
+                    let fname = editor
+                        .path()
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    self.notify(format!("Saved '{fname}'"));
+                    // Reload panes to reflect any on-disk changes.
+                    self.left.reload();
+                    self.right.reload();
+                    self.preview_state.invalidate();
+                    return Ok(false);
+                }
+                EditorAction::Exit => {
+                    self.inline_editor = None;
+                    // Reload panes in case the file was changed externally.
+                    self.left.reload();
+                    self.right.reload();
+                    self.preview_state.invalidate();
+                    return Ok(false);
+                }
+            }
+        }
+
         // Always handle Ctrl-C.
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return Ok(true);
@@ -1212,7 +1252,22 @@ impl App {
             }
         }
 
-        // ── Global keys (always active) ───────────────────────────────────────
+        // ── Preview scroll (Ctrl+J / Ctrl+K) ─────────────────────────────────
+        if self.show_preview {
+            match key.code {
+                KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.preview_state.scroll_down(3);
+                    return Ok(false);
+                }
+                KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.preview_state.scroll_up(3);
+                    return Ok(false);
+                }
+                _ => {}
+            }
+        }
+
+        // ── Global keys (always active) ─────────────────────────────────
         // ── Editor panel navigation (arrows / j / k steal focus when open) ───
         if self.show_editor_panel {
             match key.code {
@@ -1304,6 +1359,31 @@ impl App {
                 self.status_msg = format!("cd-on-exit: {state}");
                 return Ok(false);
             }
+            // Toggle preview panel
+            KeyCode::Char('P') => {
+                self.show_preview = !self.show_preview;
+                if self.show_preview {
+                    // Force immediate preview update.
+                    self.preview_state.invalidate();
+                }
+                return Ok(false);
+            }
+            // Open inline editor for the current file
+            KeyCode::Char('i') if key.modifiers.is_empty() => {
+                if let Some(entry) = self.active_pane().current_entry() {
+                    if !entry.is_dir {
+                        match InlineEditor::open(&entry.path) {
+                            Ok(ed) => {
+                                self.inline_editor = Some(ed);
+                            }
+                            Err(e) => {
+                                self.notify_error(format!("Cannot edit: {e}"));
+                            }
+                        }
+                    }
+                }
+                return Ok(false);
+            }
             // Switch pane
             KeyCode::Tab => {
                 self.active = self.active.other();
@@ -1372,9 +1452,18 @@ impl App {
                 return Ok(false);
             }
             ExplorerOutcome::Dismissed => return Ok(true),
-            ExplorerOutcome::MkdirCreated(path) => self.reload_and_notify(&path, "Created folder"),
-            ExplorerOutcome::TouchCreated(path) => self.reload_and_notify(&path, "Created file"),
-            ExplorerOutcome::RenameCompleted(path) => self.reload_and_notify(&path, "Renamed to"),
+            ExplorerOutcome::MkdirCreated(path) => {
+                self.reload_and_notify(&path, "Created folder");
+                self.preview_state.invalidate();
+            }
+            ExplorerOutcome::TouchCreated(path) => {
+                self.reload_and_notify(&path, "Created file");
+                self.preview_state.invalidate();
+            }
+            ExplorerOutcome::RenameCompleted(path) => {
+                self.reload_and_notify(&path, "Renamed to");
+                self.preview_state.invalidate();
+            }
             ExplorerOutcome::Pending => {
                 if self.status_msg.starts_with("Error") || self.status_msg.starts_with("Delete") {
                     // keep error messages visible
@@ -1408,6 +1497,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyEvent;
     use std::fs;
     use tempfile::tempdir;
 
@@ -3900,5 +3990,197 @@ mod tests {
         assert!(!p.is_complete());
         p.done = 3;
         assert!(p.is_complete());
+    }
+
+    // ── Preview ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn show_preview_false_by_default() {
+        let dir = tempdir().expect("tempdir");
+        let app = make_app(dir.path().to_path_buf());
+        assert!(!app.show_preview);
+    }
+
+    #[test]
+    fn preview_state_starts_empty() {
+        let dir = tempdir().expect("tempdir");
+        let app = make_app(dir.path().to_path_buf());
+        assert!(app.preview_state.cached_path.is_none());
+    }
+
+    #[test]
+    fn capital_p_toggles_preview_on() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(!app.show_preview);
+        app.handle_key(KeyEvent::new(KeyCode::Char('P'), KeyModifiers::SHIFT))
+            .unwrap();
+        assert!(app.show_preview);
+    }
+
+    #[test]
+    fn capital_p_toggles_preview_off() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.show_preview = true;
+        app.handle_key(KeyEvent::new(KeyCode::Char('P'), KeyModifiers::SHIFT))
+            .unwrap();
+        assert!(!app.show_preview);
+    }
+
+    #[test]
+    fn preview_toggle_invalidates_state() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.preview_state.cached_path = Some(PathBuf::from("/tmp/cached"));
+        app.handle_key(KeyEvent::new(KeyCode::Char('P'), KeyModifiers::SHIFT))
+            .unwrap();
+        // After toggling on, the cache should be invalidated
+        assert!(app.preview_state.cached_path.is_none());
+    }
+
+    // ── Inline editor ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn inline_editor_none_by_default() {
+        let dir = tempdir().expect("tempdir");
+        let app = make_app(dir.path().to_path_buf());
+        assert!(app.inline_editor.is_none());
+    }
+
+    #[test]
+    fn i_key_opens_inline_editor_on_file() {
+        let dir = tempdir().expect("tempdir");
+        // Create a file in the test directory
+        std::fs::write(dir.path().join("test.txt"), "hello world").unwrap();
+        let mut app = make_app(dir.path().to_path_buf());
+        // Navigate to the file (skip directories, find the file)
+        for _ in 0..app.left.entries.len() {
+            if let Some(e) = app.left.current_entry() {
+                if !e.is_dir {
+                    break;
+                }
+            }
+            app.left
+                .handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+        // Press 'i' to open editor
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.inline_editor.is_some());
+    }
+
+    #[test]
+    fn i_key_on_dir_does_not_open_editor() {
+        let dir = tempdir().expect("tempdir");
+        // Create a subdirectory
+        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+        let mut app = make_app(dir.path().to_path_buf());
+        // Navigate to the directory
+        for _ in 0..app.left.entries.len() {
+            if let Some(e) = app.left.current_entry() {
+                if e.is_dir {
+                    break;
+                }
+            }
+            app.left
+                .handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+        // Press 'i' — should NOT open editor on a directory
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.inline_editor.is_none());
+    }
+
+    #[test]
+    fn inline_editor_esc_closes_editor() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("test.txt"), "content").unwrap();
+        let mut app = make_app(dir.path().to_path_buf());
+        for _ in 0..app.left.entries.len() {
+            if let Some(e) = app.left.current_entry() {
+                if !e.is_dir {
+                    break;
+                }
+            }
+            app.left
+                .handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.inline_editor.is_some());
+        // Press Esc to close
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.inline_editor.is_none());
+    }
+
+    #[test]
+    fn inline_editor_intercepts_all_keys() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("test.txt"), "content").unwrap();
+        let mut app = make_app(dir.path().to_path_buf());
+        for _ in 0..app.left.entries.len() {
+            if let Some(e) = app.left.current_entry() {
+                if !e.is_dir {
+                    break;
+                }
+            }
+            app.left
+                .handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        }
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE))
+            .unwrap();
+        // The 'q' key should NOT dismiss the app while editor is open
+        let should_exit = app
+            .handle_key(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(!should_exit, "editor should intercept 'q'");
+        assert!(app.inline_editor.is_some(), "editor should still be open");
+    }
+
+    #[test]
+    fn i_key_on_empty_dir_does_not_panic() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        // Empty directory — no current entry
+        app.handle_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE))
+            .unwrap();
+        assert!(app.inline_editor.is_none());
+    }
+
+    // ── Preview scroll ────────────────────────────────────────────────────────
+
+    #[test]
+    fn ctrl_j_scrolls_preview_down_when_preview_active() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.show_preview = true;
+        let initial_scroll = app.preview_state.scroll;
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.preview_state.scroll > initial_scroll);
+    }
+
+    #[test]
+    fn ctrl_k_scrolls_preview_up_when_preview_active() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.show_preview = true;
+        app.preview_state.scroll = 10;
+        app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert!(app.preview_state.scroll < 10);
+    }
+
+    #[test]
+    fn ctrl_j_does_not_scroll_preview_when_preview_inactive() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.show_preview = false;
+        let initial_scroll = app.preview_state.scroll;
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL))
+            .unwrap();
+        assert_eq!(app.preview_state.scroll, initial_scroll);
     }
 }

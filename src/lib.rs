@@ -121,9 +121,8 @@
 //!
 //! ## Named presets
 //!
-//! Twenty well-known editor / terminal colour schemes are available as
-//! associated constructors on [`Theme`], mirroring the catalogue found in
-//! [Iced](https://docs.rs/iced/latest/iced/theme/enum.Theme.html):
+//! 43 well-known editor / terminal colour schemes are available as
+//! associated constructors on [`Theme`]:
 //!
 //! ```
 //! use tui_file_explorer::Theme;
@@ -245,14 +244,18 @@
 //! | Module      | Contents                                                                                                                                        |
 //! |-------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
 //! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                                                                                  |
-//! | `palette`   | Palette constants (all `pub`) + [`Theme`] builder + 27 named presets                                                                           |
+//! | `palette`   | Palette constants (all `pub`) + [`Theme`] builder + 43 named presets                                                                           |
 //! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`], `load_entries`                                                         |
 //! | `dual_pane` | [`DualPane`], [`DualPaneBuilder`], [`DualPaneActive`], [`DualPaneOutcome`]                                                                      |
 //! | `render`    | [`render`], [`render_themed`], [`render_dual_pane`], [`render_dual_pane_themed`] — pure rendering, no I/O                                       |
+//! | `preview`   | [`PreviewState`], [`PreviewContent`], [`render_preview`] — text, image (halfblock), binary hex dump, directory stats                           |
+//! | `inline_editor` | [`InlineEditor`], [`EditorAction`], [`render_inline_editor`] — built-in text editor                                                       |
 
 pub mod dual_pane;
 pub mod explorer;
+pub mod inline_editor;
 pub mod palette;
+pub mod preview;
 pub mod render;
 pub mod types;
 
@@ -277,7 +280,9 @@ pub use app::{
     App, AppOptions, ClipOp, ClipboardItem, CopyProgress, Editor, Modal, Pane, Snackbar,
 };
 pub use fs::{copy_dir_all, resolve_output_path};
+pub use inline_editor::{render_inline_editor, EditorAction, InlineEditor};
 pub use persistence::{load_state, resolve_theme_idx, save_state, AppState};
+pub use preview::{render_preview, PreviewContent, PreviewState};
 pub use ui::{
     draw, render_action_bar, render_copy_progress, render_editor_panel, render_modal,
     render_nav_hints, render_options_panel, render_snackbar, render_theme_panel,

@@ -21,8 +21,8 @@
 //! each pane area.
 
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph},
     Frame,
@@ -34,6 +34,51 @@ use crate::{
     palette::Theme,
     FileExplorer,
 };
+
+// ── Scroll-thumb helper ───────────────────────────────────────────────────────
+
+/// Paint a thin, semi-translucent scroll thumb on the right edge of `area`.
+///
+/// The thumb appears only when `total > viewport` (i.e. when not all content
+/// is visible).  It uses the right-half-block character (`▐`, U+2590) so it
+/// occupies only half the cell width, giving a sleek look.
+///
+/// * `total` — total number of items / lines in the content.
+/// * `offset` — current scroll offset (0-based index of the first visible
+///   item).
+/// * `color` — foreground colour for the thumb glyph (typically
+///   `theme.accent` or `theme.dim`).
+pub(crate) fn paint_scrollbar(
+    frame: &mut Frame,
+    area: Rect,
+    total: usize,
+    offset: usize,
+    color: Color,
+) {
+    let viewport = area.height as usize;
+    if viewport == 0 || total <= viewport {
+        return; // everything fits — no scrollbar needed
+    }
+
+    let track = area.height as f64;
+    let thumb_h = (viewport as f64 / total as f64 * track).max(1.0);
+    let thumb_top = (offset as f64 / total as f64 * track).min(track - thumb_h);
+
+    let thumb_start = thumb_top as u16;
+    let thumb_end = (thumb_top + thumb_h).ceil().min(track) as u16;
+
+    let x = area.x + area.width.saturating_sub(1);
+    let buf = frame.buffer_mut();
+
+    for y in 0..area.height {
+        if y >= thumb_start && y < thumb_end {
+            if let Some(cell) = buf.cell_mut(Position::new(x, area.y + y)) {
+                cell.set_char('\u{2590}') // ▐ — right half block
+                    .set_fg(color);
+            }
+        }
+    }
+}
 
 // ── render_input_footer! ──────────────────────────────────────────────────────
 
@@ -441,7 +486,17 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
     }
 
     let list = List::new(items).block(block);
+    let inner = area.inner(ratatui::layout::Margin::new(1, 1));
     frame.render_stateful_widget(list, area, &mut list_state);
+
+    // ── Scroll thumb ──────────────────────────────────────────────────────
+    paint_scrollbar(
+        frame,
+        inner,
+        explorer.entries.len(),
+        explorer.scroll_offset,
+        theme.accent,
+    );
 }
 
 // ── Footer ────────────────────────────────────────────────────────────────────

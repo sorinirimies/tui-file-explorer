@@ -9,9 +9,11 @@ Set Height 900
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
+Hide
 Type "cargo run --bin tfe"
 Enter
 Sleep 3s
+Show
 
 # Left pane is active — navigate down to a file
 Sleep 500ms

@@ -45,6 +45,8 @@ crossterm  = "0.29"
 clap       = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
 tui-slider = "0.3.2"
 redb       = "4"
+image         = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
+ratatui-image = { version = "10.0", default-features = false, features = ["crossterm", "image-defaults"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -21,6 +21,8 @@ use ratatui::{
 };
 
 use crate::app::{App, CopyProgress, Modal, Pane, Snackbar};
+use crate::inline_editor::render_inline_editor;
+use crate::preview::render_preview;
 use tui_slider::{style::SliderStyle, Slider, SliderOrientation, SliderState};
 
 // ── Styled-span helpers ───────────────────────────────────────────────────────
@@ -51,6 +53,12 @@ fn dim_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
 pub fn draw(app: &mut App, frame: &mut Frame) {
     let theme = *app.theme();
     let full = frame.area();
+
+    // ── Inline editor takes over the entire screen ────────────────────────────
+    if let Some(ref editor) = app.inline_editor {
+        render_inline_editor(frame, full, editor, &theme);
+        return;
+    }
 
     // Vertical split: main area | [debug log panel] | action bar.
     // The debug panel only appears when --verbose is active.
@@ -102,11 +110,22 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
 
     // Horizontal split: left pane | [right pane] | [theme panel].
     let mut h_constraints = vec![];
-    if app.single_pane {
-        h_constraints.push(Constraint::Min(0));
+    if app.show_preview {
+        // With preview: file list gets 40%, preview gets 60%
+        if app.single_pane {
+            h_constraints.push(Constraint::Percentage(40));
+        } else {
+            h_constraints.push(Constraint::Percentage(25));
+            h_constraints.push(Constraint::Percentage(25));
+        }
+        h_constraints.push(Constraint::Min(0)); // Preview takes remaining space
     } else {
-        h_constraints.push(Constraint::Percentage(50));
-        h_constraints.push(Constraint::Percentage(50));
+        if app.single_pane {
+            h_constraints.push(Constraint::Min(0));
+        } else {
+            h_constraints.push(Constraint::Percentage(50));
+            h_constraints.push(Constraint::Percentage(50));
+        }
     }
     if app.show_theme_panel {
         h_constraints.push(Constraint::Length(32));
@@ -155,6 +174,22 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
 
     if !app.single_pane {
         render_themed(&mut app.right, frame, h_chunks[1], right_theme);
+    }
+
+    // ── Preview panel ─────────────────────────────────────────────────────
+    if app.show_preview {
+        let preview_idx = if app.single_pane { 1 } else { 2 };
+        let preview_area = h_chunks[preview_idx];
+
+        // Update preview state with the currently highlighted entry.
+        let current_path = app.active_pane().current_entry().map(|e| e.path.clone());
+        app.preview_state.update(
+            current_path.as_deref(),
+            preview_area.width,
+            preview_area.height,
+        );
+
+        render_preview(frame, preview_area, &app.preview_state, &theme);
     }
 
     // ── Theme panel ───────────────────────────────────────────────────────────
@@ -234,6 +269,9 @@ pub fn render_debug_panel(frame: &mut Frame, area: Rect, app: &App, theme: &Them
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
+
+    // Scroll thumb.
+    crate::render::paint_scrollbar(frame, inner, total, start, theme.accent);
 }
 
 // ── Snackbar ──────────────────────────────────────────────────────────────────
@@ -896,6 +934,10 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
         d(" touch │ "),
         k("r"),
         d(" rename │ "),
+        k("i"),
+        d(" edit │ "),
+        k("P"),
+        d(" preview │ "),
         k("Space"),
         d(" mark"),
     ];
@@ -926,7 +968,11 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
         k("Shift+E"),
         d(" editor │ "),
         k("Shift+O"),
-        d(" options"),
+        d(" options │ "),
+        k("C-j"),
+        d("/"),
+        k("C-k"),
+        d(" scroll preview"),
     ];
     let global_col = Paragraph::new(Line::from(global_spans)).block(
         Block::default()
