@@ -45,7 +45,7 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -128,18 +128,14 @@ fn run(editor: String) -> io::Result<()> {
 
     enable_raw_mode()?;
     let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = event_loop(&mut terminal, &mut app, &theme);
 
     let _ = disable_raw_mode();
-    let _ = execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture,
-    );
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     let _ = terminal.show_cursor();
 
     result
@@ -174,11 +170,7 @@ fn event_loop(
                 // ── Open file in editor ───────────────────────────────────────
                 // 1. Tear down the TUI so the editor gets a clean terminal.
                 let _ = disable_raw_mode();
-                let _ = execute!(
-                    terminal.backend_mut(),
-                    LeaveAlternateScreen,
-                    DisableMouseCapture,
-                );
+                let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
 
                 // 2. Shell-split the editor string so "code --wait" works.
                 let mut parts = app.editor.split_whitespace();
@@ -225,11 +217,7 @@ fn event_loop(
 
                 // 3. Restore the TUI.
                 let _ = enable_raw_mode();
-                let _ = execute!(
-                    terminal.backend_mut(),
-                    EnterAlternateScreen,
-                    EnableMouseCapture,
-                );
+                let _ = execute!(terminal.backend_mut(), EnterAlternateScreen);
                 let _ = terminal.clear();
 
                 // 4. Reload the pane so edits are reflected.

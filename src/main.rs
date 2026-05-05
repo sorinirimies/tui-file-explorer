@@ -58,7 +58,6 @@ use std::{
 
 use clap::Parser;
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -629,7 +628,7 @@ fn run() -> io::Result<()> {
     enable_raw_mode()?;
     vlog!(verbose, log_buf, log_file, "enable_raw_mode ok");
     vlog!(verbose, log_buf, log_file, "entering alternate screen");
-    execute!(io::stderr(), EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(io::stderr(), EnterAlternateScreen)?;
     vlog!(verbose, log_buf, log_file, "alternate screen ok");
 
     vlog!(verbose, log_buf, log_file, "creating terminal");
@@ -679,11 +678,7 @@ fn run() -> io::Result<()> {
     // Always restore terminal, even on error.
     app.log("restoring terminal (leave alternate screen, disable raw mode)".to_string());
     let _ = disable_raw_mode();
-    let _ = execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    );
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     let _ = terminal.show_cursor();
     // Drop the terminal before writing to stdout so the alternate screen is
     // fully restored before the path appears.
@@ -849,11 +844,7 @@ fn run_loop<W: io::Write>(
                 //    Write to the terminal backend (same handle as the TUI) so
                 //    we don't accidentally open a second stderr file descriptor.
                 let _ = disable_raw_mode();
-                let _ = execute!(
-                    terminal.backend_mut(),
-                    LeaveAlternateScreen,
-                    DisableMouseCapture
-                );
+                let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
 
                 // 2. Spawn the editor synchronously and wait for it to exit.
                 //
@@ -913,11 +904,7 @@ fn run_loop<W: io::Write>(
 
                 // 3. Restore the TUI regardless of whether the editor succeeded.
                 let _ = enable_raw_mode();
-                let _ = execute!(
-                    terminal.backend_mut(),
-                    EnterAlternateScreen,
-                    EnableMouseCapture
-                );
+                let _ = execute!(terminal.backend_mut(), EnterAlternateScreen);
                 let _ = terminal.clear();
 
                 // 4. Reload both panes so any on-disk changes are visible.

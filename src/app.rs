@@ -1477,18 +1477,41 @@ impl App {
         Ok(false)
     }
 
+    /// Dispatch a pre-read terminal [`Event`].
+    ///
+    /// This is the testable core of event handling.  Only [`Event::Key`]
+    /// events are forwarded to [`App::handle_key`]; all other event types
+    /// (mouse, resize, focus, paste) are consumed and silently ignored
+    /// because the application is entirely keyboard-driven.
+    ///
+    /// # Why mouse capture is **not** enabled
+    ///
+    /// Earlier versions of `tfe` enabled `EnableMouseCapture` even though no
+    /// widget or handler ever inspected mouse input.  On macOS this caused
+    /// SGR mouse-tracking escape sequences (`^[[<35;…M`) to leak visually
+    /// at the bottom of the terminal.  Removing mouse capture is safe on
+    /// **all** platforms (Linux, macOS, Windows) because the TUI is purely
+    /// keyboard-driven.
+    pub fn handle_raw_event(&mut self, event: Event) -> io::Result<bool> {
+        match event {
+            Event::Key(key) => self.handle_key(key),
+            // Mouse, Resize, FocusGained, FocusLost, Paste — consume and
+            // discard.  Resize is handled automatically by ratatui's
+            // `Terminal::draw` which queries the terminal size each frame.
+            _ => Ok(false),
+        }
+    }
+
     /// Read one terminal event and update application state.
     ///
     /// Calls [`event::read`] internally. If your application already owns the
-    /// event loop and reads events itself, call [`App::handle_key`] instead.
+    /// event loop and reads events itself, call [`App::handle_key`] or
+    /// [`App::handle_raw_event`] instead.
     ///
     /// Returns `true` when the event loop should exit (user confirmed a
     /// selection or dismissed the explorer).
     pub fn handle_event(&mut self) -> io::Result<bool> {
-        let Event::Key(key) = event::read()? else {
-            return Ok(false);
-        };
-        self.handle_key(key)
+        self.handle_raw_event(event::read()?)
     }
 }
 
@@ -4182,5 +4205,254 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL))
             .unwrap();
         assert_eq!(app.preview_state.scroll, initial_scroll);
+    }
+
+    // ── handle_raw_event — non-key events are consumed without side effects ──
+    //
+    // Mouse capture is intentionally **not** enabled because the TUI is purely
+    // keyboard-driven.  These tests guarantee that even if a non-key event
+    // somehow reaches the handler, it is safely consumed without altering
+    // application state or signalling an exit.
+
+    use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
+
+    /// Mouse-move events must be consumed (return Ok(false)) and leave
+    /// the application state unchanged.
+    #[test]
+    fn handle_raw_event_mouse_move_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 42,
+            row: 10,
+            modifiers: KeyModifiers::NONE,
+        });
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "mouse move must not signal exit");
+    }
+
+    /// Mouse-click events must be consumed (return Ok(false)).
+    #[test]
+    fn handle_raw_event_mouse_click_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        });
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "mouse click must not signal exit");
+    }
+
+    /// Mouse scroll-up events must be consumed without side effects.
+    #[test]
+    fn handle_raw_event_mouse_scroll_up_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "mouse scroll must not signal exit");
+    }
+
+    /// Mouse scroll-down events must be consumed without side effects.
+    #[test]
+    fn handle_raw_event_mouse_scroll_down_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "mouse scroll must not signal exit");
+    }
+
+    /// Mouse-drag events must be consumed without side effects.
+    #[test]
+    fn handle_raw_event_mouse_drag_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: 20,
+            row: 15,
+            modifiers: KeyModifiers::NONE,
+        });
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "mouse drag must not signal exit");
+    }
+
+    /// Mouse button-up events must be consumed without side effects.
+    #[test]
+    fn handle_raw_event_mouse_button_up_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Right),
+            column: 30,
+            row: 20,
+            modifiers: KeyModifiers::NONE,
+        });
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "mouse button-up must not signal exit");
+    }
+
+    /// Resize events must be consumed without signalling an exit.
+    /// (ratatui queries terminal size on every draw, so no app-level
+    /// action is needed.)
+    #[test]
+    fn handle_raw_event_resize_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Resize(120, 40);
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "resize must not signal exit");
+    }
+
+    /// FocusGained events must be consumed without side effects.
+    #[test]
+    fn handle_raw_event_focus_gained_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::FocusGained;
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "focus gained must not signal exit");
+    }
+
+    /// FocusLost events must be consumed without side effects.
+    #[test]
+    fn handle_raw_event_focus_lost_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::FocusLost;
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "focus lost must not signal exit");
+    }
+
+    /// Paste events must be consumed without side effects.
+    #[test]
+    fn handle_raw_event_paste_is_consumed() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Paste("some pasted text".to_string());
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(!exit, "paste must not signal exit");
+    }
+
+    /// A key event routed through `handle_raw_event` must behave identically
+    /// to a direct `handle_key` call.  Verify with Esc (dismiss = exit).
+    #[test]
+    fn handle_raw_event_key_delegates_to_handle_key() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let event = Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let exit = app.handle_raw_event(event).unwrap();
+        assert!(exit, "Esc via handle_raw_event should signal exit");
+    }
+
+    /// Non-key events must never alter the clipboard.
+    #[test]
+    fn handle_raw_event_mouse_does_not_alter_clipboard() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(app.clipboard.is_none());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        app.handle_raw_event(event).unwrap();
+        assert!(app.clipboard.is_none(), "mouse must not alter clipboard");
+    }
+
+    /// Non-key events must never set a selected path.
+    #[test]
+    fn handle_raw_event_mouse_does_not_set_selected() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(app.selected.is_none());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
+        app.handle_raw_event(event).unwrap();
+        assert!(app.selected.is_none(), "mouse must not set selected");
+    }
+
+    /// Non-key events must never open a modal.
+    #[test]
+    fn handle_raw_event_mouse_does_not_set_modal() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(app.modal.is_none());
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Middle),
+            column: 10,
+            row: 10,
+            modifiers: KeyModifiers::NONE,
+        });
+        app.handle_raw_event(event).unwrap();
+        assert!(app.modal.is_none(), "mouse must not open a modal");
+    }
+
+    /// Non-key events must never alter the status message.
+    #[test]
+    fn handle_raw_event_resize_does_not_alter_status() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        app.status_msg = "before".to_string();
+        let event = Event::Resize(200, 50);
+        app.handle_raw_event(event).unwrap();
+        assert_eq!(app.status_msg, "before", "resize must not alter status_msg");
+    }
+
+    /// Non-key events must never toggle panels.
+    #[test]
+    fn handle_raw_event_focus_does_not_toggle_panels() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(!app.show_theme_panel);
+        assert!(!app.show_options_panel);
+        assert!(!app.show_editor_panel);
+        app.handle_raw_event(Event::FocusGained).unwrap();
+        app.handle_raw_event(Event::FocusLost).unwrap();
+        assert!(!app.show_theme_panel, "focus must not toggle theme panel");
+        assert!(
+            !app.show_options_panel,
+            "focus must not toggle options panel"
+        );
+        assert!(!app.show_editor_panel, "focus must not toggle editor panel");
+    }
+
+    /// Non-key events must never switch the active pane.
+    #[test]
+    fn handle_raw_event_mouse_does_not_switch_pane() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        assert!(matches!(app.active, Pane::Left));
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 100,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        });
+        app.handle_raw_event(event).unwrap();
+        assert!(
+            matches!(app.active, Pane::Left),
+            "mouse must not switch pane"
+        );
     }
 }

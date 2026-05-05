@@ -24,7 +24,7 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    event::{self, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -57,18 +57,14 @@ fn run() -> io::Result<Option<PathBuf>> {
     });
 
     enable_raw_mode()?;
-    execute!(stderr(), EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stderr(), EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stderr());
     let mut terminal = Terminal::new(backend)?;
 
     let result = event_loop(&mut terminal, &mut app);
 
     let _ = disable_raw_mode();
-    let _ = execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture,
-    );
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     let _ = terminal.show_cursor();
     drop(terminal);
 
@@ -127,11 +123,7 @@ fn open_in_editor(
     path: &std::path::Path,
 ) -> io::Result<()> {
     let _ = disable_raw_mode();
-    let _ = execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    );
+    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
 
     #[cfg(unix)]
     {
@@ -159,11 +151,7 @@ fn open_in_editor(
     }
 
     let _ = enable_raw_mode();
-    let _ = execute!(
-        terminal.backend_mut(),
-        EnterAlternateScreen,
-        EnableMouseCapture
-    );
+    let _ = execute!(terminal.backend_mut(), EnterAlternateScreen);
     let _ = terminal.clear();
     Ok(())
 }
