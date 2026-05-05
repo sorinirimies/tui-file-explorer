@@ -812,24 +812,6 @@ fn run_loop<W: io::Write>(
     app: &mut App,
     log_file: &mut Option<File>,
 ) -> io::Result<()> {
-    // Drain any stale events already in the stdin buffer (e.g. mouse-tracking
-    // escape sequences left over from a previous session).  Without this,
-    // queued non-key events can starve real key-presses for several seconds.
-    {
-        use crossterm::event::{poll, read, Event};
-        use std::time::Duration;
-        while poll(Duration::ZERO)? {
-            let ev = read()?;
-            if let Event::Key(key) = ev {
-                // An early key-press (e.g. user typing while TUI was loading)
-                // should still be processed.
-                if app.handle_key(key)? {
-                    return Ok(());
-                }
-            }
-        }
-    }
-
     loop {
         terminal.draw(|frame| draw(app, frame))?;
 
