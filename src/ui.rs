@@ -14,7 +14,7 @@
 use crate::{render_themed, Theme};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
@@ -53,6 +53,13 @@ fn dim_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
 pub fn draw(app: &mut App, frame: &mut Frame) {
     let theme = *app.theme();
     let full = frame.area();
+
+    // Paint the entire terminal area with the theme's background colour.
+    // Without this, light themes appear broken because ratatui defaults
+    // unstyled cells to Color::Reset (the terminal's own background).
+    if theme.bg != Color::Reset {
+        frame.render_widget(Block::default().style(Style::default().bg(theme.bg)), full);
+    }
 
     // ── Inline editor takes over the entire screen ────────────────────────────
     if let Some(ref editor) = app.inline_editor {

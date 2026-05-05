@@ -45,6 +45,8 @@ pub const C_SEL_BG: Color = Color::Rgb(40, 60, 80);
 pub const C_DIR: Color = Color::Rgb(255, 210, 80);
 /// Green — used for files that match the extension filter.
 pub const C_MATCH: Color = Color::Rgb(80, 220, 120);
+/// Default background (terminal default / transparent).
+pub const C_BG: Color = Color::Reset;
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,9 @@ pub struct Theme {
     pub dir: Color,
     /// Colour for files that match the active extension filter.
     pub match_file: Color,
+    /// Overall background colour.  `Color::Reset` inherits the terminal's
+    /// own background; light themes should set an explicit light colour.
+    pub bg: Color,
 }
 
 impl Default for Theme {
@@ -101,6 +106,7 @@ impl Default for Theme {
             sel_bg: C_SEL_BG,
             dir: C_DIR,
             match_file: C_MATCH,
+            bg: C_BG,
         }
     }
 }
@@ -153,6 +159,12 @@ impl Theme {
         self.match_file = color;
         self
     }
+
+    /// Override the background colour and return `self` (builder-style).
+    pub fn bg(mut self, color: Color) -> Self {
+        self.bg = color;
+        self
+    }
 }
 
 // ── Named presets ─────────────────────────────────────────────────────────────
@@ -171,6 +183,7 @@ impl Theme {
             match_file: Color::Rgb(80, 250, 123), // Green
             dim: Color::Rgb(98, 114, 164),        // Comment
             fg: Color::Rgb(248, 248, 242),        // Foreground
+            bg: Color::Reset,
         }
     }
 
@@ -185,6 +198,7 @@ impl Theme {
             match_file: Color::Rgb(163, 190, 140), // Nord14 – green
             dim: Color::Rgb(76, 86, 106),          // Nord3
             fg: Color::Rgb(216, 222, 233),         // Nord4
+            bg: Color::Reset,
         }
     }
 
@@ -199,6 +213,7 @@ impl Theme {
             match_file: Color::Rgb(133, 153, 0), // Green
             dim: Color::Rgb(88, 110, 117),       // Base01
             fg: Color::Rgb(131, 148, 150),       // Base0
+            bg: Color::Reset,
         }
     }
 
@@ -213,6 +228,7 @@ impl Theme {
             match_file: Color::Rgb(0, 110, 100), // Darker cyan for light bg
             dim: Color::Rgb(147, 161, 161),      // Base1
             fg: Color::Rgb(101, 123, 131),       // Base00
+            bg: Color::Rgb(253, 246, 227),       // Base3
         }
     }
 
@@ -227,6 +243,7 @@ impl Theme {
             match_file: Color::Rgb(142, 192, 124), // Bright Aqua
             dim: Color::Rgb(146, 131, 116),        // Gray
             fg: Color::Rgb(235, 219, 178),         // fg
+            bg: Color::Reset,
         }
     }
 
@@ -241,6 +258,7 @@ impl Theme {
             match_file: Color::Rgb(104, 157, 106), // Dark Aqua
             dim: Color::Rgb(146, 131, 116),        // Gray
             fg: Color::Rgb(60, 56, 54),            // fg1
+            bg: Color::Rgb(251, 241, 199),         // bg0
         }
     }
 
@@ -255,6 +273,7 @@ impl Theme {
             match_file: Color::Rgb(23, 146, 153), // Teal
             dim: Color::Rgb(156, 160, 176),       // Overlay0
             fg: Color::Rgb(76, 79, 105),          // Text
+            bg: Color::Rgb(239, 241, 245),        // Base
         }
     }
 
@@ -269,6 +288,7 @@ impl Theme {
             match_file: Color::Rgb(129, 200, 190), // Teal
             dim: Color::Rgb(115, 121, 148),        // Overlay0
             fg: Color::Rgb(198, 208, 245),         // Text
+            bg: Color::Reset,
         }
     }
 
@@ -283,6 +303,7 @@ impl Theme {
             match_file: Color::Rgb(139, 213, 202), // Teal
             dim: Color::Rgb(110, 115, 141),        // Overlay0
             fg: Color::Rgb(202, 211, 245),         // Text
+            bg: Color::Reset,
         }
     }
 
@@ -297,6 +318,7 @@ impl Theme {
             match_file: Color::Rgb(148, 226, 213), // Teal
             dim: Color::Rgb(108, 112, 134),        // Overlay0
             fg: Color::Rgb(205, 214, 244),         // Text
+            bg: Color::Reset,
         }
     }
 
@@ -311,6 +333,7 @@ impl Theme {
             match_file: Color::Rgb(115, 218, 202), // Teal
             dim: Color::Rgb(86, 95, 137),          // Comment
             fg: Color::Rgb(192, 202, 245),         // Foreground
+            bg: Color::Reset,
         }
     }
 
@@ -325,6 +348,7 @@ impl Theme {
             match_file: Color::Rgb(115, 218, 202), // Teal
             dim: Color::Rgb(86, 95, 137),          // Comment
             fg: Color::Rgb(192, 202, 245),         // Foreground
+            bg: Color::Reset,
         }
     }
 
@@ -339,6 +363,7 @@ impl Theme {
             match_file: Color::Rgb(15, 75, 110), // Dark Teal
             dim: Color::Rgb(132, 140, 176),      // Muted
             fg: Color::Rgb(52, 59, 88),          // Foreground
+            bg: Color::Rgb(213, 214, 219),       // TNL bg
         }
     }
 
@@ -353,6 +378,7 @@ impl Theme {
             match_file: Color::Rgb(106, 149, 137), // Wave Teal
             dim: Color::Rgb(114, 113, 105),        // Fuji Gray
             fg: Color::Rgb(220, 215, 186),         // Fuji White
+            bg: Color::Reset,
         }
     }
 
@@ -367,6 +393,7 @@ impl Theme {
             match_file: Color::Rgb(142, 164, 162), // Dragon Aqua
             dim: Color::Rgb(166, 166, 156),        // Dragon Gray
             fg: Color::Rgb(197, 201, 197),         // Dragon White
+            bg: Color::Reset,
         }
     }
 
@@ -381,6 +408,7 @@ impl Theme {
             match_file: Color::Rgb(78, 140, 162), // Lotus Teal
             dim: Color::Rgb(196, 178, 138),       // Lotus Gray
             fg: Color::Rgb(84, 84, 100),          // Lotus Ink
+            bg: Color::Rgb(245, 240, 215),        // Lotus bg
         }
     }
 
@@ -395,6 +423,7 @@ impl Theme {
             match_file: Color::Rgb(121, 219, 195), // Cyan/Emerald
             dim: Color::Rgb(78, 78, 78),           // Dark Gray
             fg: Color::Rgb(178, 178, 178),         // Foreground
+            bg: Color::Reset,
         }
     }
 
@@ -409,6 +438,7 @@ impl Theme {
             match_file: Color::Rgb(33, 199, 168), // Emerald/Cyan
             dim: Color::Rgb(75, 100, 121),        // Muted blue-grey
             fg: Color::Rgb(172, 187, 203),        // Foreground
+            bg: Color::Reset,
         }
     }
 
@@ -423,6 +453,7 @@ impl Theme {
             match_file: Color::Rgb(51, 177, 255), // Cyan
             dim: Color::Rgb(82, 82, 82),          // Muted
             fg: Color::Rgb(242, 244, 248),        // Foreground
+            bg: Color::Reset,
         }
     }
 
@@ -437,6 +468,7 @@ impl Theme {
             match_file: Color::Rgb(30, 160, 80),
             dim: Color::Rgb(130, 140, 160),
             fg: Color::Rgb(30, 35, 50),
+            bg: Color::Rgb(250, 250, 255),
         }
     }
 
@@ -451,6 +483,7 @@ impl Theme {
             match_file: Color::Rgb(0, 220, 180),
             dim: Color::Rgb(90, 90, 100),
             fg: Color::Rgb(230, 230, 220),
+            bg: Color::Reset,
         }
     }
 
@@ -465,6 +498,7 @@ impl Theme {
             match_file: Color::Rgb(49, 116, 143),
             dim: Color::Rgb(110, 106, 134),
             fg: Color::Rgb(224, 222, 244),
+            bg: Color::Reset,
         }
     }
 
@@ -479,6 +513,7 @@ impl Theme {
             match_file: Color::Rgb(62, 143, 176),
             dim: Color::Rgb(110, 106, 134),
             fg: Color::Rgb(224, 222, 244),
+            bg: Color::Reset,
         }
     }
 
@@ -493,6 +528,7 @@ impl Theme {
             match_file: Color::Rgb(40, 105, 131),
             dim: Color::Rgb(152, 147, 165),
             fg: Color::Rgb(87, 82, 121),
+            bg: Color::Rgb(250, 244, 237),
         }
     }
 
@@ -507,6 +543,7 @@ impl Theme {
             match_file: Color::Rgb(135, 217, 108),
             dim: Color::Rgb(104, 104, 104),
             fg: Color::Rgb(204, 202, 194),
+            bg: Color::Reset,
         }
     }
 
@@ -521,6 +558,7 @@ impl Theme {
             match_file: Color::Rgb(167, 192, 128),
             dim: Color::Rgb(122, 132, 120),
             fg: Color::Rgb(211, 198, 170),
+            bg: Color::Reset,
         }
     }
 
@@ -535,6 +573,7 @@ impl Theme {
             match_file: Color::Rgb(152, 195, 121),
             dim: Color::Rgb(118, 118, 118),
             fg: Color::Rgb(171, 178, 191),
+            bg: Color::Reset,
         }
     }
 
@@ -549,6 +588,7 @@ impl Theme {
             match_file: Color::Rgb(63, 149, 58),
             dim: Color::Rgb(118, 118, 118),
             fg: Color::Rgb(42, 44, 51),
+            bg: Color::Rgb(249, 249, 249),
         }
     }
 
@@ -563,6 +603,7 @@ impl Theme {
             match_file: Color::Rgb(34, 218, 110),
             dim: Color::Rgb(87, 86, 86),
             fg: Color::Rgb(214, 222, 235),
+            bg: Color::Reset,
         }
     }
 
@@ -577,6 +618,7 @@ impl Theme {
             match_file: Color::Rgb(93, 228, 199),
             dim: Color::Rgb(100, 106, 130),
             fg: Color::Rgb(166, 172, 205),
+            bg: Color::Reset,
         }
     }
 
@@ -591,6 +633,7 @@ impl Theme {
             match_file: Color::Rgb(135, 154, 57),
             dim: Color::Rgb(87, 86, 83),
             fg: Color::Rgb(206, 205, 195),
+            bg: Color::Reset,
         }
     }
 
@@ -605,6 +648,7 @@ impl Theme {
             match_file: Color::Rgb(102, 128, 11),
             dim: Color::Rgb(111, 110, 105),
             fg: Color::Rgb(16, 15, 15),
+            bg: Color::Rgb(255, 252, 240),
         }
     }
 
@@ -619,6 +663,7 @@ impl Theme {
             match_file: Color::Rgb(37, 190, 106),
             dim: Color::Rgb(100, 100, 110),
             fg: Color::Rgb(242, 244, 248),
+            bg: Color::Reset,
         }
     }
 
@@ -633,6 +678,7 @@ impl Theme {
             match_file: Color::Rgb(5, 188, 121),
             dim: Color::Rgb(102, 102, 102),
             fg: Color::Rgb(229, 229, 229),
+            bg: Color::Reset,
         }
     }
 
@@ -647,6 +693,7 @@ impl Theme {
             match_file: Color::Rgb(30, 187, 43),
             dim: Color::Rgb(127, 112, 148),
             fg: Color::Rgb(218, 217, 199),
+            bg: Color::Reset,
         }
     }
 
@@ -1025,6 +1072,11 @@ mod tests {
         assert_eq!(Theme::default().match_file, C_MATCH);
     }
 
+    #[test]
+    fn default_theme_bg_matches_constant() {
+        assert_eq!(Theme::default().bg, C_BG);
+    }
+
     // ── Builder setters ───────────────────────────────────────────────────────
 
     #[test]
@@ -1084,6 +1136,13 @@ mod tests {
     }
 
     #[test]
+    fn builder_bg_overrides_field() {
+        let color = Color::Rgb(25, 26, 27);
+        let theme = Theme::default().bg(color);
+        assert_eq!(theme.bg, color);
+    }
+
+    #[test]
     fn builder_chained_overrides_multiple_fields() {
         let brand = Color::Rgb(1, 0, 0);
         let accent = Color::Rgb(0, 1, 0);
@@ -1106,6 +1165,7 @@ mod tests {
         assert_eq!(modified.sel_bg, original.sel_bg);
         assert_eq!(modified.dir, original.dir);
         assert_eq!(modified.match_file, original.match_file);
+        assert_eq!(modified.bg, original.bg);
     }
 
     // ── Named presets ─────────────────────────────────────────────────────────

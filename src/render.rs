@@ -124,7 +124,8 @@ macro_rules! render_input_footer {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg($theme.$colour)),
+                    .border_style(Style::default().fg($theme.$colour))
+                    .style(Style::default().bg($theme.bg)),
             );
             $frame.render_widget(para, $area);
             return;
@@ -331,7 +332,8 @@ fn render_header(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme.accent))
-        .padding(Padding::horizontal(1));
+        .padding(Padding::horizontal(1))
+        .style(Style::default().bg(theme.bg));
 
     if !explorer.theme_name.is_empty() {
         let theme_label = format!(" {} ", explorer.theme_name);
@@ -478,7 +480,8 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
         .title(Span::styled(title, Style::default().fg(theme.dim)))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(theme.accent));
+        .border_style(Style::default().fg(theme.accent))
+        .style(Style::default().bg(theme.bg));
 
     let mut list_state = ListState::default();
     if !explorer.entries.is_empty() {
@@ -583,7 +586,8 @@ fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(theme.dim)),
+                .border_style(Style::default().fg(theme.dim))
+                .style(Style::default().bg(theme.bg)),
         );
     frame.render_widget(status_para, area);
 }
