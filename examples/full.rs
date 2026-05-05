@@ -24,7 +24,7 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event},
+    event::{self, DisableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -64,7 +64,11 @@ fn run() -> io::Result<Option<PathBuf>> {
     let result = event_loop(&mut terminal, &mut app);
 
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    );
     let _ = terminal.show_cursor();
     drop(terminal);
 
@@ -123,7 +127,11 @@ fn open_in_editor(
     path: &std::path::Path,
 ) -> io::Result<()> {
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    );
 
     #[cfg(unix)]
     {

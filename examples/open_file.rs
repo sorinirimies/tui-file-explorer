@@ -45,7 +45,7 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -135,7 +135,11 @@ fn run(editor: String) -> io::Result<()> {
     let result = event_loop(&mut terminal, &mut app, &theme);
 
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    );
     let _ = terminal.show_cursor();
 
     result
@@ -170,7 +174,11 @@ fn event_loop(
                 // ── Open file in editor ───────────────────────────────────────
                 // 1. Tear down the TUI so the editor gets a clean terminal.
                 let _ = disable_raw_mode();
-                let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+                let _ = execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                );
 
                 // 2. Shell-split the editor string so "code --wait" works.
                 let mut parts = app.editor.split_whitespace();

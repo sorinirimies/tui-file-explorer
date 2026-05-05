@@ -58,6 +58,7 @@ use std::{
 
 use clap::Parser;
 use crossterm::{
+    event::DisableMouseCapture,
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -629,6 +630,13 @@ fn run() -> io::Result<()> {
     vlog!(verbose, log_buf, log_file, "enable_raw_mode ok");
     vlog!(verbose, log_buf, log_file, "entering alternate screen");
     execute!(io::stderr(), EnterAlternateScreen)?;
+    // Defensively disable mouse capture at startup.  Previous versions of
+    // tfe (or other TUI programs) may have enabled mouse tracking and
+    // crashed / exited without cleaning up.  Some terminals (notably on
+    // macOS) persist mouse-tracking state across process boundaries,
+    // flooding stdin with SGR escape sequences that bury real key-presses.
+    // Disabling it here costs nothing and ensures a clean slate.
+    execute!(io::stderr(), DisableMouseCapture)?;
     vlog!(verbose, log_buf, log_file, "alternate screen ok");
 
     vlog!(verbose, log_buf, log_file, "creating terminal");
@@ -678,7 +686,11 @@ fn run() -> io::Result<()> {
     // Always restore terminal, even on error.
     app.log("restoring terminal (leave alternate screen, disable raw mode)".to_string());
     let _ = disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    );
     let _ = terminal.show_cursor();
     // Drop the terminal before writing to stdout so the alternate screen is
     // fully restored before the path appears.
@@ -800,6 +812,24 @@ fn run_loop<W: io::Write>(
     app: &mut App,
     log_file: &mut Option<File>,
 ) -> io::Result<()> {
+    // Drain any stale events already in the stdin buffer (e.g. mouse-tracking
+    // escape sequences left over from a previous session).  Without this,
+    // queued non-key events can starve real key-presses for several seconds.
+    {
+        use crossterm::event::{poll, read, Event};
+        use std::time::Duration;
+        while poll(Duration::ZERO)? {
+            let ev = read()?;
+            if let Event::Key(key) = ev {
+                // An early key-press (e.g. user typing while TUI was loading)
+                // should still be processed.
+                if app.handle_key(key)? {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
     loop {
         terminal.draw(|frame| draw(app, frame))?;
 
@@ -844,7 +874,11 @@ fn run_loop<W: io::Write>(
                 //    Write to the terminal backend (same handle as the TUI) so
                 //    we don't accidentally open a second stderr file descriptor.
                 let _ = disable_raw_mode();
-                let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+                let _ = execute!(
+                    terminal.backend_mut(),
+                    LeaveAlternateScreen,
+                    DisableMouseCapture
+                );
 
                 // 2. Spawn the editor synchronously and wait for it to exit.
                 //
@@ -905,6 +939,9 @@ fn run_loop<W: io::Write>(
                 // 3. Restore the TUI regardless of whether the editor succeeded.
                 let _ = enable_raw_mode();
                 let _ = execute!(terminal.backend_mut(), EnterAlternateScreen);
+                // The editor may have enabled mouse tracking — disable it
+                // so leftover events don't flood our event loop.
+                let _ = execute!(terminal.backend_mut(), DisableMouseCapture);
                 let _ = terminal.clear();
 
                 // 4. Reload both panes so any on-disk changes are visible.
