@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 
 ### Miscellaneous
 - Bump version to 1.0.6
+- Bump version to 1.0.7
 
 ## [1.0.5] - 2026-04-21
 
