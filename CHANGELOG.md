@@ -1,49 +1,22 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [1.0.9] - 2026-05-05
-
-### Miscellaneous
-- Bump version to 1.0.9
-
-## [1.0.8] - 2026-05-05
-
-### Miscellaneous
-- Bump version to 1.0.8
-
-## [1.0.7] - 2026-05-04
-
-### Miscellaneous
-- Bump version to 1.0.6
-- Bump version to 1.0.7
-
-## [1.0.5] - 2026-04-21
-
-### Miscellaneous
-- Bump version to 1.0.5
-
-## [1.0.4] - 2026-04-21
-
-### Miscellaneous
-- Bump version to 1.0.4
-
-## [1.0.2] - 2026-04-17
+## [1.1.2] - 2026-05-05
 
 ### Bug Fixes
 - Use sort_by_key to satisfy clippy 1.95 unnecessary_sort_by lint
 
 ### Miscellaneous
-- Bump version to 1.0.2
-
-## [1.0.1] - 2026-04-17
-
-### Miscellaneous
-- Bump version to 1.0.1
-
-## [1.0.0] - 2026-04-17
-
-### Miscellaneous
 - Bump version to 1.0.0
+- Bump version to 1.0.1
+- Bump version to 1.0.2
+- Bump version to 1.0.4
+- Bump version to 1.0.5
+- Bump version to 1.0.6
+- Bump version to 1.0.7
+- Bump version to 1.0.8
+- Bump version to 1.0.9
+- Bump version to 1.1.0
 
 ## [0.9.8] - 2026-03-31
 
