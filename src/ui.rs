@@ -126,13 +126,11 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
             h_constraints.push(Constraint::Percentage(25));
         }
         h_constraints.push(Constraint::Min(0)); // Preview takes remaining space
+    } else if app.single_pane {
+        h_constraints.push(Constraint::Min(0));
     } else {
-        if app.single_pane {
-            h_constraints.push(Constraint::Min(0));
-        } else {
-            h_constraints.push(Constraint::Percentage(50));
-            h_constraints.push(Constraint::Percentage(50));
-        }
+        h_constraints.push(Constraint::Percentage(50));
+        h_constraints.push(Constraint::Percentage(50));
     }
     if app.show_theme_panel {
         h_constraints.push(Constraint::Length(32));
