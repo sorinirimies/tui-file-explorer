@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Bump version to 1.0.8
 - Bump version to 1.0.9
 - Bump version to 1.1.0
+- Bump version to 1.1.2
 
 ## [0.9.8] - 2026-03-31
 
