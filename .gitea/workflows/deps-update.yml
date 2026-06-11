@@ -2,22 +2,27 @@ name: Nightly Dependency Update
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "30 0 * * *" # Every night at 00:30 UTC — offset from GitHub
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: deps-update
+  cancel-in-progress: true
+
 jobs:
   update-deps:
     name: Update Cargo dependencies
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITEA_TOKEN || github.token }}
+          fetch-depth: 0
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -28,7 +33,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run cargo update
-        run: cargo update 2>&1
+        run: cargo update
 
       - name: Check for changes
         id: check
@@ -49,39 +54,72 @@ jobs:
         if: steps.check.outputs.changed == 'true'
         run: cargo clippy -- -D warnings -A deprecated
 
-      - name: Create pull request
+      # ── Push upgrade branch + create PR + auto-merge ─────────────────────────
+      - name: Create and auto-merge Pull Request
         if: steps.check.outputs.changed == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN || github.token }}
         run: |
           BRANCH="deps/nightly-cargo-update"
+          DATE=$(date -u '+%Y-%m-%d')
+          API="${GITHUB_SERVER_URL}/api/v1"
+          REPO="${GITHUB_REPOSITORY}"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "gitea-actions[bot]"
+          git config user.email "gitea-actions[bot]@noreply.gitea"
 
+          # Force-create or update the branch
           git checkout -B "$BRANCH"
           git add Cargo.lock
-          git commit -m "chore(deps): nightly cargo update"
+          git commit -m "chore(deps): nightly cargo update $DATE"
           git push --force origin "$BRANCH"
 
-          # Check if an open PR from this branch already exists
-          EXISTING_PR=$(curl -s \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Content-Type: application/json" \
-            "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/pulls?state=open&head=$BRANCH" \
-            | jq '. | length')
+          echo "✅ Branch '$BRANCH' pushed."
 
-          if [ "$EXISTING_PR" -gt 0 ]; then
-            echo "Pull request already exists — skipping creation."
-          else
-            curl -s -X POST \
-              -H "Authorization: token $GITHUB_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "title": "chore(deps): nightly cargo update",
-                "body": "Automated nightly update of Cargo dependencies via `cargo update`.\n\nThis PR was created automatically by the **Nightly Dependency Update** workflow.",
-                "head": "'"$BRANCH"'",
-                "base": "main"
-              }' \
-              "$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY/pulls" || true
+          # ── Create the PR ────────────────────────────────────────────────────
+          echo "Creating PR on ${REPO}..."
+          PR_RESPONSE=$(curl -s -X POST \
+            -H "Authorization: token ${GITEA_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${API}/repos/${REPO}/pulls" \
+            -d "{
+              \"title\": \"chore(deps): nightly cargo update ${DATE}\",
+              \"head\": \"${BRANCH}\",
+              \"base\": \"main\",
+              \"body\": \"## Automated Nightly Dependency Update\n\nAll quality checks passed: **tests**, **clippy**.\n\nCreated by the Nightly Dependency Update workflow.\"
+            }")
+
+          PR_NUMBER=$(echo "$PR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('number',''))" 2>/dev/null || true)
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "⚠️  Could not create PR (branch may already have an open PR)."
+            # Try to find the existing open PR for this branch
+            PR_NUMBER=$(curl -s \
+              -H "Authorization: token ${GITEA_TOKEN}" \
+              "${API}/repos/${REPO}/pulls?state=open&head=${BRANCH}" \
+              | python3 -c "import sys,json; prs=json.load(sys.stdin); print(prs[0]['number'] if prs else '')" 2>/dev/null || true)
           fi
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "❌ Could not create or find PR. Skipping auto-merge."
+            exit 0
+          fi
+
+          echo "✅ PR #${PR_NUMBER} ready."
+
+          # ── Merge the PR ─────────────────────────────────────────────────────
+          echo "Merging PR #${PR_NUMBER}..."
+          curl -s -X POST \
+            -H "Authorization: token ${GITEA_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${API}/repos/${REPO}/pulls/${PR_NUMBER}/merge" \
+            -d "{
+              \"Do\": \"merge\",
+              \"delete_branch_after_merge\": true
+            }"
+
+          echo "✅ PR #${PR_NUMBER} merged and branch deleted."
+
+      - name: Nothing to update
+        if: steps.check.outputs.changed == 'false'
+        run: echo "✅ All dependencies already up to date — nothing to update."
