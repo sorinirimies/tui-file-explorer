@@ -601,19 +601,46 @@ fn run() -> io::Result<()> {
     // **before** entering the alternate screen — the query escape sequences
     // need a normal terminal state.
     //
-    // The app renders the TUI on stderr (so the shell wrapper can capture
-    // stdout).  `from_query_stdio()` queries stdout/stdin which may be piped.
-    // We attempt the query anyway — when stdout IS the terminal it will detect
-    // Kitty/Sixel/iTerm2 properly; when it's piped it will time out and we
-    // fall back to halfblocks.
+    // `from_query_stdio()` writes capability queries to io::stdout() and reads
+    // the terminal's response from io::stdin() on a background thread that has
+    // a 2-second timeout.  If the terminal never replies the timeout fires,
+    // from_query_stdio() returns Ok(halfblocks) — but the background thread
+    // remains alive, still blocking on io::stdin().read().  The TUI event loop
+    // then starts reading from the same stdin, causing the two threads to race:
+    // the background thread silently consumes the user's first keypress(es),
+    // making the app appear frozen or as though it never opened.
+    //
+    // We therefore skip the io query and fall back to halfblocks directly when:
+    //
+    //  1. stdout is not a real terminal (e.g. inside the shell wrapper
+    //     `dir=$(command tfe)`).  The queries would be written to the pipe,
+    //     never reach the terminal, and always time out.
+    //
+    //  2. TERM_PROGRAM=Apple_Terminal — macOS's built-in Terminal.app does not
+    //     support Kitty, Sixel, or iTerm2 image protocols and does not respond
+    //     to the capability queries, guaranteeing a 2-second startup delay plus
+    //     the dangling-thread stdin-race described above.
+    //
+    // All other terminals (iTerm2, Ghostty, WezTerm, kitty, etc.) on macOS and
+    // Linux respond quickly, so the query proceeds normally for them.
+    let stdout_is_tty = crossterm::tty::IsTty::is_tty(&io::stdout());
+    let is_apple_terminal = std::env::var("TERM_PROGRAM")
+        .map(|p| p == "Apple_Terminal")
+        .unwrap_or(false);
+    let skip_image_query = !stdout_is_tty || is_apple_terminal;
     vlog!(
         verbose,
         log_buf,
         log_file,
-        "querying image protocol support"
+        "querying image protocol support (stdout_is_tty={stdout_is_tty}, \
+         is_apple_terminal={is_apple_terminal}, skip={skip_image_query})"
     );
-    let image_picker = ratatui_image::picker::Picker::from_query_stdio()
-        .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+    let image_picker = if skip_image_query {
+        ratatui_image::picker::Picker::halfblocks()
+    } else {
+        ratatui_image::picker::Picker::from_query_stdio()
+            .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks())
+    };
     vlog!(
         verbose,
         log_buf,
