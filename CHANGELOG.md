@@ -1,10 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [1.1.2] - 2026-05-05
+## [1.1.4] - 2026-06-26
 
 ### Bug Fixes
 - Use sort_by_key to satisfy clippy 1.95 unnecessary_sort_by lint
+- Skip from_query_stdio on Apple Terminal and non-tty stdout
 
 ### Miscellaneous
 - Bump version to 1.0.0
@@ -18,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - Bump version to 1.0.9
 - Bump version to 1.1.0
 - Bump version to 1.1.2
+- Bump version to 1.1.3
 
 ## [0.9.8] - 2026-03-31
 
