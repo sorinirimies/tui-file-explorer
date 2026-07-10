@@ -14,9 +14,7 @@ def main [] {
     let tests_dir = ($env.CURRENT_FILE | path dirname)
 
     let suites = (
-        ls $tests_dir
-        | where { |f| ($f.name | path basename) =~ '^test_.*\.nu$' }
-        | get name
+        glob ($tests_dir | path join "test_*.nu")
         | sort
     )
 
