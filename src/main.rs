@@ -610,30 +610,35 @@ fn run() -> io::Result<()> {
     // the background thread silently consumes the user's first keypress(es),
     // making the app appear frozen or as though it never opened.
     //
-    // We therefore skip the io query and fall back to halfblocks directly when:
+    // We therefore only run the io query for terminals that are *known* to
+    // implement (and promptly answer) one of the graphics protocols.  This is
+    // an allowlist rather than a denylist: a previous version special-cased
+    // only Apple_Terminal, which meant every *other* silent terminal (Warp,
+    // Alacritty, plain xterm-over-ssh, tmux without passthrough, a bare pty,
+    // etc.) still hung on startup.  Allowlisting the graphics-capable
+    // terminals and falling back to the always-safe halfblocks picker
+    // everywhere else guarantees the app starts instantly no matter the host
+    // terminal — at worst image previews render as coloured half-blocks.
     //
-    //  1. stdout is not a real terminal (e.g. inside the shell wrapper
-    //     `dir=$(command tfe)`).  The queries would be written to the pipe,
-    //     never reach the terminal, and always time out.
-    //
-    //  2. TERM_PROGRAM=Apple_Terminal — macOS's built-in Terminal.app does not
-    //     support Kitty, Sixel, or iTerm2 image protocols and does not respond
-    //     to the capability queries, guaranteeing a 2-second startup delay plus
-    //     the dangling-thread stdin-race described above.
-    //
-    // All other terminals (iTerm2, Ghostty, WezTerm, kitty, etc.) on macOS and
-    // Linux respond quickly, so the query proceeds normally for them.
+    // The query is additionally always skipped when stdout is not a real
+    // terminal (e.g. inside the shell wrapper `dir=$(command tfe)`): the
+    // queries would be written to the pipe, never reach the terminal, and
+    // always time out.
     let stdout_is_tty = crossterm::tty::IsTty::is_tty(&io::stdout());
-    let is_apple_terminal = std::env::var("TERM_PROGRAM")
-        .map(|p| p == "Apple_Terminal")
-        .unwrap_or(false);
-    let skip_image_query = !stdout_is_tty || is_apple_terminal;
+    let term = std::env::var("TERM").ok();
+    let term_program = std::env::var("TERM_PROGRAM").ok();
+    let graphics_capable =
+        terminal_supports_graphics_query(term.as_deref(), term_program.as_deref(), |name| {
+            std::env::var_os(name).is_some()
+        });
+    let skip_image_query = !stdout_is_tty || !graphics_capable;
     vlog!(
         verbose,
         log_buf,
         log_file,
         "querying image protocol support (stdout_is_tty={stdout_is_tty}, \
-         is_apple_terminal={is_apple_terminal}, skip={skip_image_query})"
+         TERM={term:?}, TERM_PROGRAM={term_program:?}, \
+         graphics_capable={graphics_capable}, skip={skip_image_query})"
     );
     let image_picker = if skip_image_query {
         ratatui_image::picker::Picker::halfblocks()
@@ -832,6 +837,62 @@ fn run() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+/// Decide whether it is safe to probe the terminal for image-protocol support
+/// via [`ratatui_image::picker::Picker::from_query_stdio`].
+///
+/// The probe writes escape sequences to stdout and blocks a background thread
+/// on stdin waiting for the terminal's reply.  Terminals that don't implement
+/// any graphics protocol frequently never answer, so the probe times out *and*
+/// leaves that background thread alive — it then races the TUI event loop for
+/// stdin and swallows the user's first keypresses, making the app look like it
+/// never started.
+///
+/// To avoid that entirely we allowlist the terminals that are known to answer
+/// the probe and return `false` for everything else (the caller then uses the
+/// always-safe halfblocks picker).  `env_present` reports whether a given
+/// environment variable is set, so this function stays pure and testable.
+fn terminal_supports_graphics_query(
+    term: Option<&str>,
+    term_program: Option<&str>,
+    env_present: impl Fn(&str) -> bool,
+) -> bool {
+    // Terminal-specific marker variables are the most reliable signal because
+    // they are set by the terminal itself and survive `ssh`/`tmux` less often
+    // than TERM, but when present they are unambiguous.
+    const CAPABLE_ENV_MARKERS: &[&str] = &[
+        "KITTY_WINDOW_ID",       // kitty
+        "GHOSTTY_RESOURCES_DIR", // ghostty
+        "WEZTERM_PANE",          // WezTerm
+        "WEZTERM_EXECUTABLE",    // WezTerm
+        "ITERM_SESSION_ID",      // iTerm2
+        "KONSOLE_VERSION",       // Konsole (kitty graphics)
+    ];
+    if CAPABLE_ENV_MARKERS.iter().any(|m| env_present(m)) {
+        return true;
+    }
+
+    // TERM_PROGRAM identifies a handful of graphics-capable terminals.
+    if let Some(tp) = term_program {
+        if matches!(tp, "WezTerm" | "ghostty" | "iTerm.app") {
+            return true;
+        }
+    }
+
+    // TERM substrings catch the common cases (e.g. kitty sets
+    // `TERM=xterm-kitty`, ghostty `xterm-ghostty`, foot `foot`).
+    if let Some(t) = term {
+        let t = t.to_ascii_lowercase();
+        if ["kitty", "ghostty", "wezterm", "foot"]
+            .iter()
+            .any(|marker| t.contains(marker))
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn run_loop<W: io::Write>(
@@ -1052,5 +1113,98 @@ fn open_file_directly(path: &std::path::Path, editor: &Editor) -> io::Result<()>
             eprintln!("  Change the editor with: tfe --editor <name>");
             process::exit(2);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::terminal_supports_graphics_query;
+
+    /// Helper: no environment markers present.
+    fn no_env(_: &str) -> bool {
+        false
+    }
+
+    #[test]
+    fn apple_terminal_is_not_probed() {
+        // Regression: Apple_Terminal must never trigger the graphics probe.
+        assert!(!terminal_supports_graphics_query(
+            Some("xterm-256color"),
+            Some("Apple_Terminal"),
+            no_env,
+        ));
+    }
+
+    #[test]
+    fn warp_and_unknown_terminals_are_not_probed() {
+        // Warp and other silent terminals previously hung the app on startup.
+        assert!(!terminal_supports_graphics_query(
+            Some("xterm-256color"),
+            Some("WarpTerminal"),
+            no_env,
+        ));
+        assert!(!terminal_supports_graphics_query(
+            Some("xterm-256color"),
+            None,
+            no_env,
+        ));
+        // No TERM and no TERM_PROGRAM at all (e.g. a bare pty) must be safe too.
+        assert!(!terminal_supports_graphics_query(None, None, no_env));
+    }
+
+    #[test]
+    fn kitty_is_probed_via_term_and_env() {
+        assert!(terminal_supports_graphics_query(
+            Some("xterm-kitty"),
+            None,
+            no_env,
+        ));
+        assert!(terminal_supports_graphics_query(
+            Some("xterm-256color"),
+            None,
+            |name| name == "KITTY_WINDOW_ID",
+        ));
+    }
+
+    #[test]
+    fn ghostty_wezterm_iterm_are_probed_via_term_program() {
+        for tp in ["ghostty", "WezTerm", "iTerm.app"] {
+            assert!(
+                terminal_supports_graphics_query(Some("xterm-256color"), Some(tp), no_env),
+                "expected {tp} to be graphics-capable"
+            );
+        }
+    }
+
+    #[test]
+    fn graphics_capable_env_markers_are_probed() {
+        for marker in [
+            "KITTY_WINDOW_ID",
+            "GHOSTTY_RESOURCES_DIR",
+            "WEZTERM_PANE",
+            "WEZTERM_EXECUTABLE",
+            "ITERM_SESSION_ID",
+            "KONSOLE_VERSION",
+        ] {
+            assert!(
+                terminal_supports_graphics_query(None, None, |name| name == marker),
+                "expected env marker {marker} to be graphics-capable"
+            );
+        }
+    }
+
+    #[test]
+    fn foot_and_wezterm_term_substrings_are_probed() {
+        assert!(terminal_supports_graphics_query(Some("foot"), None, no_env));
+        assert!(terminal_supports_graphics_query(
+            Some("wezterm"),
+            None,
+            no_env
+        ));
+        assert!(terminal_supports_graphics_query(
+            Some("xterm-ghostty"),
+            None,
+            no_env
+        ));
     }
 }
