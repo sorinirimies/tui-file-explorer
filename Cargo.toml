@@ -1,6 +1,6 @@
 [package]
 name         = "tui-file-explorer"
-version      = "1.1.4"
+version      = "1.1.8"
 edition      = "2021"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
@@ -44,7 +44,8 @@ ratatui    = "0.30"
 crossterm  = "0.29"
 clap       = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
 tui-slider = "0.3.2"
-redb       = "4"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
 image         = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
 ratatui-image = { version = "10.0", default-features = false, features = ["crossterm", "image-defaults"] }
 

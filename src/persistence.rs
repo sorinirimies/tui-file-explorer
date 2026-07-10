@@ -1,12 +1,10 @@
 //! Persist application state between sessions.
 //!
-//! State is stored at `$XDG_CONFIG_HOME/tfe/state.redb` (falling back to
-//! `~/.config/tfe/state.redb`) as a [`redb`](https://crates.io/crates/redb)
-//! embedded database.
+//! State is stored at `$XDG_CONFIG_HOME/tfe/settings.json` (falling back to
+//! `~/.config/tfe/settings.json`) as a JSON file.
 //!
-//! The database contains a single table `state` with `&str` keys and `&str`
-//! values.  All writes go through a single ACID transaction, giving us
-//! crash-safe persistence for free.
+//! Writes use atomic rename (write to `.tmp`, then rename) to avoid
+//! corruption on crash.
 //!
 //! Unknown keys are silently ignored so that older versions of the binary can
 //! read state files written by newer ones without errors.
@@ -16,25 +14,34 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use redb::{Database, ReadableDatabase, TableDefinition};
+use serde::{Deserialize, Serialize};
 
 use crate::{SortMode, Theme};
 
-// ── redb table definition ─────────────────────────────────────────────────────
+// ── SortMode serde helper ─────────────────────────────────────────────────────
 
-const STATE_TABLE: TableDefinition<&str, &str> = TableDefinition::new("state");
+mod sort_mode_serde {
+    use super::*;
+    use serde::{self, Deserialize, Deserializer, Serializer};
 
-// ── Key constants ─────────────────────────────────────────────────────────────
+    pub fn serialize<S>(value: &Option<SortMode>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(m) => serializer.serialize_some(sort_mode_to_key(*m)),
+            None => serializer.serialize_none(),
+        }
+    }
 
-const KEY_THEME: &str = "theme";
-const KEY_LAST_DIR: &str = "last_dir";
-const KEY_LAST_DIR_RIGHT: &str = "last_dir_right";
-const KEY_SORT_MODE: &str = "sort_mode";
-const KEY_SHOW_HIDDEN: &str = "show_hidden";
-const KEY_SINGLE_PANE: &str = "single_pane";
-const KEY_CD_ON_EXIT: &str = "cd_on_exit";
-const KEY_EDITOR: &str = "editor";
-const KEY_ACTIVE_PANE: &str = "active_pane";
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<SortMode>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<String> = Option::deserialize(deserializer)?;
+        Ok(opt.and_then(|s| sort_mode_from_key(&s)))
+    }
+}
 
 // ── AppState ──────────────────────────────────────────────────────────────────
 
@@ -55,30 +62,41 @@ const KEY_ACTIVE_PANE: &str = "active_pane";
 /// state.show_hidden = Some(true);
 /// save_state(&state);
 /// ```
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppState {
     /// Colour theme name (e.g. `"grape"`, `"nord"`, `"catppuccin-mocha"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
 
     /// Directory that was open in the left pane when the app last exited.
     ///
     /// Only restored when the path still exists as a directory; stale entries
     /// (deleted directories) are silently ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_dir: Option<PathBuf>,
 
     /// Directory that was open in the right pane when the app last exited.
     ///
     /// Only restored when the path still exists as a directory; stale entries
     /// (deleted directories) are silently ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_dir_right: Option<PathBuf>,
 
     /// Active sort mode: `Name`, `SizeDesc`, or `Extension`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "sort_mode_serde"
+    )]
     pub sort_mode: Option<SortMode>,
 
     /// Whether hidden (dot-prefixed) files were visible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_hidden: Option<bool>,
 
     /// Whether single-pane mode was active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub single_pane: Option<bool>,
 
     /// Whether the cd-on-exit feature is enabled.
@@ -86,16 +104,19 @@ pub struct AppState {
     /// When `true`, `tfe` prints the active pane's current directory to stdout
     /// on dismiss so the shell wrapper can `cd` to it.  When `false` (default),
     /// dismissing without a selection prints nothing and exits with code 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cd_on_exit: Option<bool>,
 
     /// The editor to use when the user presses `e` on a file.
     ///
     /// Serialised as a short key string (e.g. `"helix"`, `"nvim"`,
     /// `"custom:code"`).  `None` means "use the compiled-in default" (Helix).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
 
     /// Which pane (left or right) had keyboard focus when the app last exited.
     /// Serialised as `"left"` or `"right"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_pane: Option<String>,
 }
 
@@ -111,9 +132,9 @@ fn config_dir() -> Option<PathBuf> {
     Some(base.join("tfe"))
 }
 
-/// Path of the redb database (`$XDG_CONFIG_HOME/tfe/state.redb`).
+/// Path of the JSON state file (`$XDG_CONFIG_HOME/tfe/settings.json`).
 pub fn state_path() -> Option<PathBuf> {
-    config_dir().map(|d| d.join("state.redb"))
+    config_dir().map(|d| d.join("settings.json"))
 }
 
 // ── SortMode serialisation helpers ───────────────────────────────────────────
@@ -140,130 +161,48 @@ fn sort_mode_from_key(s: &str) -> Option<SortMode> {
     }
 }
 
-// ── Low-level redb I/O ────────────────────────────────────────────────────────
-
-/// Read a single string value from the redb state table.
-///
-/// Returns `None` when the key is absent, the table does not exist, or any
-/// I/O error occurs.
-fn get_str(db: &Database, key: &str) -> Option<String> {
-    let txn = db.begin_read().ok()?;
-    let table = txn.open_table(STATE_TABLE).ok()?;
-    let guard = table.get(key).ok()??;
-    Some(guard.value().to_string())
-}
-
-/// Read a directory path from the redb state table.
-///
-/// Only returns `Some` when the stored path is a non-empty string that
-/// points to an existing directory on disk.
-fn get_dir(db: &Database, key: &str) -> Option<PathBuf> {
-    let raw = get_str(db, key)?;
-    if raw.is_empty() {
-        return None;
-    }
-    let p = PathBuf::from(raw);
-    if p.is_dir() {
-        Some(p)
-    } else {
-        None
-    }
-}
-
-/// Read a boolean value from the redb state table.
-fn get_bool(db: &Database, key: &str) -> Option<bool> {
-    get_str(db, key)?.parse::<bool>().ok()
-}
-
-/// Load an [`AppState`] from an open redb [`Database`].
-pub(crate) fn load_state_from_db(db: &Database) -> AppState {
-    AppState {
-        theme: get_str(db, KEY_THEME),
-        last_dir: get_dir(db, KEY_LAST_DIR),
-        last_dir_right: get_dir(db, KEY_LAST_DIR_RIGHT),
-        sort_mode: get_str(db, KEY_SORT_MODE).and_then(|s| sort_mode_from_key(&s)),
-        show_hidden: get_bool(db, KEY_SHOW_HIDDEN),
-        single_pane: get_bool(db, KEY_SINGLE_PANE),
-        cd_on_exit: get_bool(db, KEY_CD_ON_EXIT),
-        editor: get_str(db, KEY_EDITOR),
-        active_pane: get_str(db, KEY_ACTIVE_PANE),
-    }
-}
-
-/// Save an [`AppState`] into an open redb [`Database`].
-///
-/// Uses a single write transaction to atomically replace all keys.
-/// Keys whose value is `None` are removed from the table.
-pub(crate) fn save_state_to_db(db: &Database, state: &AppState) -> Result<(), redb::Error> {
-    let txn = db.begin_write()?;
-    {
-        let mut table = txn.open_table(STATE_TABLE)?;
-
-        // Helper: insert if Some, remove if None.
-        macro_rules! put {
-            ($key:expr, $val:expr) => {
-                match $val {
-                    Some(ref v) => {
-                        table.insert($key, v.as_str())?;
-                    }
-                    None => {
-                        let _ = table.remove($key);
-                    }
-                }
-            };
-        }
-
-        put!(KEY_THEME, &state.theme);
-        put!(
-            KEY_LAST_DIR,
-            &state.last_dir.as_ref().map(|p| p.display().to_string())
-        );
-        put!(
-            KEY_LAST_DIR_RIGHT,
-            &state
-                .last_dir_right
-                .as_ref()
-                .map(|p| p.display().to_string())
-        );
-        put!(
-            KEY_SORT_MODE,
-            &state.sort_mode.map(|m| sort_mode_to_key(m).to_string())
-        );
-        put!(KEY_SHOW_HIDDEN, &state.show_hidden.map(|b| b.to_string()));
-        put!(KEY_SINGLE_PANE, &state.single_pane.map(|b| b.to_string()));
-        put!(KEY_CD_ON_EXIT, &state.cd_on_exit.map(|b| b.to_string()));
-        put!(KEY_EDITOR, &state.editor);
-        put!(KEY_ACTIVE_PANE, &state.active_pane);
-    }
-    txn.commit()?;
-    Ok(())
-}
-
 // ── Path-based helpers (used by tests and the public API) ─────────────────────
 
-/// Load state from a redb database file at `path`.
+/// Load state from a JSON file at `path`.
 ///
 /// Returns a default empty state if the file does not exist or cannot be
-/// opened.
+/// parsed. Directory fields are validated: stale paths are set to `None`.
 pub(crate) fn load_state_from(path: &Path) -> AppState {
-    if !path.exists() {
-        return AppState::default();
-    }
-    let Ok(db) = Database::open(path) else {
+    let Ok(data) = fs::read_to_string(path) else {
         return AppState::default();
     };
-    load_state_from_db(&db)
+    let Ok(mut state) = serde_json::from_str::<AppState>(&data) else {
+        return AppState::default();
+    };
+
+    // Validate that directory paths still exist on disk.
+    if let Some(ref p) = state.last_dir {
+        if !p.is_dir() {
+            state.last_dir = None;
+        }
+    }
+    if let Some(ref p) = state.last_dir_right {
+        if !p.is_dir() {
+            state.last_dir_right = None;
+        }
+    }
+
+    state
 }
 
-/// Save state to a redb database file at `path`.
+/// Save state to a JSON file at `path`.
 ///
-/// Creates the database (and parent directories) if they don't exist.
+/// Uses atomic write (write to `.tmp`, then rename) to avoid corruption.
+/// Creates parent directories if they don't exist.
 pub(crate) fn save_state_to(path: &Path, state: &AppState) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let db = Database::create(path).map_err(|e| io::Error::other(e.to_string()))?;
-    save_state_to_db(&db, state).map_err(|e| io::Error::other(e.to_string()))?;
+    let json = serde_json::to_string_pretty(state).map_err(|e| io::Error::other(e.to_string()))?;
+
+    let tmp_path = path.with_extension("tmp");
+    fs::write(&tmp_path, json.as_bytes())?;
+    fs::rename(&tmp_path, path)?;
     Ok(())
 }
 
@@ -274,10 +213,10 @@ pub(crate) fn save_state_to(path: &Path, state: &AppState) -> io::Result<()> {
 /// Never returns an error — any I/O problem simply yields an empty state so
 /// that the app can always start with sensible defaults.
 pub fn load_state() -> AppState {
-    if let Some(path) = state_path() {
-        return load_state_from(&path);
-    }
-    AppState::default()
+    let Some(json_path) = state_path() else {
+        return AppState::default();
+    };
+    load_state_from(&json_path)
 }
 
 /// Persist `state` to the default XDG config path.

@@ -1,4 +1,4 @@
-//! Tests for the [`super`] persistence module (redb v4).
+//! Tests for the [`super`] persistence module (JSON-based).
 
 use super::*;
 use std::fs;
@@ -6,11 +6,11 @@ use tempfile::TempDir;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/// Create a temp directory and return a path inside it for the redb file.
+/// Create a temp directory and return a path inside it for the JSON file.
 /// The returned `TempDir` must be kept alive for the duration of the test.
 fn tmp_state_path() -> (TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("create temp dir");
-    let path = dir.path().join("tfe").join("state.redb");
+    let path = dir.path().join("tfe").join("settings.json");
     (dir, path)
 }
 
@@ -123,7 +123,7 @@ fn app_state_clone_equals_original() {
     assert_eq!(state.clone(), state);
 }
 
-// ── save_state_to / load_state_from (redb round-trips) ────────────────────────
+// ── save_state_to / load_state_from (JSON round-trips) ────────────────────────
 
 #[test]
 fn full_state_round_trips() {
@@ -149,14 +149,15 @@ fn partial_state_leaves_absent_fields_as_none() {
     let (_dir, path) = tmp_state_path();
     let partial = AppState {
         theme: Some("nord".into()),
+        sort_mode: Some(SortMode::Name),
         ..Default::default()
     };
     save_state_to(&path, &partial).unwrap();
     let loaded = load_state_from(&path);
     assert_eq!(loaded.theme, Some("nord".into()));
+    assert_eq!(loaded.sort_mode, Some(SortMode::Name));
     assert!(loaded.last_dir.is_none());
     assert!(loaded.last_dir_right.is_none());
-    assert!(loaded.sort_mode.is_none());
     assert!(loaded.show_hidden.is_none());
     assert!(loaded.single_pane.is_none());
     assert!(loaded.cd_on_exit.is_none());
@@ -167,7 +168,7 @@ fn partial_state_leaves_absent_fields_as_none() {
 #[test]
 fn missing_file_returns_default_state() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("nonexistent").join("state.redb");
+    let path = dir.path().join("nonexistent").join("settings.json");
     assert_eq!(load_state_from(&path), AppState::default());
 }
 
@@ -236,16 +237,8 @@ fn last_dir_round_trips_for_existing_directory() {
 fn last_dir_for_nonexistent_path_loads_as_none() {
     let (_dir, path) = tmp_state_path();
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    let txn = db.begin_write().unwrap();
-    {
-        let mut table = txn.open_table(STATE_TABLE).unwrap();
-        table
-            .insert(KEY_LAST_DIR, "/this/path/does/not/exist/tfe_test_xyz")
-            .unwrap();
-    }
-    txn.commit().unwrap();
-    drop(db);
+    let json = r#"{"last_dir": "/this/path/does/not/exist/tfe_test_xyz"}"#;
+    fs::write(&path, json).unwrap();
     assert!(
         load_state_from(&path).last_dir.is_none(),
         "stale last_dir should be silently discarded"
@@ -256,14 +249,8 @@ fn last_dir_for_nonexistent_path_loads_as_none() {
 fn last_dir_empty_value_loads_as_none() {
     let (_dir, path) = tmp_state_path();
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    let txn = db.begin_write().unwrap();
-    {
-        let mut table = txn.open_table(STATE_TABLE).unwrap();
-        table.insert(KEY_LAST_DIR, "").unwrap();
-    }
-    txn.commit().unwrap();
-    drop(db);
+    let json = r#"{"last_dir": ""}"#;
+    fs::write(&path, json).unwrap();
     assert!(load_state_from(&path).last_dir.is_none());
 }
 
@@ -486,7 +473,7 @@ fn last_dir_right_is_preserved_when_single_pane_is_active() {
 #[test]
 fn last_dir_right_is_none_on_fresh_install() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("nonexistent").join("state.redb");
+    let path = dir.path().join("nonexistent").join("settings.json");
     let state = load_state_from(&path);
     assert!(
         state.last_dir_right.is_none(),
@@ -520,7 +507,7 @@ fn last_dir_right_is_updated_when_dual_pane_is_active() {
     );
 }
 
-// ── None fields are removed from db ───────────────────────────────────────────
+// ── None fields are removed from JSON ─────────────────────────────────────────
 
 #[test]
 fn none_field_removes_previously_stored_key() {
@@ -541,16 +528,22 @@ fn none_field_removes_previously_stored_key() {
         ..Default::default()
     };
     save_state_to(&path, &second).unwrap();
+
+    let loaded = load_state_from(&path);
+    assert!(loaded.editor.is_none(), "editor should have been removed");
+
+    // Also verify the key is absent from the raw JSON.
+    let raw = fs::read_to_string(&path).unwrap();
     assert!(
-        load_state_from(&path).editor.is_none(),
-        "editor should have been removed"
+        !raw.contains("\"editor\""),
+        "editor key should not appear in JSON when None"
     );
 }
 
-// ── redb atomicity / multiple writes ──────────────────────────────────────────
+// ── Multiple sequential saves ─────────────────────────────────────────────────
 
 #[test]
-fn multiple_saves_to_same_db_are_atomic() {
+fn multiple_saves_to_same_file_are_consistent() {
     let (_dir, path) = tmp_state_path();
     for i in 0..10 {
         let state = AppState {
@@ -566,129 +559,16 @@ fn multiple_saves_to_same_db_are_atomic() {
     );
 }
 
-// ── load_state_from_db / save_state_to_db directly ────────────────────────────
-
-#[test]
-fn load_from_empty_db_returns_default() {
-    let (_dir, path) = tmp_state_path();
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    let state = load_state_from_db(&db);
-    assert_eq!(state, AppState::default());
-}
-
-#[test]
-fn save_and_load_via_db_handle() {
-    let (_dir, path) = tmp_state_path();
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-
-    let state = AppState {
-        theme: Some("neon".into()),
-        show_hidden: Some(true),
-        sort_mode: Some(SortMode::Extension),
-        ..Default::default()
-    };
-    save_state_to_db(&db, &state).unwrap();
-    let loaded = load_state_from_db(&db);
-    assert_eq!(loaded, state);
-}
-
-// ── get_str / get_dir / get_bool helpers ──────────────────────────────────────
-
-#[test]
-fn get_str_returns_none_for_missing_key() {
-    let (_dir, path) = tmp_state_path();
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    // Create the table with at least one key so the table exists.
-    let txn = db.begin_write().unwrap();
-    {
-        let mut table = txn.open_table(STATE_TABLE).unwrap();
-        table.insert(KEY_THEME, "test").unwrap();
-    }
-    txn.commit().unwrap();
-    assert!(get_str(&db, KEY_EDITOR).is_none());
-}
-
-#[test]
-fn get_str_returns_value_for_existing_key() {
-    let (_dir, path) = tmp_state_path();
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    let txn = db.begin_write().unwrap();
-    {
-        let mut table = txn.open_table(STATE_TABLE).unwrap();
-        table.insert(KEY_THEME, "dracula").unwrap();
-    }
-    txn.commit().unwrap();
-    assert_eq!(get_str(&db, KEY_THEME), Some("dracula".to_string()));
-}
-
-#[test]
-fn get_dir_returns_none_for_non_directory_path() {
-    let (_dir, path) = tmp_state_path();
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    let txn = db.begin_write().unwrap();
-    {
-        let mut table = txn.open_table(STATE_TABLE).unwrap();
-        // Store a path that exists as a file, not a directory.
-        table.insert(KEY_LAST_DIR, path.to_str().unwrap()).unwrap();
-    }
-    txn.commit().unwrap();
-    // The redb file itself exists but is not a directory.
-    assert!(get_dir(&db, KEY_LAST_DIR).is_none());
-}
-
-#[test]
-fn get_bool_returns_none_for_non_bool_value() {
-    let (_dir, path) = tmp_state_path();
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    let txn = db.begin_write().unwrap();
-    {
-        let mut table = txn.open_table(STATE_TABLE).unwrap();
-        table.insert(KEY_SHOW_HIDDEN, "yes").unwrap();
-        table.insert(KEY_SINGLE_PANE, "1").unwrap();
-    }
-    txn.commit().unwrap();
-    assert!(
-        get_bool(&db, KEY_SHOW_HIDDEN).is_none(),
-        "\"yes\" is not a valid bool"
-    );
-    assert!(
-        get_bool(&db, KEY_SINGLE_PANE).is_none(),
-        "\"1\" is not a valid bool"
-    );
-}
-
-#[test]
-fn get_bool_parses_true_and_false() {
-    let (_dir, path) = tmp_state_path();
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    let txn = db.begin_write().unwrap();
-    {
-        let mut table = txn.open_table(STATE_TABLE).unwrap();
-        table.insert(KEY_SHOW_HIDDEN, "true").unwrap();
-        table.insert(KEY_SINGLE_PANE, "false").unwrap();
-    }
-    txn.commit().unwrap();
-    assert_eq!(get_bool(&db, KEY_SHOW_HIDDEN), Some(true));
-    assert_eq!(get_bool(&db, KEY_SINGLE_PANE), Some(false));
-}
-
 // ── config_dir / state_path ───────────────────────────────────────────────────
 
 #[test]
-fn state_path_ends_with_redb_extension() {
+fn state_path_ends_with_json_extension() {
     // This test may return None in environments without $HOME or
     // $XDG_CONFIG_HOME, which is fine — we only assert the shape when Some.
     if let Some(p) = state_path() {
         assert!(
-            p.to_str().unwrap().ends_with("state.redb"),
-            "state_path should end with state.redb, got: {p:?}"
+            p.to_str().unwrap().ends_with("settings.json"),
+            "state_path should end with settings.json, got: {p:?}"
         );
         assert!(
             p.to_str().unwrap().contains("tfe"),
@@ -697,22 +577,19 @@ fn state_path_ends_with_redb_extension() {
     }
 }
 
-// ── Unknown keys in the db are harmlessly ignored ─────────────────────────────
+// ── Unknown keys in JSON are harmlessly ignored ───────────────────────────────
 
 #[test]
-fn unknown_keys_in_db_are_ignored() {
+fn unknown_keys_in_json_are_ignored() {
     let (_dir, path) = tmp_state_path();
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let db = Database::create(&path).unwrap();
-    let txn = db.begin_write().unwrap();
-    {
-        let mut table = txn.open_table(STATE_TABLE).unwrap();
-        table.insert(KEY_THEME, "nord").unwrap();
-        table.insert("future_feature", "42").unwrap();
-        table.insert("another_new_key", "xyz").unwrap();
-    }
-    txn.commit().unwrap();
-    drop(db);
+    let json = r#"{
+        "theme": "nord",
+        "future_feature": 42,
+        "another_new_key": "xyz",
+        "nested_unknown": {"a": 1}
+    }"#;
+    fs::write(&path, json).unwrap();
 
     let state = load_state_from(&path);
     assert_eq!(state.theme, Some("nord".into()));
@@ -724,7 +601,7 @@ fn unknown_keys_in_db_are_ignored() {
 #[test]
 fn active_pane_none_on_fresh_install() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("nonexistent").join("state.redb");
+    let path = dir.path().join("nonexistent").join("settings.json");
     assert!(load_state_from(&path).active_pane.is_none());
 }
 
@@ -745,4 +622,33 @@ fn active_pane_persists_with_full_state() {
     save_state_to(&path, &original).unwrap();
     let loaded = load_state_from(&path);
     assert_eq!(loaded, original);
+}
+
+// ── Malformed JSON returns default ────────────────────────────────────────────
+
+#[test]
+fn malformed_json_returns_default() {
+    let (_dir, path) = tmp_state_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "this is not valid json {{{").unwrap();
+    assert_eq!(load_state_from(&path), AppState::default());
+}
+
+// ── Atomic write leaves no .tmp file ──────────────────────────────────────────
+
+#[test]
+fn atomic_write_leaves_no_tmp_file() {
+    let (_dir, path) = tmp_state_path();
+    let state = AppState {
+        theme: Some("grape".into()),
+        ..Default::default()
+    };
+    save_state_to(&path, &state).unwrap();
+
+    let tmp_path = path.with_extension("tmp");
+    assert!(
+        !tmp_path.exists(),
+        "temporary file should be cleaned up after atomic rename"
+    );
+    assert!(path.exists(), "final JSON file should exist");
 }

@@ -269,9 +269,12 @@ pub mod ui;
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
 pub use dual_pane::{DualPane, DualPaneActive, DualPaneBuilder, DualPaneOutcome};
-pub use explorer::{entry_icon, fmt_size, FileExplorer, FileExplorerBuilder};
+pub use explorer::{entry_icon, fmt_size, FileExplorer, FileExplorerBuilder, PAGE_SIZE};
 pub use palette::Theme;
-pub use render::{render, render_dual_pane, render_dual_pane_themed, render_themed};
+pub use render::{
+    render, render_dual_pane, render_dual_pane_themed, render_themed, FOOTER_HEIGHT, HEADER_HEIGHT,
+    MARK_INDICATOR, SCROLLBAR_CHAR,
+};
 pub use types::{ExplorerOutcome, FsEntry, SortMode};
 
 // ── Full-app re-exports ───────────────────────────────────────────────────────

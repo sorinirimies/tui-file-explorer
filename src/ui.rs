@@ -824,11 +824,6 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("multi-select", Style::default().fg(theme.accent)),
         ),
         option_row(
-            "y",
-            "copy",
-            Span::styled("yank", Style::default().fg(theme.accent)),
-        ),
-        option_row(
             "x",
             "cut",
             Span::styled("cut", Style::default().fg(theme.accent)),
@@ -925,8 +920,6 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
     frame.render_widget(nav_col, row0_cols[0]);
 
     let fileops_spans = vec![
-        k("y"),
-        d(" copy │ "),
         k("x"),
         d(" cut │ "),
         k("p"),

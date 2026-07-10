@@ -298,6 +298,7 @@ pub struct DualPaneBuilder {
     show_hidden: bool,
     sort_mode: SortMode,
     single_pane: bool,
+    page_size: usize,
 }
 
 impl DualPaneBuilder {
@@ -312,6 +313,7 @@ impl DualPaneBuilder {
             show_hidden: false,
             sort_mode: SortMode::default(),
             single_pane: false,
+            page_size: 10,
         }
     }
 
@@ -421,6 +423,14 @@ impl DualPaneBuilder {
         self
     }
 
+    /// Set the number of entries scrolled by Page Up / Page Down in each pane.
+    ///
+    /// Defaults to 10.
+    pub fn page_size(mut self, size: usize) -> Self {
+        self.page_size = size;
+        self
+    }
+
     /// Consume the builder and return a fully initialised [`DualPane`].
     pub fn build(self) -> DualPane {
         let right_dir = self.right_dir.unwrap_or_else(|| self.left_dir.clone());
@@ -429,12 +439,14 @@ impl DualPaneBuilder {
             .extension_filter(self.extensions.clone())
             .show_hidden(self.show_hidden)
             .sort_mode(self.sort_mode)
+            .page_size(self.page_size)
             .build();
 
         let right = FileExplorer::builder(right_dir)
             .extension_filter(self.extensions)
             .show_hidden(self.show_hidden)
             .sort_mode(self.sort_mode)
+            .page_size(self.page_size)
             .build();
 
         DualPane {

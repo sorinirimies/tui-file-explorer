@@ -14,48 +14,39 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 
 ## Preview
 
-### Basic navigation
-![basic](examples/vhs/generated/basic.gif)
-
-### Search
-![search](examples/vhs/generated/search.gif)
-
-### Sort modes
-![sort](examples/vhs/generated/sort.gif)
-
-### Extension filter
-![filter](examples/vhs/generated/filter.gif)
-
-### File operations
-![file_ops](examples/vhs/generated/file_ops.gif)
-
-### Theme switcher
-![theme_switcher](examples/vhs/generated/theme_switcher.gif)
-
-### Pane toggle
-![pane_toggle](examples/vhs/generated/pane_toggle.gif)
-
-### Dual pane
-![dual_pane](examples/vhs/generated/dual_pane.gif)
-
-### Options panel
-![options](examples/vhs/generated/options.gif)
-
-### Editor picker
-![editor_picker](examples/vhs/generated/editor_picker.gif)
-
-### Create entries
-![create_entries](examples/vhs/generated/create_entries.gif)
-
 ### Preview & editor
 <img src="examples/vhs/generated/preview.gif" alt="Preview demo" width="600"/>
+
+### Picture preview
+
+### Basic navigation
+
+### Search
+
+### Sort modes
+
+### Extension filter
+
+### File operations
+
+### Theme switcher
+
+### Pane toggle
+
+### Dual pane
+
+### Options panel
+
+### Editor picker
+
+### Create entries
 
 ---
 
 ## Features
 
 - 🗂️ **Two-pane layout** — independent left and right explorer panes, `Tab` to switch focus
-- 📋 **File operations** — copy (`y`), cut (`x`), paste (`p`), delete (`d`); `Space` to multi-select; `n`/`N` to create dirs/files; `r` to rename
+- 📋 **File operations** — `Space` to mark, `p` to paste (copy), `x` to cut+paste, `d` to delete; `n`/`N` to create dirs/files; `r` to rename
 - 🔍 **Incremental search** — press `/` to filter entries live as you type
 - 🔃 **Sort modes** — cycle `Name → Size ↓ → Extension` with `s`
 - 🎛️ **Extension filter** — only matching files are selectable; dirs are always navigable
@@ -168,7 +159,6 @@ Every feature from the `tfe` binary is available without any manual wiring:
 | Dual-pane | `Tab` | ✅ |
 | Single/dual toggle | `w` | ✅ |
 | Multi-select | `Space` | ✅ |
-| Copy (yank) | `y` | ✅ |
 | Cut | `x` | ✅ |
 | Paste (with progress) | `p` | ✅ |
 | Delete (with confirmation) | `d` | ✅ |
@@ -273,9 +263,8 @@ match dual.handle_key(key) {
 | Key | Action |
 |-----|--------|
 | `Space` | **Mark** — toggle multi-select on the highlighted entry |
-| `y` | **Yank** — mark highlighted entry for copy |
 | `x` | **Cut** — mark highlighted entry for move |
-| `p` | **Paste** — copy/move clipboard into the *other* pane's directory |
+| `p` | **Paste** — copy marked files (or clipboard) into the active pane's directory |
 | `d` | **Delete** — remove highlighted entry (asks for confirmation) |
 | `n` | **New folder** — prompt for a name and create the directory (`mkdir`) |
 | `N` | **New file** — prompt for a name and create the file (`touch`) |
@@ -332,7 +321,7 @@ The `tfe` binary opens a **split-screen file manager** with a left and right pan
 │   📄 Cargo.toml                 │   📄 Cargo.toml                  │
 │   📄 README.md                  │   📄 README.md                   │
 ├─────────────────────────────────┴──────────────────────────────────┤
-│ 📋 Copy: main.rs          Tab pane  y copy  x cut  p paste  d del  │
+│ 📋 Copy: main.rs          Tab pane  x cut  p paste  d del  │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -348,8 +337,8 @@ The `tfe` binary opens a **split-screen file manager** with a left and right pan
 The classic **Midnight Commander** source-to-destination workflow:
 
 1. **Navigate** to the file you want in the active pane
-2. **`y`** to yank (copy) or **`x`** to cut it — the status bar confirms what is in the clipboard
-3. **`Tab`** to switch to the other pane and navigate to the destination directory
+2. **`Tab`** to switch to the other pane and navigate to the destination directory
+3. **`p`** to paste (copy) or use **`x`** to cut first, then `Tab` + `p` — the status bar confirms what is in the clipboard
 4. **`p`** to paste — the file is copied (or moved for cut) into that pane's directory
 
 ```
@@ -715,7 +704,6 @@ cargo run --example open_file -- "code --wait"
 
 **Run:** `cargo run --example basic`
 
-![Navigation and search](examples/vhs/generated/basic.gif)
 
 Demonstrates directory navigation, incremental search (`/`), sort mode cycling (`s`), hidden-file toggle (`.`), directory descent and ascent, and file selection.
 
@@ -725,7 +713,6 @@ Demonstrates directory navigation, incremental search (`/`), sort mode cycling (
 
 **Run:** `cargo run --example basic` then press `/`
 
-![Incremental search](examples/vhs/generated/search.gif)
 
 Shows the full search lifecycle: activate with `/`, type to filter live, use `Backspace` to narrow or clear, and `Esc` to cancel without dismissing the explorer.
 
@@ -735,7 +722,6 @@ Shows the full search lifecycle: activate with `/`, type to filter live, use `Ba
 
 **Run:** `cargo run --example basic` then press `s`
 
-![Sort modes](examples/vhs/generated/sort.gif)
 
 Demonstrates `Name → Size ↓ → Extension → Name` cycling, combined with search, and sort persistence across directory navigation.
 
@@ -745,7 +731,6 @@ Demonstrates `Name → Size ↓ → Extension → Name` cycling, combined with s
 
 **Run:** `cargo run --example basic -- rs toml`
 
-![Extension filter](examples/vhs/generated/filter.gif)
 
 Only `.rs` and `.toml` files are selectable; all other files appear dimmed. The footer reflects the active filter at all times.
 
@@ -755,9 +740,8 @@ Only `.rs` and `.toml` files are selectable; all other files appear dimmed. The 
 
 **Run:** `cargo run --bin tfe`
 
-![Copy, Cut, Paste, Delete](examples/vhs/generated/file_ops.gif)
 
-Demonstrates the full **copy then paste** and **cut (move) then paste** workflows across both panes, followed by a **delete with confirmation modal**. The clipboard status bar updates live after each `y` / `x` / `p` keystroke, and an overwrite-prompt appears when the destination file already exists.
+Demonstrates the full **mark then paste** (copy) and **cut then paste** (move) workflows across both panes, followed by a **delete with confirmation modal**. Mark files with `Space`, press `p` to paste-copy or `x` to cut, then `Tab` + `p` to paste. The clipboard status bar updates live, and an overwrite-prompt appears when the destination file already exists.
 
 ---
 
@@ -765,7 +749,6 @@ Demonstrates the full **copy then paste** and **cut (move) then paste** workflow
 
 **Run:** `cargo run --example theme_switcher`
 
-![Theme switcher](examples/vhs/generated/theme_switcher.gif)
 
 Live theme cycling through all 43 named palettes with a real-time sidebar showing the catalogue and the active theme's description.
 
@@ -775,7 +758,6 @@ Live theme cycling through all 43 named palettes with a real-time sidebar showin
 
 **Run:** `cargo run --bin tfe`
 
-![Pane toggle](examples/vhs/generated/pane_toggle.gif)
 
 Demonstrates the three layout controls in sequence:
 
@@ -789,7 +771,6 @@ Demonstrates the three layout controls in sequence:
 
 **Run:** `cargo run --bin tfe` then press `Shift+O`
 
-![Options panel and snackbar](examples/vhs/generated/options.gif)
 
 Demonstrates the full options panel workflow:
 
@@ -806,7 +787,6 @@ Demonstrates the full options panel workflow:
 
 **Run:** `cargo run --example editor_picker`
 
-![Editor picker panel](examples/vhs/generated/editor_picker.gif)
 
 Demonstrates the editor picker panel:
 
@@ -822,7 +802,6 @@ Demonstrates the editor picker panel:
 
 **Run:** `cargo run --example dual_pane`
 
-![DualPane library widget](examples/vhs/generated/dual_pane.gif)
 
 A complete two-pane file manager built entirely on the **library API** — no binary code. Demonstrates:
 
@@ -840,7 +819,6 @@ A complete two-pane file manager built entirely on the **library API** — no bi
 
 **Run:** `cargo run --example create_entries`
 
-![Create entries](examples/vhs/generated/create_entries.gif)
 
 Demonstrates in-place file and directory creation:
 
@@ -868,6 +846,22 @@ Demonstrates in-place file and directory creation:
 
 ---
 
+### Picture Preview
+
+**Run:** `cargo run --release -- /path/to/images/`
+
+<p align="center">
+</p>
+
+Demonstrates the image preview feature:
+
+- **`P`** — toggle the preview panel; text files render with line numbers, images render via the best available terminal graphics protocol (Kitty, Sixel, iTerm2, or halfblocks)
+- **`Ctrl+J` / `Ctrl+K`** — scroll the preview pane
+- Navigate between files — the preview updates automatically, switching between text and image rendering as appropriate
+- Supported image formats: PNG, JPEG, GIF, BMP, WebP
+
+---
+
 ## Demo Quick Reference
 
 | Demo | Command | Highlights |
@@ -884,6 +878,7 @@ Demonstrates in-place file and directory creation:
 | **Options panel** | `cargo run --bin tfe` then `Shift+O` | Options panel, Shift+E editor picker, error snackbar |
 | **Editor picker** | `cargo run --example editor_picker` | Editor picker panel, Terminal Editors + IDEs |
 | **Create entries** | `cargo run --example create_entries` | `n` mkdir, `N` touch, `r` rename, nested paths |
+| **Picture preview** | `cargo run --release -- /path/to/images/` | Image preview (PNG, JPEG, GIF, BMP, WebP), text vs image switching |
 | **Dual-pane GIF** | `vhs examples/vhs/dual_pane.tape` | Full `dual_pane` example recorded end-to-end |
 
 ---
@@ -1209,6 +1204,7 @@ vhs examples/vhs/dual_pane.tape
 vhs examples/vhs/options.tape
 vhs examples/vhs/editor_picker.tape
 vhs examples/vhs/create_entries.tape
+vhs examples/vhs/picture_preview.tape
 ```
 
 GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
@@ -1226,6 +1222,7 @@ GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
 | `options.tape` | Options panel, Shift+E editor picker, toggles, error snackbar | `cargo run --bin tfe` |
 | `editor_picker.tape` | Editor picker panel — Terminal Editors and IDEs & GUI Editors | `cargo run --example editor_picker` |
 | `create_entries.tape` | New folder (`n`), new file (`N`), rename (`r`), nested paths | `cargo run --example create_entries` |
+| `picture_preview.tape` | Image preview — PNG, JPEG, GIF, BMP, WebP rendering in preview pane | `cargo run --release -- /path/to/images/` |
 
 ---
 

@@ -39,6 +39,9 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::types::{ExplorerOutcome, FsEntry, SortMode};
 
+/// Default number of entries scrolled by Page Up / Page Down.
+pub const PAGE_SIZE: usize = 10;
+
 // ── FileExplorer ──────────────────────────────────────────────────────────────
 
 /// State for the file-explorer widget.
@@ -89,6 +92,8 @@ pub struct FileExplorer {
     pub(crate) status: String,
     /// Current sort order for directory entries.
     pub sort_mode: SortMode,
+    /// Number of entries scrolled by Page Up / Page Down (default: 10).
+    pub page_size: usize,
     /// Current incremental-search query (empty = no search active).
     pub search_query: String,
     /// Whether the explorer is currently capturing keystrokes for search input.
@@ -179,6 +184,7 @@ impl FileExplorer {
             show_hidden: false,
             status: String::new(),
             sort_mode: SortMode::default(),
+            page_size: PAGE_SIZE,
             search_query: String::new(),
             search_active: false,
             marked: HashSet::new(),
@@ -434,7 +440,7 @@ impl FileExplorer {
 
             // ── Page up ──────────────────────────────────────────────────────
             KeyCode::PageUp => {
-                for _ in 0..10 {
+                for _ in 0..self.page_size {
                     self.move_up();
                 }
                 ExplorerOutcome::Pending
@@ -442,7 +448,7 @@ impl FileExplorer {
 
             // ── Page down ────────────────────────────────────────────────────
             KeyCode::PageDown => {
-                for _ in 0..10 {
+                for _ in 0..self.page_size {
                     self.move_down();
                 }
                 ExplorerOutcome::Pending
@@ -850,6 +856,7 @@ pub struct FileExplorerBuilder {
     extension_filter: Vec<String>,
     show_hidden: bool,
     sort_mode: SortMode,
+    page_size: usize,
 }
 
 impl FileExplorerBuilder {
@@ -860,6 +867,7 @@ impl FileExplorerBuilder {
             extension_filter: Vec::new(),
             show_hidden: false,
             sort_mode: SortMode::default(),
+            page_size: PAGE_SIZE,
         }
     }
 
@@ -924,6 +932,14 @@ impl FileExplorerBuilder {
         self
     }
 
+    /// Set the number of entries scrolled by Page Up / Page Down.
+    ///
+    /// Defaults to 10.
+    pub fn page_size(mut self, size: usize) -> Self {
+        self.page_size = size;
+        self
+    }
+
     /// Consume the builder and return a fully initialised [`FileExplorer`].
     pub fn build(self) -> FileExplorer {
         let mut explorer = FileExplorer {
@@ -935,6 +951,7 @@ impl FileExplorerBuilder {
             show_hidden: self.show_hidden,
             status: String::new(),
             sort_mode: self.sort_mode,
+            page_size: self.page_size,
             search_query: String::new(),
             search_active: false,
             marked: HashSet::new(),
@@ -1063,66 +1080,60 @@ pub(crate) fn load_entries(
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-/// Choose a Unicode icon for a directory entry.
-///
-/// Exposed as a public helper so that custom renderers can reuse the same
-/// icon mapping without duplicating the match table.
-pub fn entry_icon(entry: &FsEntry) -> &'static str {
-    if entry.is_dir {
-        return "📁";
-    }
-    match entry.extension.as_str() {
-        // Disk images
-        "iso" | "dmg" => "💿",
-        "img" => "🖼 ",
-        // Archives
-        "zip" | "gz" | "xz" | "zst" | "bz2" | "tar" | "7z" | "rar" | "tgz" | "tbz2" => "📦",
-        // Documents
-        "pdf" => "📕",
-        "txt" | "log" | "rst" => "📄",
-        "md" | "mdx" | "markdown" => "📝",
-        // Config / data
-        "toml" | "yaml" | "yml" | "json" | "xml" | "ini" | "cfg" | "conf" | "env" => "⚙ ",
-        "lock" => "🔒",
-        // Source — languages
-        "rs" => "🦀",
-        "py" | "pyw" => "🐍",
-        "js" | "mjs" | "cjs" => "📜",
-        "ts" | "mts" | "cts" => "📜",
-        "jsx" | "tsx" => "📜",
-        "go" => "📜",
-        "c" | "h" => "📜",
-        "cpp" | "cc" | "cxx" | "hpp" | "hxx" => "📜",
-        "java" | "kt" | "kts" => "📜",
-        "rb" | "erb" => "📜",
-        "php" => "📜",
-        "swift" => "📜",
-        "cs" => "📜",
-        "lua" => "📜",
-        "zig" => "📜",
-        "ex" | "exs" => "📜",
-        "hs" | "lhs" => "📜",
-        "ml" | "mli" => "📜",
-        // Shell scripts
-        "sh" | "bash" | "zsh" | "fish" | "nu" => "📜",
-        "bat" | "cmd" | "ps1" => "📜",
-        // Web
-        "html" | "htm" | "xhtml" => "🌐",
-        "css" | "scss" | "sass" | "less" => "🎨",
-        "svg" => "🎨",
-        // Images (raster)
-        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "ico" | "tiff" | "tif" | "avif"
-        | "heic" | "heif" => "🖼 ",
-        // Video
-        "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" => "🎬",
-        // Audio
-        "mp3" | "wav" | "flac" | "ogg" | "aac" | "m4a" | "opus" | "wma" => "🎵",
-        // Fonts
-        "ttf" | "otf" | "woff" | "woff2" | "eot" => "🔤",
-        // Executables / binaries
-        "exe" | "msi" | "deb" | "rpm" | "appimage" | "apk" => "⚙ ",
-        _ => "📄",
-    }
+/// Declarative icon map — maps file extensions to emoji icons.
+macro_rules! icon_map {
+    ( dir => $dir_icon:expr, $( [ $( $ext:literal ),+ ] => $icon:expr, )* default => $fallback:expr $(,)? ) => {
+        pub fn entry_icon(entry: &FsEntry) -> &'static str {
+            if entry.is_dir {
+                return $dir_icon;
+            }
+            match entry.extension.as_str() {
+                $( $( $ext )|+ => $icon, )*
+                _ => $fallback,
+            }
+        }
+    };
+}
+
+icon_map! {
+    dir => "📁",
+
+    // Disk images
+    ["iso", "dmg"]          => "💿",
+    ["img"]                 => "🖼 ",
+    // Archives
+    ["zip", "gz", "xz", "zst", "bz2", "tar", "7z", "rar", "tgz", "tbz2"] => "📦",
+    // Documents
+    ["pdf"]                 => "📕",
+    ["txt", "log", "rst"]   => "📄",
+    ["md", "mdx", "markdown"] => "📝",
+    // Config / data
+    ["toml", "yaml", "yml", "json", "xml", "ini", "cfg", "conf", "env"] => "⚙ ",
+    ["lock"]                => "🔒",
+    // Source — languages
+    ["rs"]                  => "🦀",
+    ["py", "pyw"]           => "🐍",
+    ["js", "mjs", "cjs", "ts", "mts", "cts", "jsx", "tsx", "go",
+     "c", "h", "cpp", "cc", "cxx", "hpp", "hxx",
+     "java", "kt", "kts", "rb", "erb", "php", "swift", "cs",
+     "lua", "zig", "ex", "exs", "hs", "lhs", "ml", "mli"] => "📜",
+    // Shell scripts
+    ["sh", "bash", "zsh", "fish", "nu", "bat", "cmd", "ps1"] => "📜",
+    // Web
+    ["html", "htm", "xhtml"] => "🌐",
+    ["css", "scss", "sass", "less", "svg"] => "🎨",
+    // Images (raster)
+    ["png", "jpg", "jpeg", "gif", "bmp", "webp", "ico", "tiff", "tif", "avif", "heic", "heif"] => "🖼 ",
+    // Video
+    ["mp4", "mkv", "avi", "mov", "webm", "flv", "wmv", "m4v"] => "🎬",
+    // Audio
+    ["mp3", "wav", "flac", "ogg", "aac", "m4a", "opus", "wma"] => "🎵",
+    // Fonts
+    ["ttf", "otf", "woff", "woff2", "eot"] => "🔤",
+    // Executables / binaries
+    ["exe", "msi", "deb", "rpm", "appimage", "apk"] => "⚙ ",
+
+    default => "📄",
 }
 
 /// Format a byte count as a human-readable size string.

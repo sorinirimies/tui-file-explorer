@@ -418,7 +418,7 @@ pub enum ClipOp {
 
 /// An entry (or entries) that have been yanked (copied or cut) and are waiting
 /// to be pasted.  When the user space-marks multiple files before pressing
-/// `y`/`x`, all marked paths are stored here.
+/// `p` (copy) or `x` (cut), all marked paths are stored here.
 #[derive(Debug, Clone)]
 pub struct ClipboardItem {
     /// One or more source paths waiting to be pasted.
@@ -803,10 +803,14 @@ impl App {
     /// 1. Active pane marks — the normal single-pane workflow.
     /// 2. Inactive pane marks — handles the common dual-pane workflow where
     ///    the user marks files in the source pane, tabs to the destination
-    ///    pane, and then presses `y`.
+    ///    pane, and then presses `p` or `x`.
     /// 3. Active pane cursor entry — fallback when nothing is marked.
     ///
     /// Marks on whichever pane was used are cleared after the yank.
+    ///
+    /// Note: for copy operations, `paste()` calls this automatically when
+    /// marks exist but the clipboard is empty — the user can simply mark
+    /// files with Space and press `p` directly.
     pub fn yank(&mut self, op: ClipOp) {
         let active_marks: Vec<PathBuf> = self.active_pane().marked.iter().cloned().collect();
         let inactive_marks: Vec<PathBuf> = match self.active {
@@ -884,8 +888,22 @@ impl App {
     /// If the destination already exists, a [`Modal::Overwrite`] is
     /// raised instead of overwriting silently.
     pub fn paste(&mut self) {
+        // If no clipboard exists but files are marked (Space), automatically
+        // treat the marks as a copy source — the user can mark with Space
+        // and paste with p directly, without a separate y step.
+        if self.clipboard.is_none() {
+            let has_marks = !self.active_pane().marked.is_empty()
+                || match self.active {
+                    Pane::Left => !self.right.marked.is_empty(),
+                    Pane::Right => !self.left.marked.is_empty(),
+                };
+            if has_marks {
+                self.yank(ClipOp::Copy);
+            }
+        }
+
         let Some(clip) = self.clipboard.clone() else {
-            self.status_msg = "Nothing in clipboard.".into();
+            self.status_msg = "Nothing in clipboard — mark files with Space first.".into();
             return;
         };
 
@@ -1394,11 +1412,7 @@ impl App {
                 self.single_pane = !self.single_pane;
                 return Ok(false);
             }
-            // Copy
-            KeyCode::Char('y') if key.modifiers.is_empty() => {
-                self.yank(ClipOp::Copy);
-                return Ok(false);
-            }
+
             // Cut
             KeyCode::Char('x') if key.modifiers.is_empty() => {
                 self.yank(ClipOp::Cut);
@@ -2411,7 +2425,7 @@ mod tests {
 
     #[test]
     fn yank_uses_inactive_pane_marks_when_active_pane_has_none() {
-        // Typical dual-pane workflow: mark files in LEFT, tab to RIGHT, press y.
+        // Typical dual-pane workflow: mark files in LEFT, tab to RIGHT, press p.
         let src_dir = tempdir().expect("src tempdir");
         let dst_dir = tempdir().expect("dst tempdir");
         fs::write(src_dir.path().join("a.txt"), b"a").expect("write");
@@ -2755,7 +2769,7 @@ mod tests {
     // silently replacing the multi-item clipboard with just the cursor entry.
 
     #[test]
-    fn key_release_after_yank_does_not_clobber_clipboard() {
+    fn key_release_after_cut_does_not_clobber_clipboard() {
         use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
         let dir = tempdir().expect("tempdir");
@@ -2770,9 +2784,9 @@ mod tests {
         app.left.toggle_mark();
         assert_eq!(app.left.marked.len(), 3);
 
-        // Simulate key PRESS for 'y' — should yank all 3 marked items.
+        // Simulate key PRESS for 'x' (cut) — should yank all 3 marked items.
         let press = KeyEvent {
-            code: KeyCode::Char('y'),
+            code: KeyCode::Char('x'),
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
@@ -2785,9 +2799,9 @@ mod tests {
             .expect("clipboard should be set after press");
         assert_eq!(clip.paths.len(), 3, "press should yank all 3 marked items");
 
-        // Simulate key RELEASE for 'y' — must NOT overwrite the clipboard.
+        // Simulate key RELEASE for 'x' — must NOT overwrite the clipboard.
         let release = KeyEvent {
-            code: KeyCode::Char('y'),
+            code: KeyCode::Char('x'),
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Release,
             state: KeyEventState::empty(),
@@ -2806,7 +2820,7 @@ mod tests {
     }
 
     #[test]
-    fn key_repeat_after_yank_does_not_clobber_clipboard() {
+    fn key_repeat_after_cut_does_not_clobber_clipboard() {
         use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
         let dir = tempdir().expect("tempdir");
@@ -2817,9 +2831,9 @@ mod tests {
         app.left.toggle_mark();
         app.left.toggle_mark();
 
-        // Press 'y' — yank 2 items.
+        // Press 'x' (cut) — yank 2 items.
         let press = KeyEvent {
-            code: KeyCode::Char('y'),
+            code: KeyCode::Char('x'),
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Press,
             state: KeyEventState::empty(),
@@ -2829,7 +2843,7 @@ mod tests {
 
         // Repeat event — must be ignored.
         let repeat = KeyEvent {
-            code: KeyCode::Char('y'),
+            code: KeyCode::Char('x'),
             modifiers: KeyModifiers::empty(),
             kind: KeyEventKind::Repeat,
             state: KeyEventState::empty(),
@@ -2883,7 +2897,75 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let mut app = make_app(dir.path().to_path_buf());
         app.paste();
-        assert_eq!(app.status_msg, "Nothing in clipboard.");
+        assert!(
+            app.status_msg.contains("mark files") || app.status_msg.contains("clipboard"),
+            "status should mention clipboard or marking, got: {}",
+            app.status_msg
+        );
+    }
+
+    #[test]
+    fn paste_auto_copies_marked_files() {
+        let src_dir = tempdir().expect("src tempdir");
+        let dst_dir = tempdir().expect("dst tempdir");
+        fs::write(src_dir.path().join("a.txt"), b"aaa").expect("write");
+        fs::write(src_dir.path().join("b.txt"), b"bbb").expect("write");
+
+        let mut app = App::new(AppOptions {
+            left_dir: src_dir.path().to_path_buf(),
+            right_dir: dst_dir.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+
+        // Mark both files in the left pane with Space.
+        app.left.toggle_mark(); // mark a.txt, advance
+        app.left.toggle_mark(); // mark b.txt, advance
+
+        // Switch to the right pane (destination).
+        app.active = Pane::Right;
+
+        // Press p — should auto-yank the 2 marked files and paste them.
+        app.paste();
+
+        // Both files should now exist in the destination directory.
+        assert!(
+            dst_dir.path().join("a.txt").exists(),
+            "a.txt should be pasted"
+        );
+        assert!(
+            dst_dir.path().join("b.txt").exists(),
+            "b.txt should be pasted"
+        );
+
+        // Source files should still exist (copy, not cut).
+        assert!(
+            src_dir.path().join("a.txt").exists(),
+            "a.txt source should remain"
+        );
+        assert!(
+            src_dir.path().join("b.txt").exists(),
+            "b.txt source should remain"
+        );
+
+        // Marks should be cleared.
+        assert!(
+            app.left.marked.is_empty(),
+            "marks should be cleared after paste"
+        );
+    }
+
+    #[test]
+    fn paste_without_marks_or_clipboard_shows_message() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+
+        app.paste();
+
+        assert!(
+            app.status_msg.contains("mark files"),
+            "status should hint about marking files, got: {}",
+            app.status_msg
+        );
     }
 
     #[test]

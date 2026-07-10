@@ -10,9 +10,12 @@ Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
 Hide
+Type "cargo build --bin tfe 2>/dev/null"
+Enter
+Sleep 10s
 Type "cargo run --bin tfe"
 Enter
-Sleep 3s
+Sleep 4s
 Show
 
 # Left pane is active — navigate down to a file
@@ -24,9 +27,9 @@ Sleep 200ms
 Down
 Sleep 200ms
 
-# Yank (copy) the highlighted file
+# Mark the highlighted file with Space
 Sleep 600ms
-Type "y"
+Space
 Sleep 800ms
 
 # Switch to the right pane
@@ -72,7 +75,7 @@ Sleep 900ms
 Sleep 500ms
 Tab
 Sleep 300ms
-Type "y"
+Space
 Sleep 400ms
 Tab
 Sleep 400ms

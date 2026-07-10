@@ -35,6 +35,20 @@ use crate::{
     FileExplorer,
 };
 
+// ── Render constants ──────────────────────────────────────────────────────────
+
+/// Character used for scroll-position indicators.
+pub const SCROLLBAR_CHAR: char = '\u{2590}'; // ▐ — right half block
+
+/// Marker displayed next to space-marked (selected) entries.
+pub const MARK_INDICATOR: &str = "◆";
+
+/// Default header height in terminal rows.
+pub const HEADER_HEIGHT: u16 = 3;
+
+/// Default footer height in terminal rows.
+pub const FOOTER_HEIGHT: u16 = 3;
+
 // ── Scroll-thumb helper ───────────────────────────────────────────────────────
 
 /// Paint a thin, semi-translucent scroll thumb on the right edge of `area`.
@@ -73,8 +87,7 @@ pub(crate) fn paint_scrollbar(
     for y in 0..area.height {
         if y >= thumb_start && y < thumb_end {
             if let Some(cell) = buf.cell_mut(Position::new(x, area.y + y)) {
-                cell.set_char('\u{2590}') // ▐ — right half block
-                    .set_fg(color);
+                cell.set_char(SCROLLBAR_CHAR).set_fg(color);
             }
         }
     }
@@ -254,9 +267,9 @@ fn render_pane(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(HEADER_HEIGHT),
             Constraint::Min(1),
-            Constraint::Length(3),
+            Constraint::Length(FOOTER_HEIGHT),
         ])
         .split(area);
 
@@ -291,9 +304,9 @@ pub fn render_themed(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect,
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(HEADER_HEIGHT),
             Constraint::Min(1),
-            Constraint::Length(3),
+            Constraint::Length(FOOTER_HEIGHT),
         ])
         .split(area);
 
@@ -419,7 +432,7 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
             // Leading marker: ◆ for marked entries, space otherwise.
             let marker = if is_marked {
                 Span::styled(
-                    "◆",
+                    MARK_INDICATOR,
                     Style::default()
                         .fg(theme.brand)
                         .add_modifier(Modifier::BOLD),

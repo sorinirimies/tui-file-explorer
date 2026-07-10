@@ -12,6 +12,9 @@ Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
 Hide
+Type "cargo build --example dual_pane 2>/dev/null"
+Enter
+Sleep 10s
 Type "cargo run --example dual_pane"
 Enter
 Sleep 4s

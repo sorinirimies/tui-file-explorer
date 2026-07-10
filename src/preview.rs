@@ -650,7 +650,29 @@ mod tests {
         buf
     }
 
+    /// Create a tiny 2×2 WebP image in memory for webp tests.
+    fn make_tiny_webp() -> Vec<u8> {
+        let img = image::RgbImage::from_fn(2, 2, |x, y| match (x, y) {
+            (0, 0) => image::Rgb([255, 0, 0]),
+            (1, 0) => image::Rgb([0, 255, 0]),
+            (0, 1) => image::Rgb([0, 0, 255]),
+            _ => image::Rgb([255, 255, 0]),
+        });
+        let mut buf = Vec::new();
+        let encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut buf);
+        use image::ImageEncoder;
+        encoder
+            .write_image(&img, 2, 2, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        buf
+    }
+
     // ── File-type detection ───────────────────────────────────────────────
+
+    #[test]
+    fn is_image_extension_webp() {
+        assert!(is_image_extension("webp"));
+    }
 
     #[test]
     fn is_image_extension_png() {
@@ -834,6 +856,62 @@ mod tests {
         );
     }
 
+    #[test]
+    fn load_image_preview_decodes_webp() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let webp_path = dir.path().join("tiny.webp");
+        std::fs::write(&webp_path, make_tiny_webp()).expect("write webp");
+
+        let mut picker = ratatui_image::picker::Picker::halfblocks();
+        let content = load_image_preview(&webp_path, &mut picker);
+        assert!(
+            matches!(content, PreviewContent::Image(_)),
+            "expected Image variant for webp, got {}",
+            content_variant(&content)
+        );
+    }
+
+    #[test]
+    fn webp_preview_via_update() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let webp_path = dir.path().join("photo.webp");
+        std::fs::write(&webp_path, make_tiny_webp()).expect("write webp");
+
+        let mut state = PreviewState::new();
+        state.update(Some(&webp_path), 80, 24);
+
+        assert!(
+            matches!(state.content, PreviewContent::Image(_)),
+            "expected Image via update(), got {}",
+            content_variant(&state.content)
+        );
+    }
+
+    #[test]
+    fn render_preview_webp_does_not_panic() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let webp_path = dir.path().join("tiny.webp");
+        std::fs::write(&webp_path, make_tiny_webp()).expect("write webp");
+
+        let mut picker = ratatui_image::picker::Picker::halfblocks();
+        let content = load_image_preview(&webp_path, &mut picker);
+
+        let state = PreviewState {
+            cached_path: Some(webp_path),
+            content,
+            scroll: 0,
+            cached_width: 80,
+            cached_height: 24,
+            picker,
+        };
+
+        let mut terminal = make_terminal();
+        let theme = default_theme();
+        terminal
+            .draw(|frame| render_preview(frame, frame.area(), &state, &theme))
+            .expect("draw");
+    }
+
     // ── Rendering smoke tests ─────────────────────────────────────────────
 
     #[test]
@@ -951,6 +1029,85 @@ mod tests {
         terminal
             .draw(|frame| render_preview(frame, frame.area(), &state, &theme))
             .expect("draw");
+    }
+
+    // ── Lazy picker / no-query tests ──────────────────────────────────────
+    //
+    // These tests verify that previews work correctly with the default
+    // halfblocks picker (i.e. without calling `from_query_stdio`).  This is
+    // the code path taken when stdout is piped and the eager protocol query
+    // is skipped to avoid a 2-second timeout and a raw-mode race condition.
+
+    #[test]
+    fn text_preview_works_with_halfblocks_picker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("hello.txt");
+        std::fs::write(&file, "line one\nline two\n").unwrap();
+
+        let mut state = PreviewState::new(); // halfblocks, no query
+        state.update(Some(&file), 80, 24);
+
+        assert!(
+            matches!(state.content, PreviewContent::Text(_)),
+            "expected Text, got {}",
+            content_variant(&state.content)
+        );
+    }
+
+    #[test]
+    fn binary_preview_works_with_halfblocks_picker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("blob.bin");
+        std::fs::write(&file, b"\x00\x01\x02\x03\x04").unwrap();
+
+        let mut state = PreviewState::new();
+        state.update(Some(&file), 80, 24);
+
+        assert!(
+            matches!(state.content, PreviewContent::Binary(_)),
+            "expected Binary, got {}",
+            content_variant(&state.content)
+        );
+    }
+
+    #[test]
+    fn directory_preview_works_with_halfblocks_picker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.txt"), b"a").unwrap();
+
+        let mut state = PreviewState::new();
+        state.update(Some(dir.path()), 80, 24);
+
+        assert!(
+            matches!(state.content, PreviewContent::Directory(_)),
+            "expected Directory, got {}",
+            content_variant(&state.content)
+        );
+    }
+
+    #[test]
+    fn image_preview_works_with_halfblocks_picker() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let png_path = dir.path().join("pic.png");
+        std::fs::write(&png_path, make_tiny_png()).unwrap();
+
+        let mut state = PreviewState::new(); // halfblocks — no from_query_stdio
+        state.update(Some(&png_path), 80, 24);
+
+        assert!(
+            matches!(state.content, PreviewContent::Image(_)),
+            "expected Image, got {}",
+            content_variant(&state.content)
+        );
+    }
+
+    #[test]
+    fn preview_state_default_uses_halfblocks() {
+        let state = PreviewState::new();
+        assert_eq!(
+            state.protocol_type(),
+            ratatui_image::picker::ProtocolType::Halfblocks,
+        );
     }
 
     // ── Test utility ──────────────────────────────────────────────────────

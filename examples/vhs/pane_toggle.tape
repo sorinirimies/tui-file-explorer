@@ -11,9 +11,12 @@ Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
 Hide
+Type "cargo build --bin tfe 2>/dev/null"
+Enter
+Sleep 10s
 Type "cargo run --bin tfe"
 Enter
-Sleep 3s
+Sleep 4s
 Show
 
 # ── Left pane is active by default ───────────────────────────────────────────

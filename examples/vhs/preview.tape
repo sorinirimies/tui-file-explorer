@@ -11,20 +11,17 @@ Set Height 750
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
-# Launch tfe directly in the project directory
+# Launch tfe pointing at ~/Desktop for a mix of text and image files
 Hide
-Type "cargo run --release -- ."
+Type "cargo build --release 2>/dev/null"
 Enter
-Sleep 3s
+Sleep 10s
+Type "cargo run --release -- ~/Desktop/"
+Enter
+Sleep 4s
 Show
 
-# Navigate to src/
-Down
-Sleep 200ms
-Down
-Sleep 200ms
-Enter
-Sleep 700ms
+# Browse through files
 
 # Toggle preview panel with P
 Sleep 400ms

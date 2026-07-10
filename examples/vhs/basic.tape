@@ -10,6 +10,9 @@ Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
 Hide
+Type "cargo build --example basic 2>/dev/null"
+Enter
+Sleep 10s
 Type "cargo run --example basic"
 Enter
 Sleep 3s
