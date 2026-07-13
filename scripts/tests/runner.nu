@@ -14,7 +14,7 @@ export def run-tests [] {
     let cyan   = (ansi cyan)
     let reset  = (ansi reset)
 
-    let tests = (
+    let tests: list<string> = (
         scope commands
         | where { |it| $it.type == "custom" }
         | where { |it| $it.name | str starts-with "test " }
