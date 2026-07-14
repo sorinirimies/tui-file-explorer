@@ -18,28 +18,40 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 <img src="examples/vhs/generated/preview.gif" alt="Preview demo" width="600"/>
 
 ### Picture preview
+<img src="examples/vhs/generated/picture_preview.gif" alt="Picture preview demo" width="600"/>
 
 ### Basic navigation
+<img src="examples/vhs/generated/basic.gif" alt="Basic navigation demo" width="600"/>
 
 ### Search
+<img src="examples/vhs/generated/search.gif" alt="Search demo" width="600"/>
 
 ### Sort modes
+<img src="examples/vhs/generated/sort.gif" alt="Sort modes demo" width="600"/>
 
 ### Extension filter
+<img src="examples/vhs/generated/filter.gif" alt="Extension filter demo" width="600"/>
 
 ### File operations
+<img src="examples/vhs/generated/file_ops.gif" alt="File operations demo" width="600"/>
 
 ### Theme switcher
+<img src="examples/vhs/generated/theme_switcher.gif" alt="Theme switcher demo" width="600"/>
 
 ### Pane toggle
+<img src="examples/vhs/generated/pane_toggle.gif" alt="Pane toggle demo" width="600"/>
 
 ### Dual pane
+<img src="examples/vhs/generated/dual_pane.gif" alt="Dual pane demo" width="600"/>
 
 ### Options panel
+<img src="examples/vhs/generated/options.gif" alt="Options panel demo" width="600"/>
 
 ### Editor picker
+<img src="examples/vhs/generated/editor_picker.gif" alt="Editor picker demo" width="600"/>
 
 ### Create entries
+<img src="examples/vhs/generated/create_entries.gif" alt="Create entries demo" width="600"/>
 
 ---
 
@@ -851,6 +863,7 @@ Demonstrates in-place file and directory creation:
 **Run:** `cargo run --release -- /path/to/images/`
 
 <p align="center">
+  <img src="examples/vhs/generated/picture_preview.gif" alt="Picture preview demo" width="700"/>
 </p>
 
 Demonstrates the image preview feature:
