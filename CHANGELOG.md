@@ -1,10 +1,25 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.1.11] - 2026-07-17
+
+### Bug Fixes
+- Annotate run-tests list type for nu 0.114 type checker
+- Detect image protocol without stdin probe (Ghostty hang)
+
+### Documentation
+- Embed all demo GIFs in preview gallery
+
+### Style
+- Use Option::filter in dual_pane arg parsing
+
 ## [1.1.10] - 2026-07-10
 
 ### Bug Fixes
 - Allowlist graphics-capable terminals for image probe
+
+### Miscellaneous
+- Bump version to 1.1.10
 
 ## [1.1.9] - 2026-07-10
 
