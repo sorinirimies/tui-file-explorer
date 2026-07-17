@@ -597,54 +597,70 @@ fn run() -> io::Result<()> {
         "setting up terminal (backend=stderr)"
     );
 
-    // Query the terminal for image protocol support (Kitty, Sixel, iTerm2)
-    // **before** entering the alternate screen — the query escape sequences
-    // need a normal terminal state.
+    // Choose an image-preview protocol **without** doing a stdin round-trip.
     //
-    // `from_query_stdio()` writes capability queries to io::stdout() and reads
-    // the terminal's response from io::stdin() on a background thread that has
-    // a 2-second timeout.  If the terminal never replies the timeout fires,
-    // from_query_stdio() returns Ok(halfblocks) — but the background thread
-    // remains alive, still blocking on io::stdin().read().  The TUI event loop
-    // then starts reading from the same stdin, causing the two threads to race:
-    // the background thread silently consumes the user's first keypress(es),
-    // making the app appear frozen or as though it never opened.
+    // The obvious API — `ratatui_image::picker::Picker::from_query_stdio()` —
+    // writes capability queries to stdout and then blocks a *background
+    // thread* on `io::stdin().read()` with a 2-second timeout.  If the
+    // terminal never answers (or answers in a shape the parser doesn't
+    // expect), the timeout fires and `from_query_stdio()` falls back to
+    // halfblocks — but the background thread is still alive, still blocking
+    // on stdin.  The TUI event loop then reads from the same stdin and the
+    // two race: the zombie thread swallows the user's first keypress(es),
+    // so the app looks frozen or as though it never opened.  This was
+    // observed on macOS with Ghostty, where the probe reliably times out
+    // (~2 s) and eats the opening keystrokes.
     //
-    // We therefore only run the io query for terminals that are *known* to
-    // implement (and promptly answer) one of the graphics protocols.  This is
-    // an allowlist rather than a denylist: a previous version special-cased
-    // only Apple_Terminal, which meant every *other* silent terminal (Warp,
-    // Alacritty, plain xterm-over-ssh, tmux without passthrough, a bare pty,
-    // etc.) still hung on startup.  Allowlisting the graphics-capable
-    // terminals and falling back to the always-safe halfblocks picker
-    // everywhere else guarantees the app starts instantly no matter the host
-    // terminal — at worst image previews render as coloured half-blocks.
+    // To sidestep the race entirely we never call `from_query_stdio()`.
+    // Instead we:
+    //   1. pick the graphics protocol from the terminal's identity
+    //      (TERM / TERM_PROGRAM / marker env vars) — a pure lookup, and
+    //   2. read the cell pixel size from `crossterm::terminal::window_size()`,
+    //      which uses the `TIOCGWINSZ` ioctl (no escape sequences, no stdin,
+    //      no thread, cannot hang).
+    // At worst — an unknown terminal, or a kernel that doesn't report pixel
+    // dimensions — we fall back to halfblocks with a nominal cell size, which
+    // always renders *something* and never blocks.
     //
-    // The query is additionally always skipped when stdout is not a real
-    // terminal (e.g. inside the shell wrapper `dir=$(command tfe)`): the
-    // queries would be written to the pipe, never reach the terminal, and
-    // always time out.
+    // The probe is additionally pointless when stdout is not a real terminal
+    // (e.g. inside the shell wrapper `dir=$(command tfe)`): there is no
+    // terminal to describe, so we go straight to halfblocks.
     let stdout_is_tty = crossterm::tty::IsTty::is_tty(&io::stdout());
     let term = std::env::var("TERM").ok();
     let term_program = std::env::var("TERM_PROGRAM").ok();
-    let graphics_capable =
-        terminal_supports_graphics_query(term.as_deref(), term_program.as_deref(), |name| {
+    let detected_protocol = if stdout_is_tty {
+        detect_image_protocol(term.as_deref(), term_program.as_deref(), |name| {
             std::env::var_os(name).is_some()
-        });
-    let skip_image_query = !stdout_is_tty || !graphics_capable;
+        })
+    } else {
+        ratatui_image::picker::ProtocolType::Halfblocks
+    };
+    // Cell size in pixels via ioctl — safe, synchronous, cannot block on stdin.
+    let font_size = crossterm::terminal::window_size()
+        .ok()
+        .filter(|ws| ws.columns > 0 && ws.rows > 0 && ws.width > 0 && ws.height > 0)
+        .map(|ws| (ws.width / ws.columns, ws.height / ws.rows));
     vlog!(
         verbose,
         log_buf,
         log_file,
-        "querying image protocol support (stdout_is_tty={stdout_is_tty}, \
+        "selecting image protocol (stdout_is_tty={stdout_is_tty}, \
          TERM={term:?}, TERM_PROGRAM={term_program:?}, \
-         graphics_capable={graphics_capable}, skip={skip_image_query})"
+         protocol={detected_protocol:?}, font_size={font_size:?})"
     );
-    let image_picker = if skip_image_query {
-        ratatui_image::picker::Picker::halfblocks()
-    } else {
-        ratatui_image::picker::Picker::from_query_stdio()
-            .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks())
+    let image_picker = match font_size {
+        Some(fs) if detected_protocol != ratatui_image::picker::ProtocolType::Halfblocks => {
+            // `from_fontsize` is deprecated in favour of `from_query_stdio`,
+            // but it is the only constructor that lets us supply a known cell
+            // size without triggering the racy stdin probe.  We immediately
+            // override the protocol with the one we detected from the
+            // terminal's identity.
+            #[allow(deprecated)]
+            let mut picker = ratatui_image::picker::Picker::from_fontsize(fs);
+            picker.set_protocol_type(detected_protocol);
+            picker
+        }
+        _ => ratatui_image::picker::Picker::halfblocks(),
     };
     vlog!(
         verbose,
@@ -839,44 +855,54 @@ fn run() -> io::Result<()> {
     Ok(())
 }
 
-/// Decide whether it is safe to probe the terminal for image-protocol support
-/// via [`ratatui_image::picker::Picker::from_query_stdio`].
+/// Pick the terminal graphics protocol for image previews from the terminal's
+/// *identity* alone — no escape-sequence probe, no stdin round-trip.
 ///
-/// The probe writes escape sequences to stdout and blocks a background thread
-/// on stdin waiting for the terminal's reply.  Terminals that don't implement
-/// any graphics protocol frequently never answer, so the probe times out *and*
-/// leaves that background thread alive — it then races the TUI event loop for
-/// stdin and swallows the user's first keypresses, making the app look like it
-/// never started.
+/// The usual API, [`ratatui_image::picker::Picker::from_query_stdio`], writes
+/// capability queries to stdout and blocks a background thread on stdin waiting
+/// for the reply.  Terminals that don't answer (or answer in an unexpected
+/// shape — observed on macOS/Ghostty) make the probe time out *and* leave that
+/// thread alive; it then races the TUI event loop for stdin and swallows the
+/// user's first keypresses, so the app looks like it never opened.
 ///
-/// To avoid that entirely we allowlist the terminals that are known to answer
-/// the probe and return `false` for everything else (the caller then uses the
-/// always-safe halfblocks picker).  `env_present` reports whether a given
-/// environment variable is set, so this function stays pure and testable.
-fn terminal_supports_graphics_query(
+/// We avoid the probe completely by mapping well-known terminals to the
+/// protocol they implement, defaulting to the always-safe half-blocks renderer
+/// for anything we don't recognise.  `env_present` reports whether a given
+/// environment variable is set, keeping this function pure and testable.
+fn detect_image_protocol(
     term: Option<&str>,
     term_program: Option<&str>,
     env_present: impl Fn(&str) -> bool,
-) -> bool {
+) -> ratatui_image::picker::ProtocolType {
+    use ratatui_image::picker::ProtocolType;
+
     // Terminal-specific marker variables are the most reliable signal because
-    // they are set by the terminal itself and survive `ssh`/`tmux` less often
-    // than TERM, but when present they are unambiguous.
-    const CAPABLE_ENV_MARKERS: &[&str] = &[
+    // they are set by the terminal itself; when present they are unambiguous.
+    // kitty & Ghostty speak the kitty graphics protocol; Konsole implements it
+    // too.  iTerm2 and WezTerm speak the iTerm2 inline-image protocol.
+    const KITTY_ENV_MARKERS: &[&str] = &[
         "KITTY_WINDOW_ID",       // kitty
         "GHOSTTY_RESOURCES_DIR", // ghostty
-        "WEZTERM_PANE",          // WezTerm
-        "WEZTERM_EXECUTABLE",    // WezTerm
-        "ITERM_SESSION_ID",      // iTerm2
         "KONSOLE_VERSION",       // Konsole (kitty graphics)
     ];
-    if CAPABLE_ENV_MARKERS.iter().any(|m| env_present(m)) {
-        return true;
+    const ITERM2_ENV_MARKERS: &[&str] = &[
+        "WEZTERM_PANE",       // WezTerm
+        "WEZTERM_EXECUTABLE", // WezTerm
+        "ITERM_SESSION_ID",   // iTerm2
+    ];
+    if KITTY_ENV_MARKERS.iter().any(|m| env_present(m)) {
+        return ProtocolType::Kitty;
+    }
+    if ITERM2_ENV_MARKERS.iter().any(|m| env_present(m)) {
+        return ProtocolType::Iterm2;
     }
 
     // TERM_PROGRAM identifies a handful of graphics-capable terminals.
     if let Some(tp) = term_program {
-        if matches!(tp, "WezTerm" | "ghostty" | "iTerm.app") {
-            return true;
+        match tp {
+            "ghostty" => return ProtocolType::Kitty,
+            "WezTerm" | "iTerm.app" => return ProtocolType::Iterm2,
+            _ => {}
         }
     }
 
@@ -884,15 +910,19 @@ fn terminal_supports_graphics_query(
     // `TERM=xterm-kitty`, ghostty `xterm-ghostty`, foot `foot`).
     if let Some(t) = term {
         let t = t.to_ascii_lowercase();
-        if ["kitty", "ghostty", "wezterm", "foot"]
-            .iter()
-            .any(|marker| t.contains(marker))
-        {
-            return true;
+        if t.contains("kitty") || t.contains("ghostty") {
+            return ProtocolType::Kitty;
+        }
+        if t.contains("wezterm") {
+            return ProtocolType::Iterm2;
+        }
+        // `foot` implements sixel.
+        if t.contains("foot") {
+            return ProtocolType::Sixel;
         }
     }
 
-    false
+    ProtocolType::Halfblocks
 }
 
 fn run_loop<W: io::Write>(
@@ -1118,7 +1148,8 @@ fn open_file_directly(path: &std::path::Path, editor: &Editor) -> io::Result<()>
 
 #[cfg(test)]
 mod tests {
-    use super::terminal_supports_graphics_query;
+    use super::detect_image_protocol;
+    use ratatui_image::picker::ProtocolType;
 
     /// Helper: no environment markers present.
     fn no_env(_: &str) -> bool {
@@ -1126,85 +1157,106 @@ mod tests {
     }
 
     #[test]
-    fn apple_terminal_is_not_probed() {
-        // Regression: Apple_Terminal must never trigger the graphics probe.
-        assert!(!terminal_supports_graphics_query(
-            Some("xterm-256color"),
-            Some("Apple_Terminal"),
-            no_env,
-        ));
+    fn apple_terminal_falls_back_to_halfblocks() {
+        // Regression: Apple_Terminal has no graphics protocol — must never be
+        // probed and must render via halfblocks.
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), Some("Apple_Terminal"), no_env),
+            ProtocolType::Halfblocks,
+        );
     }
 
     #[test]
-    fn warp_and_unknown_terminals_are_not_probed() {
+    fn warp_and_unknown_terminals_use_halfblocks() {
         // Warp and other silent terminals previously hung the app on startup.
-        assert!(!terminal_supports_graphics_query(
-            Some("xterm-256color"),
-            Some("WarpTerminal"),
-            no_env,
-        ));
-        assert!(!terminal_supports_graphics_query(
-            Some("xterm-256color"),
-            None,
-            no_env,
-        ));
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), Some("WarpTerminal"), no_env),
+            ProtocolType::Halfblocks,
+        );
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), None, no_env),
+            ProtocolType::Halfblocks,
+        );
         // No TERM and no TERM_PROGRAM at all (e.g. a bare pty) must be safe too.
-        assert!(!terminal_supports_graphics_query(None, None, no_env));
+        assert_eq!(
+            detect_image_protocol(None, None, no_env),
+            ProtocolType::Halfblocks,
+        );
     }
 
     #[test]
-    fn kitty_is_probed_via_term_and_env() {
-        assert!(terminal_supports_graphics_query(
-            Some("xterm-kitty"),
-            None,
-            no_env,
-        ));
-        assert!(terminal_supports_graphics_query(
-            Some("xterm-256color"),
-            None,
-            |name| name == "KITTY_WINDOW_ID",
-        ));
+    fn kitty_is_detected_via_term_and_env() {
+        assert_eq!(
+            detect_image_protocol(Some("xterm-kitty"), None, no_env),
+            ProtocolType::Kitty,
+        );
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), None, |name| name
+                == "KITTY_WINDOW_ID"),
+            ProtocolType::Kitty,
+        );
     }
 
     #[test]
-    fn ghostty_wezterm_iterm_are_probed_via_term_program() {
-        for tp in ["ghostty", "WezTerm", "iTerm.app"] {
-            assert!(
-                terminal_supports_graphics_query(Some("xterm-256color"), Some(tp), no_env),
-                "expected {tp} to be graphics-capable"
+    fn ghostty_uses_kitty_protocol() {
+        // The macOS/Ghostty regression: Ghostty must be recognised (kitty
+        // graphics) without a stdin probe.
+        assert_eq!(
+            detect_image_protocol(Some("xterm-256color"), Some("ghostty"), no_env),
+            ProtocolType::Kitty,
+        );
+        assert_eq!(
+            detect_image_protocol(Some("xterm-ghostty"), None, no_env),
+            ProtocolType::Kitty,
+        );
+        assert_eq!(
+            detect_image_protocol(None, None, |name| name == "GHOSTTY_RESOURCES_DIR"),
+            ProtocolType::Kitty,
+        );
+    }
+
+    #[test]
+    fn wezterm_and_iterm_use_iterm2_protocol() {
+        for tp in ["WezTerm", "iTerm.app"] {
+            assert_eq!(
+                detect_image_protocol(Some("xterm-256color"), Some(tp), no_env),
+                ProtocolType::Iterm2,
+                "expected {tp} to use the iTerm2 protocol"
             );
         }
+        assert_eq!(
+            detect_image_protocol(Some("wezterm"), None, no_env),
+            ProtocolType::Iterm2,
+        );
     }
 
     #[test]
-    fn graphics_capable_env_markers_are_probed() {
+    fn env_markers_map_to_expected_protocols() {
         for marker in [
             "KITTY_WINDOW_ID",
             "GHOSTTY_RESOURCES_DIR",
-            "WEZTERM_PANE",
-            "WEZTERM_EXECUTABLE",
-            "ITERM_SESSION_ID",
             "KONSOLE_VERSION",
         ] {
-            assert!(
-                terminal_supports_graphics_query(None, None, |name| name == marker),
-                "expected env marker {marker} to be graphics-capable"
+            assert_eq!(
+                detect_image_protocol(None, None, |name| name == marker),
+                ProtocolType::Kitty,
+                "expected env marker {marker} to map to kitty"
+            );
+        }
+        for marker in ["WEZTERM_PANE", "WEZTERM_EXECUTABLE", "ITERM_SESSION_ID"] {
+            assert_eq!(
+                detect_image_protocol(None, None, |name| name == marker),
+                ProtocolType::Iterm2,
+                "expected env marker {marker} to map to iTerm2"
             );
         }
     }
 
     #[test]
-    fn foot_and_wezterm_term_substrings_are_probed() {
-        assert!(terminal_supports_graphics_query(Some("foot"), None, no_env));
-        assert!(terminal_supports_graphics_query(
-            Some("wezterm"),
-            None,
-            no_env
-        ));
-        assert!(terminal_supports_graphics_query(
-            Some("xterm-ghostty"),
-            None,
-            no_env
-        ));
+    fn foot_uses_sixel() {
+        assert_eq!(
+            detect_image_protocol(Some("foot"), None, no_env),
+            ProtocolType::Sixel,
+        );
     }
 }
