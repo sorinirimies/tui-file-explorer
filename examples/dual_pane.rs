@@ -125,13 +125,10 @@ impl App {
 
 fn run() -> io::Result<Option<PathBuf>> {
     // Optional second argument: starting directory for the right pane.
-    let right_dir = std::env::args().nth(1).map(PathBuf::from).and_then(|p| {
-        if p.is_dir() {
-            Some(p)
-        } else {
-            None
-        }
-    });
+    let right_dir = std::env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir());
 
     let mut app = App::new(right_dir);
 
