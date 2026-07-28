@@ -280,13 +280,14 @@ pub use types::{ExplorerOutcome, FsEntry, SortMode};
 // ── Full-app re-exports ───────────────────────────────────────────────────────
 
 pub use app::{
-    App, AppOptions, ClipOp, ClipboardItem, CopyProgress, Editor, Modal, Pane, Snackbar,
+    App, AppOptions, AppOutcome, ClipOp, ClipboardItem, CopyProgress, Editor, FileMutation,
+    FileMutationFailure, FileMutationResult, Modal, Pane, Snackbar,
 };
 pub use fs::{copy_dir_all, resolve_output_path};
 pub use inline_editor::{render_inline_editor, EditorAction, InlineEditor};
 pub use persistence::{load_state, resolve_theme_idx, save_state, AppState};
 pub use preview::{render_preview, PreviewContent, PreviewState};
 pub use ui::{
-    draw, render_action_bar, render_copy_progress, render_editor_panel, render_modal,
+    draw, draw_in, render_action_bar, render_copy_progress, render_editor_panel, render_modal,
     render_nav_hints, render_options_panel, render_snackbar, render_theme_panel,
 };

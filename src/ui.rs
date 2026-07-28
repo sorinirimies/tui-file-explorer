@@ -44,15 +44,21 @@ fn dim_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
 
 // ── Top-level draw ────────────────────────────────────────────────────────────
 
-/// Draw the entire application UI into `frame`.
+/// Draw the entire application UI into the full frame.
 ///
-/// Divides the terminal area into:
-/// - A main area (one or two explorer panes + optional theme panel).
-/// - A fixed-height action bar at the bottom.
-/// - An optional modal overlay on top of everything.
+/// This is the standalone-application convenience wrapper around [`draw_in`].
 pub fn draw(app: &mut App, frame: &mut Frame) {
+    draw_in(app, frame, frame.area());
+}
+
+/// Draw the entire application UI into `area` without touching cells outside it.
+///
+/// Embedders should use this entry point when the explorer owns only part of a
+/// larger terminal layout. Inline editor, dialogs, preview, action bar,
+/// progress, snackbar, and background fill all remain clipped to `area`.
+pub fn draw_in(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = *app.theme();
-    let full = frame.area();
+    let full = area;
 
     // Paint the entire terminal area with the theme's background colour.
     // Without this, light themes appear broken because ratatui defaults
@@ -1889,5 +1895,21 @@ mod tests {
             text.contains("3 lines"),
             "debug panel title should show the line count"
         );
+    }
+    #[test]
+    fn draw_in_confines_full_app_to_requested_area() {
+        let mut app = make_app_in(std::env::temp_dir());
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let area = Rect::new(10, 4, 50, 16);
+
+        terminal
+            .draw(|frame| draw_in(&mut app, frame, area))
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), " ");
+        assert_eq!(buffer[(79, 23)].symbol(), " ");
+        assert_ne!(buffer[(area.x, area.y)].symbol(), " ");
     }
 }
