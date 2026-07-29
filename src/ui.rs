@@ -44,15 +44,21 @@ fn dim_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
 
 // ── Top-level draw ────────────────────────────────────────────────────────────
 
-/// Draw the entire application UI into `frame`.
+/// Draw the entire application UI into the full frame.
 ///
-/// Divides the terminal area into:
-/// - A main area (one or two explorer panes + optional theme panel).
-/// - A fixed-height action bar at the bottom.
-/// - An optional modal overlay on top of everything.
+/// This is the standalone-application convenience wrapper around [`draw_in`].
 pub fn draw(app: &mut App, frame: &mut Frame) {
+    draw_in(app, frame, frame.area());
+}
+
+/// Draw the entire application UI into `area` without touching cells outside it.
+///
+/// Embedders should use this entry point when the explorer owns only part of a
+/// larger terminal layout. Inline editor, dialogs, preview, action bar,
+/// progress, snackbar, and background fill all remain clipped to `area`.
+pub fn draw_in(app: &mut App, frame: &mut Frame, area: Rect) {
     let theme = *app.theme();
-    let full = frame.area();
+    let full = area;
 
     // Paint the entire terminal area with the theme's background colour.
     // Without this, light themes appear broken because ratatui defaults
@@ -77,19 +83,23 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         3
     };
 
+    let hint_layout = app.hint_layout;
+    let action_bar_height = hint_layout.action_bar_rows();
+    let row_height = hint_layout.row_height();
+
     let v_chunks = if app.verbose {
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),
                 Constraint::Length(debug_height),
-                Constraint::Length(6),
+                Constraint::Length(action_bar_height),
             ])
             .split(full)
     } else {
         Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(6)])
+            .constraints([Constraint::Min(0), Constraint::Length(action_bar_height)])
             .split(full)
     };
 
@@ -100,12 +110,17 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         v_chunks[1]
     };
 
-    // Split the action bar vertically into three rows of 3:
-    //   row 0 — Navigate | File Ops
-    //   row 1 — Global   | Status
+    // Split the action bar into two rows. Each row holds one pair of
+    // hint columns (Navigate/File Ops, then Global/Status). Under the
+    // `Horizontal` layout each row is 3 terminal rows tall and the
+    // pair sits side-by-side; under `Vertical` each row is 6 rows tall
+    // and `render_nav_hints` stacks the pair internally.
     let action_rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(3)])
+        .constraints([
+            Constraint::Length(row_height),
+            Constraint::Length(row_height),
+        ])
         .split(action_area);
     let nav_fileops_area = action_rows[0];
     let global_status_area = action_rows[1];
@@ -867,18 +882,44 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Render the two hint rows and the status bar of the action area.
 ///
-/// Layout (each row is 3 terminal rows tall):
-///   Row 0  ╭─ Navigate ──────────────────╮╭─ File Ops ──────────────────╮
-///   Row 1  ╭─ Global ────────────────────╮╭─ Status ────────────────────╮
+/// Layout depends on `app.hint_layout` (see [`crate::HintLayout`]):
+///
+/// `Horizontal` — each row is 3 terminal rows tall:
+///
+/// ```text
+/// Row 0  ╭─ Navigate ──────────────╮╭─ File Ops ──────────────╮
+/// Row 1  ╭─ Global ────────────────╮╭─ Status ────────────────╮
+/// ```
+///
+/// `Vertical` — each row is 6 terminal rows tall:
+///
+/// ```text
+/// Row 0  ╭─ Navigate ─────────────────────────────────────────╮
+///        ╭─ File Ops ─────────────────────────────────────────╮
+/// Row 1  ╭─ Global ───────────────────────────────────────────╮
+///        ╭─ Status ───────────────────────────────────────────╮
+/// ```
 pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, theme: &Theme) {
     let k = |s: &'static str| key_span(s, theme);
     let d = |s: &'static str| dim_span(s, theme);
 
-    // ── Row 0: Navigate (left 50%) | File Ops (right 50%) ────────────────────
-    let row0_cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(row0);
+    // Under `Horizontal` each pair splits the row 50/50 side-by-side;
+    // under `Vertical` each column takes half the row height stacked.
+    let split = |rect: Rect| -> [Rect; 2] {
+        let layout = match app.hint_layout {
+            crate::types::HintLayout::Horizontal => Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)]),
+            crate::types::HintLayout::Vertical => Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)]),
+        };
+        let chunks = layout.split(rect);
+        [chunks[0], chunks[1]]
+    };
+
+    // ── Row 0: Navigate on left/top | File Ops on right/bottom ───────────────
+    let row0_cols = split(row0);
 
     let nav_spans = vec![
         k("↑"),
@@ -948,11 +989,8 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
     );
     frame.render_widget(fileops_col, row0_cols[1]);
 
-    // ── Row 1: Global (left 50%) | Status (right 50%) ────────────────────────
-    let row1_cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(row1);
+    // ── Row 1: Global on left/top | Status on right/bottom ───────────────────
+    let row1_cols = split(row1);
 
     let global_spans = vec![
         k("Tab"),
@@ -981,7 +1019,8 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
     );
     frame.render_widget(global_col, row1_cols[0]);
 
-    // Status cell (right half of row 1) — replaces the old render_action_bar.
+    // Status cell (right/bottom half of row 1) — replaces the old
+    // render_action_bar.
     render_action_bar(frame, row1_cols[1], app, theme);
 }
 
@@ -1889,5 +1928,87 @@ mod tests {
             text.contains("3 lines"),
             "debug panel title should show the line count"
         );
+    }
+    #[test]
+    fn draw_in_confines_full_app_to_requested_area() {
+        let mut app = make_app_in(std::env::temp_dir());
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let area = Rect::new(10, 4, 50, 16);
+
+        terminal
+            .draw(|frame| draw_in(&mut app, frame, area))
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert_eq!(buffer[(0, 0)].symbol(), " ");
+        assert_eq!(buffer[(79, 23)].symbol(), " ");
+        assert_ne!(buffer[(area.x, area.y)].symbol(), " ");
+    }
+
+    #[test]
+    fn hint_layout_default_is_horizontal_action_bar_six_rows() {
+        let mut app = make_app_in(std::env::temp_dir());
+        assert_eq!(app.hint_layout, crate::HintLayout::Horizontal);
+        // Pane title needs 1 row plus enough for a hint (6) → 24 works.
+        let backend = ratatui::backend::TestBackend::new(80, 24);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+        let buffer = terminal.backend().buffer();
+        // With Horizontal layout, `Navigate` and `File Ops` share the
+        // same 3-row band. On an 80-col wide backend both titles
+        // appear on the top action-bar row (y == 24 - 6 = 18).
+        let row: String = (0..80)
+            .map(|x| buffer[(x, 18)].symbol().to_string())
+            .collect();
+        assert!(
+            row.contains("Navigate"),
+            "Navigate missing from row 18: {row}"
+        );
+        assert!(
+            row.contains("File Ops"),
+            "File Ops missing from row 18: {row}"
+        );
+    }
+
+    #[test]
+    fn hint_layout_vertical_stacks_navigate_above_file_ops() {
+        let mut app = make_app_in(std::env::temp_dir());
+        app.set_hint_layout(crate::HintLayout::Vertical);
+        // Vertical layout doubles the action-bar height to 12 rows.
+        // Give the backend enough rows for the file list + hints.
+        let backend = ratatui::backend::TestBackend::new(80, 30);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(&mut app, frame)).unwrap();
+        let buffer = terminal.backend().buffer();
+
+        // Action bar starts at row 30 - 12 = 18. Navigate title lives
+        // in row 18; File Ops title lives in row 21 (3 rows below).
+        let row_18: String = (0..80)
+            .map(|x| buffer[(x, 18)].symbol().to_string())
+            .collect();
+        let row_21: String = (0..80)
+            .map(|x| buffer[(x, 21)].symbol().to_string())
+            .collect();
+        assert!(
+            row_18.contains("Navigate"),
+            "row 18 should carry Navigate title: {row_18}"
+        );
+        assert!(
+            !row_18.contains("File Ops"),
+            "row 18 must NOT also carry File Ops (that's Horizontal): {row_18}"
+        );
+        assert!(
+            row_21.contains("File Ops"),
+            "row 21 should carry File Ops title: {row_21}"
+        );
+    }
+
+    #[test]
+    fn hint_layout_action_bar_row_math_matches_constants() {
+        assert_eq!(crate::HintLayout::Horizontal.action_bar_rows(), 6);
+        assert_eq!(crate::HintLayout::Horizontal.row_height(), 3);
+        assert_eq!(crate::HintLayout::Vertical.action_bar_rows(), 12);
+        assert_eq!(crate::HintLayout::Vertical.row_height(), 6);
     }
 }

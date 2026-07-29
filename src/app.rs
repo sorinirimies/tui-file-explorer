@@ -358,6 +358,9 @@ pub struct AppOptions {
     /// Pre-App log lines collected during startup (before the App existed).
     /// These are drained into [`App::debug_log`] on construction.
     pub startup_log: Vec<String>,
+    /// How the action-bar hint columns are arranged (see [`HintLayout`]).
+    /// Defaults to [`HintLayout::Horizontal`] for backwards compatibility.
+    pub hint_layout: crate::types::HintLayout,
 }
 
 impl Default for AppOptions {
@@ -375,6 +378,7 @@ impl Default for AppOptions {
             editor: Editor::default(),
             verbose: false,
             startup_log: Vec::new(),
+            hint_layout: crate::types::HintLayout::default(),
         }
     }
 }
@@ -480,6 +484,68 @@ pub enum Modal {
         /// `true` if the original operation was a cut (move).
         is_cut: bool,
     },
+}
+
+/// A filesystem mutation requested by [`App::handle_key_deferred`].
+///
+/// The caller owns execution and should pass the result back through
+/// [`App::apply_mutation_result`], keeping slow filesystem work out of the
+/// terminal input loop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FileMutation {
+    /// Copy or move clipboard sources into `destination`.
+    Paste {
+        /// Source paths selected for the operation.
+        sources: Vec<PathBuf>,
+        /// Destination directory.
+        destination: PathBuf,
+        /// Whether successful copies should remove their source.
+        is_cut: bool,
+        /// Whether an existing destination may be replaced.
+        overwrite: bool,
+    },
+    /// Remove the listed files or directory trees.
+    Delete {
+        /// Paths confirmed by the user for deletion.
+        paths: Vec<PathBuf>,
+    },
+}
+
+/// One failed item from a deferred filesystem mutation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMutationFailure {
+    /// Path whose operation failed.
+    pub path: PathBuf,
+    /// Human-readable I/O error.
+    pub error: String,
+}
+
+/// Completion supplied by an embedder after executing [`FileMutation`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMutationResult {
+    /// Paths successfully changed by the operation.
+    pub succeeded: Vec<PathBuf>,
+    /// Item-level failures, preserving partial success.
+    pub failures: Vec<FileMutationFailure>,
+    /// Clear the clipboard after a fully successful cut operation.
+    pub clear_clipboard: bool,
+}
+
+/// Outcome from host-driven key dispatch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AppOutcome {
+    /// The application state changed without requesting external work.
+    StateChanged,
+    /// The user dismissed or confirmed a path in standalone semantics.
+    Dismissed,
+    /// The highlighted path was selected.
+    Selected(PathBuf),
+    /// Execute this filesystem operation outside the input/render loop.
+    MutationRequested(FileMutation),
+    /// The key was consumed without a visible state transition.
+    Pending,
+    /// The key was not recognized by the application.
+    Unhandled,
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -618,6 +684,12 @@ pub struct App {
     pub preview_state: PreviewState,
     /// The active inline editor, if any (opened with `i`).
     pub inline_editor: Option<InlineEditor>,
+    /// Layout for the action-bar hint columns. Set via
+    /// [`AppOptions::hint_layout`] at construction, or mutated at
+    /// runtime via [`App::set_hint_layout`] — a host that draws through
+    /// [`crate::draw_in`] usually pins this once at startup based on
+    /// how much room the pane can spare.
+    pub hint_layout: crate::types::HintLayout,
 }
 
 impl App {
@@ -659,7 +731,21 @@ impl App {
             show_preview: false,
             preview_state: PreviewState::new(),
             inline_editor: None,
+            hint_layout: opts.hint_layout,
         }
+    }
+
+    /// Runtime setter for [`App::hint_layout`]. Returns `&mut Self` so
+    /// hosts can chain the call inline right after `App::new`, but the
+    /// change also takes effect if flipped mid-session — the next
+    /// `draw` / `draw_in` picks up the new layout.
+    ///
+    /// Callers driving `draw_in` MUST re-compute the row budget they
+    /// hand to the widget when the layout changes (see
+    /// [`crate::HintLayout::action_bar_rows`]).
+    pub fn set_hint_layout(&mut self, layout: crate::types::HintLayout) -> &mut Self {
+        self.hint_layout = layout;
+        self
     }
 
     /// Append a line to the debug log (visible in the log panel when
@@ -1154,6 +1240,153 @@ impl App {
                 self.status_msg = format!("Delete failed: {e}");
             }
         }
+    }
+
+    /// Process a key while returning slow filesystem mutations to the caller.
+    ///
+    /// Non-mutation keys preserve [`App::handle_key`] behavior. Confirmed
+    /// paste and delete actions become [`AppOutcome::MutationRequested`]
+    /// without touching the filesystem.
+    pub fn handle_key_deferred(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+    ) -> io::Result<AppOutcome> {
+        if key.kind != crossterm::event::KeyEventKind::Press {
+            return Ok(AppOutcome::Pending);
+        }
+
+        if let Some(modal) = self.modal.take() {
+            let outcome = match (modal, key.code) {
+                (Modal::Delete { path }, KeyCode::Char('y') | KeyCode::Char('Y')) => {
+                    AppOutcome::MutationRequested(FileMutation::Delete { paths: vec![path] })
+                }
+                (Modal::MultiDelete { paths }, KeyCode::Char('y') | KeyCode::Char('Y')) => {
+                    AppOutcome::MutationRequested(FileMutation::Delete { paths })
+                }
+                (
+                    Modal::Overwrite { src, dst, is_cut },
+                    KeyCode::Char('y') | KeyCode::Char('Y'),
+                ) => AppOutcome::MutationRequested(FileMutation::Paste {
+                    sources: vec![src],
+                    destination: dst.parent().unwrap_or_else(|| Path::new("")).to_path_buf(),
+                    is_cut,
+                    overwrite: true,
+                }),
+                (Modal::Delete { .. }, _) => {
+                    self.status_msg = "Delete cancelled.".into();
+                    AppOutcome::StateChanged
+                }
+                (Modal::MultiDelete { .. }, _) => {
+                    self.status_msg = "Multi-delete cancelled.".into();
+                    AppOutcome::StateChanged
+                }
+                (Modal::Overwrite { .. }, _) => {
+                    self.status_msg = "Paste cancelled.".into();
+                    AppOutcome::StateChanged
+                }
+            };
+            return Ok(outcome);
+        }
+
+        match key.code {
+            KeyCode::Char('p') if key.modifiers.is_empty() => {
+                if self.clipboard.is_none() {
+                    let has_marks = !self.active_pane().marked.is_empty()
+                        || match self.active {
+                            Pane::Left => !self.right.marked.is_empty(),
+                            Pane::Right => !self.left.marked.is_empty(),
+                        };
+                    if has_marks {
+                        self.yank(ClipOp::Copy);
+                    }
+                }
+                let Some(clip) = self.clipboard.clone() else {
+                    self.status_msg = "Nothing in clipboard — mark files with Space first.".into();
+                    return Ok(AppOutcome::StateChanged);
+                };
+                let destination = self.active_pane().current_dir.clone();
+                if clip.paths.len() == 1 {
+                    let source = &clip.paths[0];
+                    if clip.op == ClipOp::Cut && source.parent() == Some(destination.as_path()) {
+                        self.status_msg = "Source and destination are the same — skipped.".into();
+                        return Ok(AppOutcome::StateChanged);
+                    }
+                    let Some(name) = source.file_name() else {
+                        self.status_msg = "Cannot paste: clipboard path has no filename.".into();
+                        return Ok(AppOutcome::StateChanged);
+                    };
+                    let target = destination.join(name);
+                    if target.exists() {
+                        self.modal = Some(Modal::Overwrite {
+                            src: source.clone(),
+                            dst: target,
+                            is_cut: clip.op == ClipOp::Cut,
+                        });
+                        return Ok(AppOutcome::StateChanged);
+                    }
+                }
+                return Ok(AppOutcome::MutationRequested(FileMutation::Paste {
+                    sources: clip.paths,
+                    destination,
+                    is_cut: clip.op == ClipOp::Cut,
+                    overwrite: false,
+                }));
+            }
+            KeyCode::Char('d') if key.modifiers.is_empty() => {
+                self.prompt_delete();
+                return Ok(AppOutcome::StateChanged);
+            }
+            _ => {}
+        }
+
+        let previous_selected = self.selected.clone();
+        let previous_cwd = self.active_pane().current_dir.clone();
+        let should_exit = self.handle_key(key)?;
+        if let Some(path) = self
+            .selected
+            .clone()
+            .filter(|path| previous_selected.as_ref() != Some(path))
+        {
+            return Ok(AppOutcome::Selected(path));
+        }
+        if should_exit {
+            return Ok(AppOutcome::Dismissed);
+        }
+        if self.active_pane().current_dir != previous_cwd {
+            return Ok(AppOutcome::StateChanged);
+        }
+        Ok(AppOutcome::Pending)
+    }
+
+    /// Apply a host-executed mutation result and return every changed path.
+    pub fn apply_mutation_result(&mut self, result: FileMutationResult) -> Vec<PathBuf> {
+        if result.clear_clipboard && result.failures.is_empty() {
+            self.clipboard = None;
+        }
+        self.left.clear_marks();
+        self.right.clear_marks();
+        self.left.reload();
+        self.right.reload();
+        self.preview_state.invalidate();
+
+        if result.failures.is_empty() {
+            self.status_msg = format!("Completed {} item(s).", result.succeeded.len());
+            self.notify(self.status_msg.clone());
+        } else {
+            let details = result
+                .failures
+                .iter()
+                .map(|failure| format!("'{}': {}", failure.path.display(), failure.error))
+                .collect::<Vec<_>>()
+                .join("; ");
+            self.status_msg = format!(
+                "Completed {}, {} error(s): {details}",
+                result.succeeded.len(),
+                result.failures.len()
+            );
+            self.notify_error(self.status_msg.clone());
+        }
+        result.succeeded
     }
 
     // ── Event handling ────────────────────────────────────────────────────────
@@ -2700,6 +2933,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_dir_skips_symlinks_without_failing() {
         use std::os::unix::fs::symlink;
@@ -2731,6 +2965,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn copy_dir_skips_valid_symlink_to_file() {
         use std::os::unix::fs::symlink;
@@ -4536,5 +4771,56 @@ mod tests {
             matches!(app.active, Pane::Left),
             "mouse must not switch pane"
         );
+    }
+    #[test]
+    fn deferred_paste_returns_command_without_touching_destination() {
+        let left = tempdir().expect("left tempdir");
+        let right = tempdir().expect("right tempdir");
+        let source = left.path().join("source.txt");
+        fs::write(&source, b"payload").expect("write source");
+
+        let mut app = App::new(AppOptions {
+            left_dir: left.path().to_path_buf(),
+            right_dir: right.path().to_path_buf(),
+            ..AppOptions::default()
+        });
+        app.clipboard = Some(ClipboardItem {
+            paths: vec![source.clone()],
+            op: ClipOp::Copy,
+        });
+        app.active = Pane::Right;
+
+        let outcome = app
+            .handle_key_deferred(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE))
+            .expect("deferred key handling");
+
+        assert_eq!(
+            outcome,
+            AppOutcome::MutationRequested(FileMutation::Paste {
+                sources: vec![source],
+                destination: right.path().to_path_buf(),
+                is_cut: false,
+                overwrite: false,
+            })
+        );
+        assert!(!right.path().join("source.txt").exists());
+    }
+
+    #[test]
+    fn applying_successful_mutation_result_reloads_and_reports_changes() {
+        let dir = tempdir().expect("tempdir");
+        let mut app = make_app(dir.path().to_path_buf());
+        let created = dir.path().join("created.txt");
+        fs::write(&created, b"payload").expect("write created file");
+
+        let changed = app.apply_mutation_result(FileMutationResult {
+            succeeded: vec![created.clone()],
+            failures: Vec::new(),
+            clear_clipboard: false,
+        });
+
+        assert_eq!(changed, vec![created.clone()]);
+        assert!(app.left.entries.iter().any(|entry| entry.path == created));
+        assert_eq!(app.status_msg, "Completed 1 item(s).");
     }
 }

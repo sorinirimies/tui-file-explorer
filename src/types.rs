@@ -61,6 +61,63 @@ impl SortMode {
     }
 }
 
+// ── HintLayout ────────────────────────────────────────────────────────────────
+
+/// Direction the two hint columns in each action-bar row are arranged.
+///
+/// The action bar surfaces two rows of paired hints — `Navigate | File Ops`
+/// on top and `Global | Status` on bottom. By default the two columns of
+/// each row sit side-by-side (`Horizontal`), which reads cleanly on wide
+/// terminals but truncates hints on panes narrower than ~90 columns.
+/// `Vertical` stacks the columns of each row one atop the other, doubling
+/// the action-bar height but keeping every hint fully legible on narrow
+/// panes (the layout host — a rimeterm quadrant, a tmux split, or anything
+/// else calling `draw_in`).
+///
+/// ```
+/// use tui_file_explorer::HintLayout;
+///
+/// // Default: pair columns side-by-side.
+/// assert_eq!(HintLayout::default(), HintLayout::Horizontal);
+///
+/// // Rows the caller must reserve for the action bar under each layout.
+/// assert_eq!(HintLayout::Horizontal.action_bar_rows(), 6);
+/// assert_eq!(HintLayout::Vertical.action_bar_rows(), 12);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HintLayout {
+    /// Row 0: `Navigate | File Ops`. Row 1: `Global | Status`. 3 terminal
+    /// rows per row, 6 rows total. This is the historical layout.
+    #[default]
+    Horizontal,
+    /// Row 0 stacks `Navigate` on top of `File Ops`; Row 1 stacks
+    /// `Global` on top of `Status`. 6 terminal rows per row, 12 rows total.
+    Vertical,
+}
+
+impl HintLayout {
+    /// How many terminal rows the caller must reserve for the whole
+    /// action bar under this layout. Kept as a constant helper so
+    /// callers driving [`crate::draw_in`] don't have to hard-code the
+    /// magic numbers.
+    pub const fn action_bar_rows(self) -> u16 {
+        match self {
+            Self::Horizontal => 6,
+            Self::Vertical => 12,
+        }
+    }
+
+    /// Height (in terminal rows) of one action-bar row under this layout.
+    /// `Horizontal` fits both column bordered blocks side-by-side in 3
+    /// rows; `Vertical` stacks them into 6.
+    pub const fn row_height(self) -> u16 {
+        match self {
+            Self::Horizontal => 3,
+            Self::Vertical => 6,
+        }
+    }
+}
+
 // ── FsEntry ───────────────────────────────────────────────────────────────────
 
 /// A single entry shown in the file-explorer list.
