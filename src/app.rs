@@ -358,6 +358,9 @@ pub struct AppOptions {
     /// Pre-App log lines collected during startup (before the App existed).
     /// These are drained into [`App::debug_log`] on construction.
     pub startup_log: Vec<String>,
+    /// How the action-bar hint columns are arranged (see [`HintLayout`]).
+    /// Defaults to [`HintLayout::Horizontal`] for backwards compatibility.
+    pub hint_layout: crate::types::HintLayout,
 }
 
 impl Default for AppOptions {
@@ -375,6 +378,7 @@ impl Default for AppOptions {
             editor: Editor::default(),
             verbose: false,
             startup_log: Vec::new(),
+            hint_layout: crate::types::HintLayout::default(),
         }
     }
 }
@@ -680,6 +684,12 @@ pub struct App {
     pub preview_state: PreviewState,
     /// The active inline editor, if any (opened with `i`).
     pub inline_editor: Option<InlineEditor>,
+    /// Layout for the action-bar hint columns. Set via
+    /// [`AppOptions::hint_layout`] at construction, or mutated at
+    /// runtime via [`App::set_hint_layout`] — a host that draws through
+    /// [`crate::draw_in`] usually pins this once at startup based on
+    /// how much room the pane can spare.
+    pub hint_layout: crate::types::HintLayout,
 }
 
 impl App {
@@ -721,7 +731,21 @@ impl App {
             show_preview: false,
             preview_state: PreviewState::new(),
             inline_editor: None,
+            hint_layout: opts.hint_layout,
         }
+    }
+
+    /// Runtime setter for [`App::hint_layout`]. Returns `&mut Self` so
+    /// hosts can chain the call inline right after `App::new`, but the
+    /// change also takes effect if flipped mid-session — the next
+    /// `draw` / `draw_in` picks up the new layout.
+    ///
+    /// Callers driving `draw_in` MUST re-compute the row budget they
+    /// hand to the widget when the layout changes (see
+    /// [`crate::HintLayout::action_bar_rows`]).
+    pub fn set_hint_layout(&mut self, layout: crate::types::HintLayout) -> &mut Self {
+        self.hint_layout = layout;
+        self
     }
 
     /// Append a line to the debug log (visible in the log panel when

@@ -275,7 +275,7 @@ pub use render::{
     render, render_dual_pane, render_dual_pane_themed, render_themed, FOOTER_HEIGHT, HEADER_HEIGHT,
     MARK_INDICATOR, SCROLLBAR_CHAR,
 };
-pub use types::{ExplorerOutcome, FsEntry, SortMode};
+pub use types::{ExplorerOutcome, FsEntry, HintLayout, SortMode};
 
 // ── Full-app re-exports ───────────────────────────────────────────────────────
 
