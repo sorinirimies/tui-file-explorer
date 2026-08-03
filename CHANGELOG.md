@@ -3,6 +3,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-03
+
 ### Added
 - File and directory sizes are now shown in the explorer list, alongside free/total disk-space usage in the footer.
 - Press `z` to toggle file/folder size display on/off (per pane); persisted across restarts in `settings.json` (`show_sizes`). Disabling it skips the recursive directory-size walk entirely for the snappiest possible browsing of huge trees.
@@ -21,6 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Internal
 - Split the monolithic `src/app.rs` (4600+ lines mixing pane management, clipboard/file-ops, and key dispatch) into `src/app/{mod,pane,clipboard,keys,tests}.rs`. No functional or public-API change beyond what's listed above — purely organisational.
+- Split `src/explorer.rs` (3300 lines) into `src/explorer/{mod,keys,builder,entries,tests}.rs` and `src/ui.rs` (1907 lines) into `src/ui/{mod,action_bar,modal,overlays,panels,tests}.rs`, following the same pattern. No functional or public-API change.
 
 ## [1.1.11] - 2026-07-17
 
