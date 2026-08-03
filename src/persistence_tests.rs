@@ -134,10 +134,13 @@ fn full_state_round_trips() {
         last_dir_right: Some(std::env::temp_dir()),
         sort_mode: Some(SortMode::SizeDesc),
         show_hidden: Some(true),
+        show_sizes: Some(true),
         single_pane: Some(false),
         cd_on_exit: Some(true),
         editor: Some("nvim".into()),
         active_pane: Some("left".into()),
+        pane_dirs: Some(vec![std::env::temp_dir(), std::env::temp_dir()]),
+        active_pane_idx: Some(0),
     };
     save_state_to(&path, &original).unwrap();
     let loaded = load_state_from(&path);
@@ -614,10 +617,13 @@ fn active_pane_persists_with_full_state() {
         last_dir_right: Some(std::env::temp_dir()),
         sort_mode: Some(SortMode::SizeDesc),
         show_hidden: Some(true),
+        show_sizes: Some(true),
         single_pane: Some(false),
         cd_on_exit: Some(true),
         editor: Some("nvim".into()),
         active_pane: Some("right".into()),
+        pane_dirs: Some(vec![std::env::temp_dir(), std::env::temp_dir()]),
+        active_pane_idx: Some(1),
     };
     save_state_to(&path, &original).unwrap();
     let loaded = load_state_from(&path);

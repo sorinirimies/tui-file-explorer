@@ -50,8 +50,7 @@ fn run() -> io::Result<Option<PathBuf>> {
     let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
 
     let mut app = App::new(AppOptions {
-        left_dir: start.clone(),
-        right_dir: start,
+        pane_dirs: vec![start.clone(), start],
         editor: Editor::Helix,
         ..AppOptions::default()
     });
@@ -86,8 +85,9 @@ fn event_loop(
         if let Some(path) = app.open_with_editor.take() {
             if let Some(binary) = app.editor.binary() {
                 open_in_editor(terminal, &binary, &path)?;
-                app.left.reload();
-                app.right.reload();
+                for p in app.panes.iter_mut() {
+                    p.reload();
+                }
                 let fname = path
                     .file_name()
                     .unwrap_or_default()

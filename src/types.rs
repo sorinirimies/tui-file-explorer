@@ -74,8 +74,51 @@ pub struct FsEntry {
     pub is_dir: bool,
     /// File size in bytes (`None` for directories or when unavailable).
     pub size: Option<u64>,
+    /// Number of immediate entries inside the directory (`None` for files,
+    /// or when the directory could not be read — e.g. permission denied).
+    ///
+    /// This is a shallow (non-recursive) count, kept cheap on purpose: a
+    /// full recursive byte-size for every listed directory would require
+    /// walking entire subtrees on every render, which can freeze the UI on
+    /// large directories (`node_modules`, `.git`, `target`, ...).
+    pub item_count: Option<usize>,
     /// File extension in lower-case (empty string for directories / no ext).
     pub extension: String,
+}
+
+// ── DiskUsage ─────────────────────────────────────────────────────────────────
+
+/// Total and free space (in bytes) for the storage device backing a
+/// directory, as reported by the OS (`statvfs` on Unix, `GetDiskFreeSpaceExW`
+/// on Windows).
+///
+/// Obtained via [`crate::fs::disk_usage`] and refreshed on every
+/// [`crate::FileExplorer::reload`], since navigating across a mount point
+/// (e.g. into a different external drive) changes which device applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct DiskUsage {
+    /// Total capacity of the filesystem, in bytes.
+    pub total_bytes: u64,
+    /// Space available to the current user, in bytes.
+    pub free_bytes: u64,
+}
+
+impl DiskUsage {
+    /// Bytes currently in use (`total_bytes - free_bytes`, saturating).
+    pub fn used_bytes(&self) -> u64 {
+        self.total_bytes.saturating_sub(self.free_bytes)
+    }
+
+    /// Fraction of the filesystem currently in use, in the range `0.0..=1.0`.
+    ///
+    /// Returns `0.0` when `total_bytes` is zero to avoid dividing by zero.
+    pub fn used_fraction(&self) -> f64 {
+        if self.total_bytes == 0 {
+            0.0
+        } else {
+            self.used_bytes() as f64 / self.total_bytes as f64
+        }
+    }
 }
 
 // ── ExplorerOutcome ───────────────────────────────────────────────────────────
@@ -165,6 +208,7 @@ mod tests {
             path: PathBuf::from("/src/main.rs"),
             is_dir: false,
             size: Some(1024),
+            item_count: None,
             extension: "rs".into(),
         };
         assert_eq!(entry.name, "main.rs");
@@ -181,10 +225,12 @@ mod tests {
             path: PathBuf::from("/src"),
             is_dir: true,
             size: None,
+            item_count: Some(3),
             extension: String::new(),
         };
         assert!(entry.is_dir);
         assert!(entry.size.is_none());
+        assert_eq!(entry.item_count, Some(3));
         assert!(entry.extension.is_empty());
     }
 
@@ -195,6 +241,7 @@ mod tests {
             path: PathBuf::from("/a.txt"),
             is_dir: false,
             size: Some(42),
+            item_count: None,
             extension: "txt".into(),
         };
         let b = a.clone();
@@ -208,9 +255,55 @@ mod tests {
             path: PathBuf::from("/Makefile"),
             is_dir: false,
             size: Some(256),
+            item_count: None,
             extension: String::new(),
         };
         assert!(entry.extension.is_empty());
+    }
+
+    // ── DiskUsage ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn disk_usage_used_bytes_computes_difference() {
+        let du = DiskUsage {
+            total_bytes: 1000,
+            free_bytes: 400,
+        };
+        assert_eq!(du.used_bytes(), 600);
+    }
+
+    #[test]
+    fn disk_usage_used_bytes_saturates_when_free_exceeds_total() {
+        let du = DiskUsage {
+            total_bytes: 100,
+            free_bytes: 500,
+        };
+        assert_eq!(du.used_bytes(), 0);
+    }
+
+    #[test]
+    fn disk_usage_used_fraction_half_full() {
+        let du = DiskUsage {
+            total_bytes: 1000,
+            free_bytes: 500,
+        };
+        assert!((du.used_fraction() - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn disk_usage_used_fraction_zero_total_does_not_panic() {
+        let du = DiskUsage {
+            total_bytes: 0,
+            free_bytes: 0,
+        };
+        assert_eq!(du.used_fraction(), 0.0);
+    }
+
+    #[test]
+    fn disk_usage_default_is_zeroed() {
+        let du = DiskUsage::default();
+        assert_eq!(du.total_bytes, 0);
+        assert_eq!(du.free_bytes, 0);
     }
 
     // ── ExplorerOutcome ───────────────────────────────────────────────────────

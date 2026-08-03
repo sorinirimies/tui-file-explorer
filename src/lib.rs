@@ -279,9 +279,7 @@ pub use types::{ExplorerOutcome, FsEntry, SortMode};
 
 // ── Full-app re-exports ───────────────────────────────────────────────────────
 
-pub use app::{
-    App, AppOptions, ClipOp, ClipboardItem, CopyProgress, Editor, Modal, Pane, Snackbar,
-};
+pub use app::{App, AppOptions, ClipOp, ClipboardItem, CopyProgress, Editor, Modal, Snackbar};
 pub use fs::{copy_dir_all, resolve_output_path};
 pub use inline_editor::{render_inline_editor, EditorAction, InlineEditor};
 pub use persistence::{load_state, resolve_theme_idx, save_state, AppState};

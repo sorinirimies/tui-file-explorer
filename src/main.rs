@@ -47,7 +47,7 @@ mod doctor;
 mod info;
 mod shell_init;
 
-use tui_file_explorer::app::{Editor, Pane};
+use tui_file_explorer::app::Editor;
 
 use std::{
     fs::File,
@@ -531,8 +531,9 @@ fn run() -> io::Result<()> {
         start_dir.display()
     );
 
-    // Right pane: use the persisted right-pane directory when available,
-    // otherwise mirror the left pane's starting directory.
+    // Right pane (legacy 2-pane fallback): use the persisted right-pane
+    // directory when available, otherwise mirror the left pane's starting
+    // directory.
     let right_start_dir = saved
         .last_dir_right
         .clone()
@@ -545,6 +546,20 @@ fn run() -> io::Result<()> {
         right_start_dir.display()
     );
 
+    // Resolve the full list of pane starting directories. When the user
+    // passed an explicit path on the CLI, always start with exactly the
+    // classic 2-pane layout (matches pre-N-pane behaviour). Otherwise prefer
+    // the persisted multi-pane list, falling back to the legacy 2-entry
+    // left/right reconstruction for older state files.
+    let pane_dirs: Vec<PathBuf> = if cli_path.is_some() {
+        vec![start_dir.clone(), right_start_dir.clone()]
+    } else if let Some(ref dirs) = saved.pane_dirs {
+        dirs.clone()
+    } else {
+        vec![start_dir.clone(), right_start_dir.clone()]
+    };
+    vlog!(verbose, log_buf, log_file, "pane_dirs: {:?}", pane_dirs);
+
     // CLI flags win when explicitly set (true); otherwise fall back to
     // persisted values.  Simple bool flags can't distinguish "not passed" from
     // "passed as false", so the convention is: CLI `true` always wins.
@@ -553,6 +568,7 @@ fn run() -> io::Result<()> {
     } else {
         saved.show_hidden.unwrap_or(false)
     };
+    let show_sizes = saved.show_sizes.unwrap_or(true);
     let single_pane = if cli.single_pane {
         true
     } else {
@@ -693,10 +709,10 @@ fn run() -> io::Result<()> {
 
     vlog!(verbose, log_buf, log_file, "creating App");
     let mut app = App::new(AppOptions {
-        left_dir: start_dir,
-        right_dir: right_start_dir,
+        pane_dirs,
         extensions: cli.extensions,
         show_hidden,
+        show_sizes,
         theme_idx,
         show_theme_panel: cli.show_themes,
         single_pane,
@@ -708,21 +724,26 @@ fn run() -> io::Result<()> {
     });
     // Inject the pre-queried image picker so preview uses the best protocol.
     app.preview_state = PreviewState::with_picker(image_picker);
-    // Restore persisted active pane.
-    if let Some(ref pane_str) = saved.active_pane {
-        match pane_str.as_str() {
-            "right" => app.active = Pane::Right,
-            _ => app.active = Pane::Left,
+    // Restore persisted active pane: prefer the explicit index, falling
+    // back to the legacy "left"/"right" string for older state files.
+    if let Some(idx) = saved.active_pane_idx {
+        if idx < app.panes.len() {
+            app.active_idx = idx;
         }
+    } else if let Some(ref pane_str) = saved.active_pane {
+        app.active_idx = match pane_str.as_str() {
+            "right" => 1.min(app.panes.len().saturating_sub(1)),
+            _ => 0,
+        };
     }
 
     // From here on, use app.log() — the startup buffer has been moved into App.
     // Re-bind log_buf to app's debug_log for the vlog! macro.
     app.log("app created, entering run loop".to_string());
     app.log(format!(
-        "left pane: {} entries, right pane: {} entries",
-        app.left.entry_count(),
-        app.right.entry_count()
+        "{} pane(s), {} entries in active pane",
+        app.panes.len(),
+        app.active_pane().entry_count()
     ));
 
     let result = run_loop(&mut terminal, &mut app, &mut log_file);
@@ -777,17 +798,29 @@ fn run() -> io::Result<()> {
 
     // Persist full application state on clean exit.
     //
-    // When single-pane mode is active the right pane is hidden and its
-    // current_dir was never independently navigated — it still mirrors the
-    // left pane's starting directory.  Blindly saving it would clobber the
-    // real last_dir_right that was loaded at startup, so in that case we
-    // re-use whatever was previously persisted instead.
+    // `pane_dirs` captures every open pane's current directory (the source
+    // of truth going forward). `last_dir` / `last_dir_right` are still
+    // written alongside it so that older `tfe` binaries reading this file
+    // continue to see a sensible 2-pane layout.
+    //
+    // When single-pane mode is active, hidden panes were never independently
+    // navigated by the user this session, so blindly saving their
+    // current_dir would clobber genuinely-persisted state from a previous
+    // session. In that case we re-use whatever was previously persisted.
+    let pane_dirs: Vec<PathBuf> = if app.single_pane {
+        saved
+            .pane_dirs
+            .clone()
+            .unwrap_or_else(|| app.panes.iter().map(|p| p.current_dir.clone()).collect())
+    } else {
+        app.panes.iter().map(|p| p.current_dir.clone()).collect()
+    };
     let last_dir_right = if app.single_pane {
         // Preserve the value we loaded at startup (may be None if this is a
         // fresh install or the path was deleted).
         saved.last_dir_right.clone()
     } else {
-        Some(app.right.current_dir.clone())
+        pane_dirs.get(1).cloned()
     };
 
     if verbose {
@@ -795,10 +828,11 @@ fn run() -> io::Result<()> {
     }
     save_state(&AppState {
         theme: Some(app.theme_name().to_string()),
-        last_dir: Some(app.left.current_dir.clone()),
+        last_dir: Some(app.panes[0].current_dir.clone()),
         last_dir_right,
-        sort_mode: Some(app.left.sort_mode),
-        show_hidden: Some(app.left.show_hidden),
+        sort_mode: Some(app.panes[0].sort_mode),
+        show_hidden: Some(app.panes[0].show_hidden),
+        show_sizes: Some(app.panes[0].show_sizes),
         single_pane: Some(app.single_pane),
         // Always persist the final value from app — this captures both CLI
         // flags (--cd / --no-cd) and any in-TUI toggle via the O panel / C key.
@@ -806,13 +840,9 @@ fn run() -> io::Result<()> {
         // Persist whichever editor the user ended up on (including any cycling
         // done through the options panel).
         editor: Some(app.editor.to_key()),
-        active_pane: Some(
-            match app.active {
-                Pane::Left => "left",
-                Pane::Right => "right",
-            }
-            .to_string(),
-        ),
+        active_pane: Some(if app.active_idx == 0 { "left" } else { "right" }.to_string()),
+        pane_dirs: Some(pane_dirs),
+        active_pane_idx: Some(app.active_idx),
     });
 
     // Emit a path to stdout so a shell wrapper can act on it (e.g. `cd`).
@@ -1044,10 +1074,11 @@ fn run_loop<W: io::Write>(
                 let _ = execute!(terminal.backend_mut(), DisableMouseCapture);
                 let _ = terminal.clear();
 
-                // 4. Reload both panes so any on-disk changes are visible.
+                // 4. Reload all panes so any on-disk changes are visible.
                 app.log("reloading panes after editor exit".to_string());
-                app.left.reload();
-                app.right.reload();
+                for p in app.panes.iter_mut() {
+                    p.reload();
+                }
 
                 // 5. Set a status message.
                 match status {

@@ -49,6 +49,14 @@ pub const HEADER_HEIGHT: u16 = 3;
 /// Default footer height in terminal rows.
 pub const FOOTER_HEIGHT: u16 = 3;
 
+/// Total wall-clock budget shared across every directory-size computation in
+/// a single [`render_list`] pass (see [`FileExplorer::show_sizes`]).
+///
+/// Keeps a redraw snappy even when many uncached, large subdirectories are
+/// visible at once: only as many as fit in this budget are computed eagerly,
+/// the rest fall back to their cheap shallow item count until a later frame.
+const SIZE_RENDER_BUDGET: std::time::Duration = std::time::Duration::from_millis(15);
+
 // ── Scroll-thumb helper ───────────────────────────────────────────────────────
 
 /// Paint a thin, semi-translucent scroll thumb on the right edge of `area`.
@@ -397,6 +405,29 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
         explorer.scroll_offset = max_scroll;
     }
 
+    let visible_end = explorer
+        .entries
+        .len()
+        .min(explorer.scroll_offset.saturating_add(visible_height));
+    if explorer.show_sizes {
+        // Share one small wall-clock budget across every uncached directory
+        // visible this frame, so a folder full of large subdirectories can
+        // never make a single render pass noticeably slow. Rows that don't
+        // make the cut this frame keep showing their cheap shallow item
+        // count and get picked up on a later redraw.
+        let deadline = std::time::Instant::now() + SIZE_RENDER_BUDGET;
+        for idx in explorer.scroll_offset..visible_end {
+            let (path, item_count) = {
+                let entry = &explorer.entries[idx];
+                if !entry.is_dir {
+                    continue;
+                }
+                (entry.path.clone(), entry.item_count)
+            };
+            explorer.ensure_dir_size_before(&path, item_count, Some(deadline));
+        }
+    }
+
     let items: Vec<ListItem> = explorer
         .entries
         .iter()
@@ -424,9 +455,23 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
                     .add_modifier(Modifier::BOLD)
             };
 
-            let size_str = match entry.size {
-                Some(b) => fmt_size(b),
-                None => String::new(),
+            let size_str = if !explorer.show_sizes {
+                String::new()
+            } else if entry.is_dir {
+                match explorer.dir_size_cache.get(&entry.path) {
+                    Some(&(bytes, partial, _)) if partial => format!("{}+", fmt_size(bytes)),
+                    Some(&(bytes, _, _)) => fmt_size(bytes),
+                    None => match entry.item_count {
+                        Some(1) => "1 item".to_string(),
+                        Some(n) => format!("{n} items"),
+                        None => String::new(),
+                    },
+                }
+            } else {
+                match entry.size {
+                    Some(b) => fmt_size(b),
+                    None => String::new(),
+                }
             };
 
             // Leading marker: ◆ for marked entries, space otherwise.
@@ -597,12 +642,32 @@ fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
         .alignment(Alignment::Right)
         .block(
             Block::default()
+                .title(Span::styled(
+                    disk_usage_label(explorer),
+                    Style::default().fg(theme.dim),
+                ))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(theme.dim))
                 .style(Style::default().bg(theme.bg)),
         );
     frame.render_widget(status_para, area);
+}
+
+/// Build the footer's left-aligned disk-usage label, e.g.
+/// `" \u{1F4BE} 74.7 GB free / 500.0 GB "`.
+///
+/// Returns an empty string when [`FileExplorer::disk_usage`] is `None`
+/// (query failed, or unsupported platform) so the title is simply omitted.
+fn disk_usage_label(explorer: &FileExplorer) -> String {
+    match explorer.disk_usage {
+        Some(usage) => format!(
+            " \u{1F4BE} {} free / {} ",
+            fmt_size(usage.free_bytes),
+            fmt_size(usage.total_bytes),
+        ),
+        None => String::new(),
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -630,6 +695,22 @@ mod tests {
                 render(&mut explorer, frame, frame.area());
             })
             .unwrap();
+    }
+
+    #[test]
+    fn render_list_skips_dir_size_walk_when_show_sizes_disabled() {
+        let mut terminal = make_terminal();
+        let mut explorer = make_explorer();
+        explorer.show_sizes = false;
+        terminal
+            .draw(|frame| {
+                render(&mut explorer, frame, frame.area());
+            })
+            .unwrap();
+        assert!(
+            explorer.dir_size_cache.is_empty(),
+            "disabling show_sizes must skip the recursive dir-size walk entirely"
+        );
     }
 
     #[test]

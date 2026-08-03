@@ -20,7 +20,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, CopyProgress, Modal, Pane, Snackbar};
+use crate::app::{App, CopyProgress, Modal, Snackbar};
 use crate::inline_editor::render_inline_editor;
 use crate::preview::render_preview;
 use tui_slider::{style::SliderStyle, Slider, SliderOrientation, SliderState};
@@ -115,22 +115,27 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         render_debug_panel(frame, v_chunks[1], app, &theme);
     }
 
-    // Horizontal split: left pane | [right pane] | [theme panel].
+    // Horizontal split: one column per visible pane | [preview] | [theme panel].
+    let visible_pane_count = if app.single_pane { 1 } else { app.panes.len() };
+
     let mut h_constraints = vec![];
     if app.show_preview {
-        // With preview: file list gets 40%, preview gets 60%
+        // With preview: pane columns share 40% (single pane) or 50% total,
+        // preview gets the rest.
         if app.single_pane {
             h_constraints.push(Constraint::Percentage(40));
         } else {
-            h_constraints.push(Constraint::Percentage(25));
-            h_constraints.push(Constraint::Percentage(25));
+            let pct = (50 / visible_pane_count.max(1)) as u16;
+            for _ in 0..visible_pane_count {
+                h_constraints.push(Constraint::Percentage(pct));
+            }
         }
         h_constraints.push(Constraint::Min(0)); // Preview takes remaining space
-    } else if app.single_pane {
-        h_constraints.push(Constraint::Min(0));
     } else {
-        h_constraints.push(Constraint::Percentage(50));
-        h_constraints.push(Constraint::Percentage(50));
+        let pct = (100 / visible_pane_count.max(1)) as u16;
+        for _ in 0..visible_pane_count {
+            h_constraints.push(Constraint::Percentage(pct));
+        }
     }
     if app.show_theme_panel {
         h_constraints.push(Constraint::Length(32));
@@ -146,22 +151,19 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         .constraints(h_constraints)
         .split(main_area);
 
-    // ── Panes ─────────────────────────────────────────────────────────────────
+    // ── Panes ─────────────────────────────────────────────────────────
     let active_theme = theme;
     let inactive_theme = theme.accent(theme.dim).brand(theme.dim);
 
-    let (left_theme, right_theme) = match app.active {
-        Pane::Left => (&active_theme, &inactive_theme),
-        Pane::Right => (&inactive_theme, &active_theme),
-    };
-
-    // Sync the current theme name and editor label into both panes so render_header can display them.
-    // Only allocate when the value actually changed to avoid 4 string allocations per frame.
-    let theme_changed = app.left.theme_name != app.theme_name();
+    // Sync the current theme name and editor label into every pane so
+    // render_header can display them. Only allocate when the value actually
+    // changed to avoid extra string allocations per frame.
+    let theme_changed = app.panes[0].theme_name != app.theme_name();
     if theme_changed {
         let theme_name = app.theme_name().to_string();
-        app.right.theme_name = theme_name.clone();
-        app.left.theme_name = theme_name;
+        for p in app.panes.iter_mut() {
+            p.theme_name = theme_name.clone();
+        }
     }
 
     let editor_label = if app.editor == crate::app::Editor::None {
@@ -169,21 +171,35 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     } else {
         app.editor.label()
     };
-    if app.left.editor_name != editor_label {
+    if app.panes[0].editor_name != editor_label {
         let editor_name = editor_label.to_string();
-        app.right.editor_name = editor_name.clone();
-        app.left.editor_name = editor_name;
+        for p in app.panes.iter_mut() {
+            p.editor_name = editor_name.clone();
+        }
     }
 
-    render_themed(&mut app.left, frame, h_chunks[0], left_theme);
-
-    if !app.single_pane {
-        render_themed(&mut app.right, frame, h_chunks[1], right_theme);
+    let active_idx = app.active_idx;
+    if app.single_pane {
+        render_themed(
+            &mut app.panes[active_idx],
+            frame,
+            h_chunks[0],
+            &active_theme,
+        );
+    } else {
+        for (i, pane) in app.panes.iter_mut().enumerate() {
+            let pane_theme = if i == active_idx {
+                &active_theme
+            } else {
+                &inactive_theme
+            };
+            render_themed(pane, frame, h_chunks[i], pane_theme);
+        }
     }
 
-    // ── Preview panel ─────────────────────────────────────────────────────
+    // ── Preview panel ────────────────────────────────
     if app.show_preview {
-        let preview_idx = if app.single_pane { 1 } else { 2 };
+        let preview_idx = visible_pane_count;
         let preview_area = h_chunks[preview_idx];
 
         // Update preview state with the currently highlighted entry.
@@ -704,7 +720,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     //   [0]  hints header box         — 2 rows  (top border: title, bottom border: hints)
     //   [1]  gap                      — 1 row
     //   [2]  "Toggles" section title  — 1 row
-    //   [3]  Toggles group cell       — 5 rows  (border + 3 rows + border)
+    //   [3]  Toggles group cell       — 6 rows  (border + 4 rows + border)
     //   [4]  gap                      — 1 row
     //   [5]  "Editor" section title   — 1 row
     //   [6]  Editor group cell        — 3 rows  (border + 1 row + border)
@@ -718,7 +734,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(2), // [0] hints header (border-only, no body)
             Constraint::Length(1), // [1] gap
             Constraint::Length(1), // [2] "Toggles" title
-            Constraint::Length(5), // [3] Toggles group (3 option rows)
+            Constraint::Length(6), // [3] Toggles group (4 option rows)
             Constraint::Length(1), // [4] gap
             Constraint::Length(1), // [5] "Editor" title
             Constraint::Length(3), // [6] Editor group (1 option row)
@@ -780,6 +796,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
         option_row("Shift + C", "cd on exit", bool_span(app.cd_on_exit)),
         option_row("w", "single pane", bool_span(app.single_pane)),
         option_row("Shift + T", "theme panel", bool_span(app.show_theme_panel)),
+        option_row("z", "show sizes", bool_span(app.active_pane().show_sizes)),
     ];
     let toggles_cell = Paragraph::new(toggles_rows).block(
         Block::default()
@@ -957,6 +974,10 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
     let global_spans = vec![
         k("Tab"),
         d(" pane │ "),
+        k("C-t"),
+        d("/"),
+        k("C-w"),
+        d(" open/close pane │ "),
         k("w"),
         d(" split │ "),
         k("["),
@@ -1089,10 +1110,7 @@ pub fn render_action_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme
     }
 
     // ── Right: active pane + editor (always visible) ──────────────────────────
-    let active_label = match app.active {
-        Pane::Left => "left",
-        Pane::Right => "right",
-    };
+    let active_label = format!("{}/{}", app.active_idx + 1, app.panes.len());
 
     let mut right_spans = vec![
         Span::styled(" pane: ", Style::default().fg(theme.dim)),
@@ -1682,16 +1700,14 @@ mod tests {
 
     fn make_app_in(dir: std::path::PathBuf) -> App {
         App::new(crate::app::AppOptions {
-            left_dir: dir.clone(),
-            right_dir: dir,
+            pane_dirs: vec![dir.clone(), dir],
             ..crate::app::AppOptions::default()
         })
     }
 
     fn make_verbose_app_in(dir: std::path::PathBuf) -> App {
         App::new(crate::app::AppOptions {
-            left_dir: dir.clone(),
-            right_dir: dir,
+            pane_dirs: vec![dir.clone(), dir],
             verbose: true,
             ..crate::app::AppOptions::default()
         })
@@ -1735,8 +1751,7 @@ mod tests {
     #[test]
     fn startup_log_transferred_into_debug_log() {
         let app = App::new(crate::app::AppOptions {
-            left_dir: std::env::temp_dir(),
-            right_dir: std::env::temp_dir(),
+            pane_dirs: vec![std::env::temp_dir(), std::env::temp_dir()],
             verbose: true,
             startup_log: vec!["boot 1".into(), "boot 2".into()],
             ..crate::app::AppOptions::default()
@@ -1749,8 +1764,7 @@ mod tests {
     #[test]
     fn startup_log_followed_by_runtime_log_preserves_order() {
         let mut app = App::new(crate::app::AppOptions {
-            left_dir: std::env::temp_dir(),
-            right_dir: std::env::temp_dir(),
+            pane_dirs: vec![std::env::temp_dir(), std::env::temp_dir()],
             verbose: true,
             startup_log: vec!["startup".into()],
             ..crate::app::AppOptions::default()

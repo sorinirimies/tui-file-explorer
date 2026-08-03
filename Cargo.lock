@@ -2482,6 +2482,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tui-slider",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -1,6 +1,27 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- File and directory sizes are now shown in the explorer list, alongside free/total disk-space usage in the footer.
+- Press `z` to toggle file/folder size display on/off (per pane); persisted across restarts in `settings.json` (`show_sizes`). Disabling it skips the recursive directory-size walk entirely for the snappiest possible browsing of huge trees.
+- `tfe` now supports an arbitrary number of explorer panes instead of a fixed left/right pair:
+  - `Ctrl+T` opens a new pane at the active pane's current directory.
+  - `Ctrl+W` closes the active pane (at least one pane always remains open).
+  - `Tab` / `Shift+Tab` cycle keyboard focus forward/backward through all open panes.
+
+### Performance
+- Directory-size computation is now bounded by a small shared wall-clock budget per render pass (in addition to the existing per-directory cap, now tightened from 150ms to 25ms), so entering a folder full of large subdirectories can no longer make the UI noticeably sluggish. Rows that don't fit in the budget keep showing their cheap shallow item count and pick up the full size on a later redraw.
+
+### Changed (breaking)
+- `App::panes: Vec<FileExplorer>` and `App::active_idx: usize` replace the old `App::left`, `App::right`, and `App::active: Pane` fields. The `Pane` enum has been removed.
+- `AppOptions::pane_dirs: Vec<PathBuf>` replaces `AppOptions::left_dir` / `AppOptions::right_dir`.
+- Persisted settings (`settings.json`) gained `pane_dirs` and `active_pane_idx` fields; the legacy `last_dir` / `last_dir_right` / `active_pane` fields are still written and read for backward compatibility with older `tfe` versions.
+
+### Internal
+- Split the monolithic `src/app.rs` (4600+ lines mixing pane management, clipboard/file-ops, and key dispatch) into `src/app/{mod,pane,clipboard,keys,tests}.rs`. No functional or public-API change beyond what's listed above — purely organisational.
+
 ## [1.1.11] - 2026-07-17
 
 ### Bug Fixes

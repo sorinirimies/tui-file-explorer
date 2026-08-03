@@ -95,6 +95,10 @@ pub struct AppState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_hidden: Option<bool>,
 
+    /// Whether file/folder sizes were shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_sizes: Option<bool>,
+
     /// Whether single-pane mode was active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub single_pane: Option<bool>,
@@ -116,8 +120,24 @@ pub struct AppState {
 
     /// Which pane (left or right) had keyboard focus when the app last exited.
     /// Serialised as `"left"` or `"right"`.
+    ///
+    /// Superseded by `active_pane_idx`; still written/read for backward
+    /// compatibility with older `tfe` versions that only support two panes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_pane: Option<String>,
+
+    /// Starting directory for every pane, in left-to-right order.
+    ///
+    /// Supersedes `last_dir` / `last_dir_right` now that `tfe` supports an
+    /// arbitrary number of panes. When absent (older state files), the
+    /// caller falls back to reconstructing a 2-entry list from `last_dir` /
+    /// `last_dir_right`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane_dirs: Option<Vec<PathBuf>>,
+
+    /// Index of the pane that had keyboard focus when the app last exited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_pane_idx: Option<usize>,
 }
 
 // ── Config-dir helpers ────────────────────────────────────────────────────────
@@ -184,6 +204,11 @@ pub(crate) fn load_state_from(path: &Path) -> AppState {
     if let Some(ref p) = state.last_dir_right {
         if !p.is_dir() {
             state.last_dir_right = None;
+        }
+    }
+    if let Some(ref dirs) = state.pane_dirs {
+        if dirs.is_empty() || dirs.iter().any(|d| !d.is_dir()) {
+            state.pane_dirs = None;
         }
     }
 

@@ -37,7 +37,7 @@ use std::{
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::types::{ExplorerOutcome, FsEntry, SortMode};
+use crate::types::{DiskUsage, ExplorerOutcome, FsEntry, SortMode};
 
 /// Default number of entries scrolled by Page Up / Page Down.
 pub const PAGE_SIZE: usize = 10;
@@ -112,6 +112,30 @@ pub struct FileExplorer {
     pub rename_active: bool,
     /// The new name being typed when `rename_active` is true.
     pub rename_input: String,
+    /// Cache of computed recursive directory sizes, keyed by absolute path.
+    ///
+    /// Each entry stores `(total_bytes, is_partial, item_count_at_computation)`.
+    /// A cached value is reused as long as the directory's shallow
+    /// [`FsEntry::item_count`] hasn't changed since it was computed — a cheap
+    /// heuristic that invalidates the cache when files are added, removed, or
+    /// renamed directly inside that directory, without requiring a full
+    /// recursive re-walk on every render or keystroke. See
+    /// [`Self::ensure_dir_size_before`] / [`Self::clear_dir_size_cache`].
+    pub(crate) dir_size_cache: std::collections::HashMap<PathBuf, (u64, bool, usize)>,
+    /// Total/free space for the storage device backing `current_dir`.
+    ///
+    /// Refreshed on every [`Self::reload`] (i.e. on every navigation), since
+    /// crossing a mount point changes which device applies. `None` when the
+    /// underlying OS query fails or isn't supported on this platform.
+    pub disk_usage: Option<DiskUsage>,
+    /// Whether file/folder sizes are shown in the entry list.
+    ///
+    /// When `false`, the (potentially expensive) recursive directory-size
+    /// walk (`ensure_dir_size_before`) is skipped entirely and only the
+    /// cheap shallow item count is shown for directories — useful for
+    /// snappier browsing of huge trees (network mounts, `node_modules`,
+    /// build output, ...). Toggle with `z`. Defaults to `true`.
+    pub show_sizes: bool,
 }
 
 // ── handle_input_mode! ────────────────────────────────────────────────────────
@@ -196,6 +220,9 @@ impl FileExplorer {
             rename_input: String::new(),
             theme_name: String::new(),
             editor_name: String::new(),
+            disk_usage: None,
+            dir_size_cache: std::collections::HashMap::new(),
+            show_sizes: true,
         };
         explorer.reload();
         explorer
@@ -486,12 +513,18 @@ impl FileExplorer {
             // which signals the caller to exit the TUI.
             KeyCode::Enter | KeyCode::Char('l') => self.confirm(),
 
-            // ── Toggle hidden files ───────────────────────────────────────────
+            // ── Toggle hidden files ─────────────────────────────────
             KeyCode::Char('.') => {
                 self.show_hidden = !self.show_hidden;
                 let was = self.cursor;
                 self.reload();
                 self.cursor = was.min(self.entries.len().saturating_sub(1));
+                ExplorerOutcome::Pending
+            }
+
+            // ── Toggle file/folder size display ───────────────────────
+            KeyCode::Char('z') if key.modifiers.is_empty() => {
+                self.show_sizes = !self.show_sizes;
                 ExplorerOutcome::Pending
             }
 
@@ -826,10 +859,70 @@ impl FileExplorer {
             self.sort_mode,
             &self.search_query,
         );
+        self.disk_usage = crate::fs::disk_usage(&self.current_dir);
         // After every reload the entry count may have shrunk (filter change,
         // external deletion, empty directory).  Clamp so cursor and
         // scroll_offset never point past the end of the new list.
         self.clamp_cursor();
+    }
+
+    // ── Directory size cache ─────────────────────────────────────────────
+
+    /// Return the cached recursive size for the directory at `path`,
+    /// recomputing it (bounded by [`crate::fs::DIR_SIZE_MAX_ENTRIES`] /
+    /// [`crate::fs::DIR_SIZE_MAX_DURATION`], plus an optional shared
+    /// `deadline`) if it is missing or stale.
+    ///
+    /// `item_count` should be the directory's current shallow entry count
+    /// (i.e. [`FsEntry::item_count`]); it is used as a cheap staleness check
+    /// — a mismatch against the cached value means something changed
+    /// directly inside the directory since it was last computed.
+    ///
+    /// When `deadline` is `Some` and has already passed, a cache miss is left
+    /// uncomputed for this call (returning `(0, false)`) instead of
+    /// performing the walk — this lets callers share one wall-clock budget
+    /// across many rows in a single render pass so a folder full of large
+    /// subdirectories can never make a render noticeably slow; skipped
+    /// directories keep showing their cheap shallow item count and get
+    /// picked up on a later redraw. Pass `None` for unbounded behaviour.
+    ///
+    /// Returns `(total_bytes, is_partial)`. Intended for renderers that only
+    /// need sizes for the currently visible rows, since this may perform a
+    /// bounded filesystem walk.
+    pub(crate) fn ensure_dir_size_before(
+        &mut self,
+        path: &Path,
+        item_count: Option<usize>,
+        deadline: Option<std::time::Instant>,
+    ) -> (u64, bool) {
+        let Some(item_count) = item_count else {
+            return (0, false);
+        };
+        if let Some(&(bytes, partial, cached_count)) = self.dir_size_cache.get(path) {
+            if cached_count == item_count {
+                return (bytes, partial);
+            }
+        }
+        if let Some(deadline) = deadline {
+            if std::time::Instant::now() >= deadline {
+                // Out of budget this frame — leave uncached, try again later.
+                return (0, false);
+            }
+        }
+        let (bytes, partial) = crate::fs::dir_size(path);
+        self.dir_size_cache
+            .insert(path.to_path_buf(), (bytes, partial, item_count));
+        (bytes, partial)
+    }
+
+    /// Clear every cached recursive directory size.
+    ///
+    /// Call this after operations that can change file sizes *without*
+    /// necessarily changing any visible directory's immediate entry count
+    /// (the heuristic `ensure_dir_size_before` relies on) — e.g. a
+    /// multi-file paste or delete that touches nested subdirectories.
+    pub fn clear_dir_size_cache(&mut self) {
+        self.dir_size_cache.clear();
     }
 }
 
@@ -857,6 +950,7 @@ pub struct FileExplorerBuilder {
     show_hidden: bool,
     sort_mode: SortMode,
     page_size: usize,
+    show_sizes: bool,
 }
 
 impl FileExplorerBuilder {
@@ -868,6 +962,7 @@ impl FileExplorerBuilder {
             show_hidden: false,
             sort_mode: SortMode::default(),
             page_size: PAGE_SIZE,
+            show_sizes: true,
         }
     }
 
@@ -918,6 +1013,24 @@ impl FileExplorerBuilder {
         self
     }
 
+    /// Set whether file/folder sizes are shown on startup.
+    ///
+    /// Defaults to `true`. Set to `false` for the snappiest possible
+    /// browsing of huge directory trees, since it skips the recursive
+    /// directory-size walk entirely.
+    ///
+    /// ```no_run
+    /// use tui_file_explorer::FileExplorer;
+    ///
+    /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
+    ///     .show_sizes(false)
+    ///     .build();
+    /// ```
+    pub fn show_sizes(mut self, show: bool) -> Self {
+        self.show_sizes = show;
+        self
+    }
+
     /// Set the initial sort mode.
     ///
     /// ```no_run
@@ -963,6 +1076,9 @@ impl FileExplorerBuilder {
             rename_input: String::new(),
             theme_name: String::new(),
             editor_name: String::new(),
+            disk_usage: None,
+            dir_size_cache: std::collections::HashMap::new(),
+            show_sizes: self.show_sizes,
         };
         explorer.reload();
         explorer
@@ -1036,11 +1152,21 @@ pub(crate) fn load_entries(
             entry.metadata().ok().map(|m| m.len())
         };
 
+        // Shallow (non-recursive) item count for directories — cheap enough
+        // to compute on every listing since it only reads one directory
+        // level, unlike a full recursive byte-size walk.
+        let item_count = if is_dir {
+            fs::read_dir(&path).ok().map(|rd| rd.flatten().count())
+        } else {
+            None
+        };
+
         let fs_entry = FsEntry {
             name,
             path,
             is_dir,
             size,
+            item_count,
             extension,
         };
 
@@ -1580,6 +1706,65 @@ mod tests {
     }
 
     #[test]
+    fn show_sizes_defaults_to_true() {
+        let tmp = temp_dir_with_files();
+        let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert!(explorer.show_sizes);
+    }
+
+    #[test]
+    fn z_key_toggles_show_sizes() {
+        let tmp = temp_dir_with_files();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        assert!(explorer.show_sizes);
+        explorer.handle_key(key(KeyCode::Char('z')));
+        assert!(!explorer.show_sizes);
+        explorer.handle_key(key(KeyCode::Char('z')));
+        assert!(explorer.show_sizes);
+    }
+
+    #[test]
+    fn builder_show_sizes_false_disables_sizes() {
+        let tmp = temp_dir_with_files();
+        let explorer = FileExplorer::builder(tmp.path().to_path_buf())
+            .show_sizes(false)
+            .build();
+        assert!(!explorer.show_sizes);
+    }
+
+    #[test]
+    fn ensure_dir_size_before_computes_and_caches_within_budget() {
+        let tmp = temp_dir_with_files();
+        let subdir = tmp.path().join("subdir");
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        let (bytes, partial) = explorer.ensure_dir_size_before(&subdir, Some(1), Some(deadline));
+        assert!(!partial);
+        assert!(explorer.dir_size_cache.contains_key(&subdir));
+        // A second call with an already-passed deadline should still hit the
+        // (now warm) cache instead of skipping.
+        let past_deadline = std::time::Instant::now();
+        let (cached_bytes, _) =
+            explorer.ensure_dir_size_before(&subdir, Some(1), Some(past_deadline));
+        assert_eq!(bytes, cached_bytes);
+    }
+
+    #[test]
+    fn ensure_dir_size_before_skips_uncached_walk_past_deadline() {
+        let tmp = temp_dir_with_files();
+        let subdir = tmp.path().join("subdir");
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        // Deadline already in the past: an uncached directory must not be
+        // walked, and no cache entry should be inserted.
+        let past_deadline = std::time::Instant::now();
+        let (bytes, partial) =
+            explorer.ensure_dir_size_before(&subdir, Some(1), Some(past_deadline));
+        assert_eq!(bytes, 0);
+        assert!(!partial);
+        assert!(!explorer.dir_size_cache.contains_key(&subdir));
+    }
+
+    #[test]
     fn sort_size_desc_orders_largest_first() {
         let tmp = tempfile::tempdir().expect("temp dir");
         // Create files with clearly different sizes.
@@ -2052,6 +2237,7 @@ mod tests {
             path: std::path::PathBuf::from("/mydir"),
             is_dir: true,
             size: None,
+            item_count: Some(0),
             extension: String::new(),
         };
         assert_eq!(entry_icon(&entry), "📁");
@@ -2064,6 +2250,7 @@ mod tests {
             path: std::path::PathBuf::from(name),
             is_dir: false,
             size: Some(0),
+            item_count: None,
             extension: ext.into(),
         };
 
@@ -2417,6 +2604,7 @@ mod tests {
             path: std::path::PathBuf::from(name),
             is_dir: false,
             size: None,
+            item_count: None,
             extension: ext,
         }
     }
@@ -2464,6 +2652,7 @@ mod tests {
             path: std::path::PathBuf::from("Makefile"),
             is_dir: false,
             size: None,
+            item_count: None,
             extension: String::new(),
         };
         assert_eq!(entry_icon(&e), "📄");

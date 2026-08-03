@@ -57,12 +57,13 @@ Use it as an **embeddable library widget** or run it as the **standalone `tfe` C
 
 ## Features
 
-- 🗂️ **Two-pane layout** — independent left and right explorer panes, `Tab` to switch focus
+- 🗂️ **Multi-pane layout** — open as many independent explorer panes as you like, `Tab`/`Shift+Tab` to cycle focus, `Ctrl+T` to open a pane, `Ctrl+W` to close one
 - 📋 **File operations** — `Space` to mark, `p` to paste (copy), `x` to cut+paste, `d` to delete; `n`/`N` to create dirs/files; `r` to rename
 - 🔍 **Incremental search** — press `/` to filter entries live as you type
 - 🔃 **Sort modes** — cycle `Name → Size ↓ → Extension` with `s`
 - 🎛️ **Extension filter** — only matching files are selectable; dirs are always navigable
 - 👁️ Toggle hidden dot-file visibility with `.`
+- 📏 **File/folder sizes & disk usage** — recursive folder sizes and a free/total space readout for the current device; toggle the size column on/off with `z` for snappier browsing of huge trees
 - ⌨️ Full keyboard navigation: Miller-columns `←`/`→` (ascend/descend), vim keys (`h/j/k/l`), `↑`/`↓`/`j`/`k`, `PgUp/PgDn`, `g/G` — `→` on a file moves down, never exits the TUI
 - 🎨 **43 named themes** — Catppuccin, Dracula, Nord, Tokyo Night, Kanagawa, Gruvbox, and more
 - 🎛️ **Live theme panel** — press `T` to open a sidebar, `t`/`[` to cycle themes; `↑`/`↓` navigate the list when the panel is open
@@ -257,8 +258,10 @@ match dual.handle_key(key) {
 | `G` / `End` | Jump to bottom |
 | `→` / `l` / `Enter` | Descend into directory; on a file `→` moves cursor down, `l`/`Enter` confirm (exits TUI) |
 | `←` / `h` / `Backspace` | Ascend to parent directory |
-| `Tab` | **Switch active pane** (left ↔ right) |
-| `w` | **Toggle two-pane ↔ single-pane** layout |
+| `Tab` / `Shift+Tab` | **Cycle active pane** forward / backward |
+| `Ctrl+T` | **Open a new pane** at the active pane's directory |
+| `Ctrl+W` | **Close the active pane** (at least one always remains) |
+| `w` | **Toggle single-pane ↔ multi-pane** layout |
 
 ### Explorer actions
 
@@ -267,6 +270,7 @@ match dual.handle_key(key) {
 | `/` | Activate incremental search |
 | `s` | Cycle sort mode (`Name → Size ↓ → Extension`) |
 | `.` | Toggle hidden (dot-file) entries |
+| `z` | Toggle file/folder size display (per pane) — disable for the snappiest browsing of huge directory trees |
 | `Esc` | Clear search (if active), then dismiss |
 | `q` | Dismiss when search is not active |
 
@@ -287,7 +291,9 @@ match dual.handle_key(key) {
 
 | Key | Action |
 |-----|--------|
-| `w` | Toggle two-pane ↔ single-pane layout |
+| `w` | Toggle single-pane ↔ multi-pane layout |
+| `Ctrl+T` | Open a new pane |
+| `Ctrl+W` | Close the active pane |
 | `t` | Next theme |
 | `[` | Previous theme |
 | `T` | Toggle theme panel (right sidebar); `↑`/`↓`/`j`/`k` navigate themes when open |
@@ -320,27 +326,30 @@ match dual.handle_key(key) {
 
 ---
 
-## Two-Pane File Manager
+## Multi-Pane File Manager
 
-The `tfe` binary opens a **split-screen file manager** with a left and right pane.
+The `tfe` binary opens a **split-screen file manager**. It starts with two panes
+side by side, but you're not limited to two — open as many as you need with
+`Ctrl+T` and close them with `Ctrl+W`.
 
 ```
-┌─── Left Pane (active) ──────────┬─── Right Pane ───────────────────┐
+┌─── Pane 1 (active) ────────────┌─── Pane 2 ───────────────────────┐
 │ 📁 ~/projects/tui-file-explorer │ 📁 ~/projects/tui-file-explorer  │
-├─────────────────────────────────┤──────────────────────────────────┤
+├────────────────────────────────├──────────────────────────────────┤
 │ ▶ 📁 src/                       │   📁 src/                        │
 │   📁 examples/                  │   📁 examples/                   │
 │   📄 Cargo.toml                 │   📄 Cargo.toml                  │
 │   📄 README.md                  │   📄 README.md                   │
-├─────────────────────────────────┴──────────────────────────────────┤
-│ 📋 Copy: main.rs          Tab pane  x cut  p paste  d del  │
-└────────────────────────────────────────────────────────────────────┘
+├────────────────────────────────┴──────────────────────────────────┤
+│ 📋 Copy: main.rs   Tab pane  C-t/C-w open/close  x cut  p paste  d del │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
-- The **active pane** renders with your full theme accent; the **inactive pane** dims its borders so focus is always clear at a glance
-- Press `Tab` to switch which pane has keyboard focus
+- The **active pane** renders with your full theme accent; every **inactive pane** dims its borders so focus is always clear at a glance
+- Press `Tab` / `Shift+Tab` to cycle which pane has keyboard focus
+- Press `Ctrl+T` to open a new pane at the active pane's current directory; press `Ctrl+W` to close the active pane (at least one pane always stays open)
 - Arrow keys (`←`/`→`) scroll the cursor up/down **without** entering or exiting a directory — use `Enter` / `l` to descend and `Backspace` / `h` to ascend
-- Press `w` to **collapse to a single pane** — the hidden pane keeps its state and reappears when you press `w` again
+- Press `w` to **collapse to a single pane** — hidden panes keep their state and reappear when you press `w` again
 - Press `t` / `[` to cycle themes forward / backward; press `T` to open the theme panel
 - Each pane navigates independently — scroll to different directories and use one as source, one as destination
 
