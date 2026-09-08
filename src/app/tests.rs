@@ -1159,6 +1159,7 @@ fn paste_multi_success_sets_snackbar() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn copy_dir_skips_symlinks_without_failing() {
     use std::os::unix::fs::symlink;
@@ -1190,6 +1191,7 @@ fn copy_dir_skips_symlinks_without_failing() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn copy_dir_skips_valid_symlink_to_file() {
     use std::os::unix::fs::symlink;

@@ -672,7 +672,7 @@ fn run() -> io::Result<()> {
             // override the protocol with the one we detected from the
             // terminal's identity.
             #[allow(deprecated)]
-            let mut picker = ratatui_image::picker::Picker::from_fontsize(fs);
+            let mut picker = ratatui_image::picker::Picker::from_fontsize(fs.into());
             picker.set_protocol_type(detected_protocol);
             picker
         }
