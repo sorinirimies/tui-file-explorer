@@ -11,7 +11,7 @@
 //! * [`App`]           — the top-level state struct that drives the event loop.
 
 use std::{
-    fs,
+    collections::VecDeque,
     io::{self},
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -379,7 +379,6 @@ impl Default for AppOptions {
     }
 }
 
-use crate::fs::copy_dir_all;
 use crate::inline_editor::{EditorAction, InlineEditor};
 use crate::preview::PreviewState;
 
@@ -598,6 +597,13 @@ pub struct App {
     pub preview_state: PreviewState,
     /// The active inline editor, if any (opened with `i`).
     pub inline_editor: Option<InlineEditor>,
+    /// Host-defined key remappings used by `dispatch_key`.
+    key_bindings: KeyBindings,
+    operation_mode: OperationMode,
+    next_operation_id: u64,
+    queued_operation: Option<OperationRequest>,
+    pending_operation: Option<OperationRequest>,
+    event_queue: VecDeque<AppEvent>,
 }
 
 impl App {
@@ -619,12 +625,14 @@ impl App {
                     .build()
             })
             .collect();
+        let themes = Theme::all_presets();
+        let theme_idx = opts.theme_idx.min(themes.len().saturating_sub(1));
         Self {
             panes,
             active_idx: 0,
             clipboard: None,
-            themes: Theme::all_presets(),
-            theme_idx: opts.theme_idx,
+            themes,
+            theme_idx,
             show_theme_panel: opts.show_theme_panel,
             show_options_panel: false,
             single_pane: opts.single_pane,
@@ -644,6 +652,12 @@ impl App {
             show_preview: false,
             preview_state: PreviewState::new(),
             inline_editor: None,
+            key_bindings: KeyBindings::default(),
+            operation_mode: OperationMode::Immediate,
+            next_operation_id: 1,
+            queued_operation: None,
+            pending_operation: None,
+            event_queue: VecDeque::new(),
         }
     }
 
@@ -655,7 +669,7 @@ impl App {
         }
     }
 
-    /// Index of the first IDE/GUI editor in the [`all_editors`] list.
+    /// Index of the first IDE/GUI editor in the [`Self::all_editors`] list.
     ///
     /// Everything before this index is a terminal editor; everything from
     /// this index onward is a GUI editor or IDE.  Used by the editor panel
@@ -765,9 +779,21 @@ impl App {
     }
 }
 
+mod api;
 mod clipboard;
 mod keys;
+mod operation;
 mod pane;
+
+pub use api::{
+    AppBuildError, AppBuilder, AppCommand, AppEvent, AppOutcome, KeyBinding, KeyBindings,
+    PaneOptions,
+};
+pub use operation::{
+    execute_operation, execute_operation_with, execute_operation_with_progress, FileOperation,
+    OperationApplyError, OperationFailure, OperationId, OperationMode, OperationProgress,
+    OperationRequest, OperationResult,
+};
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@
 //!
 //! All [`ratatui`] rendering that is specific to the two-pane application
 //! lives here. The per-pane widget rendering (header, list, footer) remains in
-//! the library's own [`tui_file_explorer::render`] module.
+//! the library's own [`mod@crate::render`] module.
 //!
 //! Public entry-points:
 //!
@@ -44,15 +44,59 @@ fn dim_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
 
 // ── Top-level draw ────────────────────────────────────────────────────────────
 
-/// Draw the entire application UI into `frame`.
-///
-/// Divides the terminal area into:
-/// - A main area (one or two explorer panes + optional theme panel).
-/// - A fixed-height action bar at the bottom.
-/// - An optional modal overlay on top of everything.
+/// Layout controls for embedding the full application UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AppViewOptions {
+    /// Render the six-row navigation and status area.
+    pub show_action_bar: bool,
+    /// Render the debug panel when `App::verbose` is enabled.
+    pub show_debug_panel: bool,
+    /// Width of the theme side panel.
+    pub theme_panel_width: u16,
+    /// Width of the options and editor side panels.
+    pub settings_panel_width: u16,
+    /// Percentage reserved for all explorer panes when preview is visible.
+    pub panes_with_preview_percent: u16,
+    /// Minimum target width per visible pane. Extra panes remain open and the
+    /// visible window follows the active pane.
+    pub minimum_pane_width: u16,
+}
+
+impl Default for AppViewOptions {
+    fn default() -> Self {
+        Self {
+            show_action_bar: true,
+            show_debug_panel: true,
+            theme_panel_width: 32,
+            settings_panel_width: 42,
+            panes_with_preview_percent: 50,
+            minimum_pane_width: 24,
+        }
+    }
+}
+
+/// Draw the complete application into the full terminal frame.
 pub fn draw(app: &mut App, frame: &mut Frame) {
+    draw_in(app, frame, frame.area());
+}
+
+/// Draw the complete application inside `area`.
+///
+/// Use this when embedding the full file explorer beside other Ratatui widgets.
+pub fn draw_in(app: &mut App, frame: &mut Frame, area: Rect) {
+    draw_in_with_options(app, frame, area, AppViewOptions::default());
+}
+
+/// Draw the complete application inside `area` with custom layout options.
+pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, options: AppViewOptions) {
+    if area.is_empty() {
+        return;
+    }
+    if app.panes.is_empty() {
+        return;
+    }
     let theme = *app.theme();
-    let full = frame.area();
+    let full = area;
 
     // Paint the entire terminal area with the theme's background colour.
     // Without this, light themes appear broken because ratatui defaults
@@ -77,46 +121,53 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         3
     };
 
-    let v_chunks = if app.verbose {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(debug_height),
-                Constraint::Length(6),
-            ])
-            .split(full)
-    } else {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(6)])
-            .split(full)
-    };
+    let show_debug = app.verbose && options.show_debug_panel;
+    let mut vertical_constraints = vec![Constraint::Min(0)];
+    if show_debug {
+        vertical_constraints.push(Constraint::Length(debug_height));
+    }
+    if options.show_action_bar {
+        vertical_constraints.push(Constraint::Length(6));
+    }
+    let v_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(vertical_constraints)
+        .split(full);
 
     let main_area = v_chunks[0];
-    let action_area = if app.verbose {
-        v_chunks[2]
-    } else {
-        v_chunks[1]
-    };
+    let action_area = options
+        .show_action_bar
+        .then(|| v_chunks[v_chunks.len() - 1]);
 
     // Split the action bar vertically into three rows of 3:
     //   row 0 — Navigate | File Ops
     //   row 1 — Global   | Status
-    let action_rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Length(3)])
-        .split(action_area);
-    let nav_fileops_area = action_rows[0];
-    let global_status_area = action_rows[1];
+    let action_rows = action_area.map(|area| {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Length(3)])
+            .split(area)
+    });
 
     // ── Debug log panel (verbose only) ────────────────────────────────────────
-    if app.verbose {
+    if show_debug {
         render_debug_panel(frame, v_chunks[1], app, &theme);
     }
 
     // Horizontal split: one column per visible pane | [preview] | [theme panel].
-    let visible_pane_count = if app.single_pane { 1 } else { app.panes.len() };
+    let pane_capacity = (main_area.width / options.minimum_pane_width.max(1)).max(1) as usize;
+    let visible_pane_count = if app.single_pane {
+        1
+    } else {
+        app.panes.len().min(pane_capacity)
+    };
+    let visible_start = if app.single_pane {
+        app.active_idx
+    } else {
+        app.active_idx
+            .saturating_sub(visible_pane_count.saturating_sub(1))
+            .min(app.panes.len().saturating_sub(visible_pane_count))
+    };
 
     let mut h_constraints = vec![];
     if app.show_preview {
@@ -125,7 +176,9 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         if app.single_pane {
             h_constraints.push(Constraint::Percentage(40));
         } else {
-            let pct = (50 / visible_pane_count.max(1)) as u16;
+            let pct = (options.panes_with_preview_percent.min(100)
+                / visible_pane_count.max(1) as u16)
+                .max(1);
             for _ in 0..visible_pane_count {
                 h_constraints.push(Constraint::Percentage(pct));
             }
@@ -138,13 +191,13 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
         }
     }
     if app.show_theme_panel {
-        h_constraints.push(Constraint::Length(32));
+        h_constraints.push(Constraint::Length(options.theme_panel_width));
     }
     if app.show_options_panel {
-        h_constraints.push(Constraint::Length(42));
+        h_constraints.push(Constraint::Length(options.settings_panel_width));
     }
     if app.show_editor_panel {
-        h_constraints.push(Constraint::Length(42));
+        h_constraints.push(Constraint::Length(options.settings_panel_width));
     }
     let h_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -187,13 +240,18 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
             &active_theme,
         );
     } else {
-        for (i, pane) in app.panes.iter_mut().enumerate() {
-            let pane_theme = if i == active_idx {
+        for (slot, pane_index) in (visible_start..visible_start + visible_pane_count).enumerate() {
+            let pane_theme = if pane_index == active_idx {
                 &active_theme
             } else {
                 &inactive_theme
             };
-            render_themed(pane, frame, h_chunks[i], pane_theme);
+            render_themed(
+                &mut app.panes[pane_index],
+                frame,
+                h_chunks[slot],
+                pane_theme,
+            );
         }
     }
 
@@ -232,7 +290,9 @@ pub fn draw(app: &mut App, frame: &mut Frame) {
     }
 
     // ── Action bar ────────────────────────────────────────────────────────────
-    render_nav_hints(frame, nav_fileops_area, global_status_area, app, &theme);
+    if let Some(rows) = action_rows {
+        render_nav_hints(frame, rows[0], rows[1], app, &theme);
+    }
 
     // ── Modal overlay ─────────────────────────────────────────────────────────
     if let Some(modal) = &app.modal {

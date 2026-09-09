@@ -80,12 +80,23 @@ tui-file-explorer = "2"
 ratatui = "0.30"
 ```
 
-Disable the CLI feature when only the library is needed:
+Choose only the layers your application needs:
 
 ```toml
 [dependencies]
+# Lightweight FileExplorer + DualPane widgets
 tui-file-explorer = { version = "2", default-features = false }
+
+# Full embeddable App, without the tfe binary or Clap
+tui-file-explorer = { version = "2", default-features = false, features = ["full-app"] }
 ```
+
+| Feature | Adds |
+|---|---|
+| `preview` | Image/text/binary/directory preview support |
+| `persistence` | Serde-backed `AppState` loading and saving |
+| `full-app` | Complete `App`, panels, operations, preview, and persistence |
+| `cli` (default) | `tfe` binary and Clap argument parsing |
 
 ### CLI
 
@@ -127,7 +138,25 @@ loop {
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-If your application already reads terminal events, call `App::handle_key` or `App::handle_raw_event` instead of `handle_event`.
+If your application already owns terminal events and layout, use `dispatch_event` plus `draw_in`:
+
+```rust,ignore
+let outcome = app.dispatch_event(event)?;
+terminal.draw(|frame| {
+    draw_in(&mut app, frame, host_file_browser_area);
+})?;
+
+match outcome {
+    AppOutcome::Selected(path) => select(path),
+    AppOutcome::Dismissed => close_file_browser(),
+    AppOutcome::OpenEditor { path, editor } => open_editor(path, editor),
+    AppOutcome::OperationRequested(request) => worker.send(request)?,
+    AppOutcome::Changed(events) => host.handle_changes(events),
+    AppOutcome::Continue | AppOutcome::Ignored => {}
+}
+```
+
+`AppViewOptions` controls action/debug bars, panel widths, preview allocation, and minimum pane width. `AppCommand` and `KeyBindings` support command palettes and custom shortcuts without replacing the state machine. See the complete [`embed` example](examples/embed.rs).
 
 ### Single-pane widget
 
@@ -176,6 +205,12 @@ match dual.handle_key(key) {
 }
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
+
+Custom backends implement `FileSystem` and are passed through `FileExplorerBuilder::filesystem`, `DualPaneBuilder::filesystem`, or `PaneOptions::filesystem`. Checked construction and reload are available through `try_build` and `try_reload`.
+
+For non-blocking copy, move, and delete, set `OperationMode::Deferred`. `dispatch_key` then returns `AppOutcome::OperationRequested`; execute it on a worker with `execute_operation_with_progress` (or `execute_operation_with` for a custom filesystem), feed progress through `apply_operation_progress`, and finish with `apply_operation_result`. Operation IDs reject stale progress/results, and `cancel_operation` invalidates late worker responses.
+
+Host-owned persistence uses `app.snapshot()`, `app.restore(...)`, `load_state_from`, and `save_state_to`.
 
 See [`examples/`](examples/) and the complete API on [docs.rs](https://docs.rs/tui-file-explorer).
 
@@ -298,6 +333,7 @@ Use `t`/`[` to cycle or `T` to open picker. Forty-three presets include Catppucc
 | Open file | `cargo run --example open_file -- "code --wait"` | Suspend TUI, edit, resume |
 | Create entries | `cargo run --example create_entries` | Create directories/files and rename entries |
 | Full app | `cargo run --example full` | Complete `App` integration |
+| Embedded app | `cargo run --example embed` | `draw_in`, host layout, outcomes, key remapping, deferred operations |
 
 ## Public API
 
@@ -305,9 +341,11 @@ Main re-exports:
 
 | Group | Items |
 |---|---|
-| Single pane | `FileExplorer`, `FileExplorerBuilder`, `ExplorerOutcome`, `FsEntry`, `SortMode`, `render`, `render_themed` |
-| Dual pane | `DualPane`, `DualPaneBuilder`, `DualPaneActive`, `DualPaneOutcome`, `render_dual_pane`, `render_dual_pane_themed` |
-| Full app | `App`, `AppOptions`, `ClipOp`, `ClipboardItem`, `Modal`, `Editor`, `Snackbar`, `CopyProgress`, `draw` |
+| Single pane | `FileExplorer`, `FileExplorerBuilder`, `ExplorerCommand`, `ExplorerOutcome`, `SelectionMode`, `FsEntry`, `SortMode`, `render`, `render_themed` |
+| Dual pane | `DualPane`, `DualPaneBuilder`, `DualPaneActive`, `DualPaneCommand`, `DualPaneOutcome`, `render_dual_pane`, `render_dual_pane_themed` |
+| Full app | `App`, `AppBuilder`, `PaneOptions`, `AppOutcome`, `AppEvent`, `AppCommand`, `KeyBindings`, `draw`, `draw_in`, `AppViewOptions` |
+| Operations | `FileOperation`, `OperationRequest`, `OperationProgress`, `OperationResult`, `OperationMode` |
+| Filesystems | `FileSystem`, `StdFileSystem`, `SharedFileSystem`, `ExplorerError` |
 | Preview/editor | `PreviewState`, `PreviewContent`, `InlineEditor`, `EditorAction`, `render_preview`, `render_inline_editor` |
 | Theme/utilities | `Theme`, `entry_icon`, `fmt_size`, `copy_dir_all`, `AppState`, `load_state`, `save_state` |
 

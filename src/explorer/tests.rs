@@ -2000,3 +2000,41 @@ fn rename_mode_unknown_key_returns_pending_via_macro() {
     assert!(explorer.rename_active);
     assert_eq!(explorer.rename_input, "baz");
 }
+
+#[test]
+fn directory_selection_mode_returns_directory() {
+    let dir = tempdir().expect("tempdir");
+    let child = dir.path().join("child");
+    fs::create_dir(&child).unwrap();
+    let mut explorer = FileExplorer::builder(dir.path().to_path_buf())
+        .selection_mode(SelectionMode::Directories)
+        .build();
+    assert_eq!(
+        explorer.handle_key(key(KeyCode::Enter)),
+        ExplorerOutcome::Selected(child)
+    );
+}
+
+#[test]
+fn directory_selection_mode_rejects_files() {
+    let dir = tempdir().expect("tempdir");
+    fs::write(dir.path().join("file.txt"), b"x").unwrap();
+    let mut explorer = FileExplorer::builder(dir.path().to_path_buf())
+        .selection_mode(SelectionMode::Directories)
+        .build();
+    assert_eq!(
+        explorer.handle_key(key(KeyCode::Enter)),
+        ExplorerOutcome::Pending
+    );
+    assert!(explorer.status().contains("Only directories"));
+}
+
+#[test]
+fn try_build_returns_typed_error_for_missing_directory() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("missing");
+    let result = FileExplorer::builder(path.clone()).try_build();
+    let error = result.unwrap_err();
+    assert_eq!(error.path, path);
+    assert_eq!(error.source.kind(), std::io::ErrorKind::NotFound);
+}

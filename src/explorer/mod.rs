@@ -31,23 +31,42 @@
 
 use std::{
     collections::HashSet,
-    fs,
+    fmt, io,
     path::{Path, PathBuf},
 };
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::types::{DiskUsage, ExplorerOutcome, FsEntry, SortMode};
+use crate::types::{DiskUsage, ExplorerCommand, ExplorerOutcome, FsEntry, SelectionMode, SortMode};
 
 /// Default number of entries scrolled by Page Up / Page Down.
 pub const PAGE_SIZE: usize = 10;
+
+/// Error returned by checked explorer filesystem operations.
+#[derive(Debug)]
+pub struct ExplorerError {
+    pub path: PathBuf,
+    pub source: io::Error,
+}
+
+impl fmt::Display for ExplorerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.path.display(), self.source)
+    }
+}
+
+impl std::error::Error for ExplorerError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
 
 // ── FileExplorer ──────────────────────────────────────────────────────────────
 
 /// State for the file-explorer widget.
 ///
 /// Keep one instance in your application state and pass a mutable reference
-/// to [`crate::render`] and [`FileExplorer::handle_key`] on every frame /
+/// to [`crate::render()`] and [`FileExplorer::handle_key`] on every frame /
 /// key event.
 ///
 /// # Example
@@ -72,6 +91,8 @@ pub const PAGE_SIZE: usize = 10;
 pub struct FileExplorer {
     /// The directory currently being browsed.
     pub current_dir: PathBuf,
+    /// Backend used for directory and mutation operations.
+    pub(crate) filesystem: crate::SharedFileSystem,
     /// The name of the currently active theme (used in the header display).
     pub theme_name: String,
     /// The label of the currently configured editor (used in the header display).
@@ -94,6 +115,8 @@ pub struct FileExplorer {
     pub sort_mode: SortMode,
     /// Number of entries scrolled by Page Up / Page Down (default: 10).
     pub page_size: usize,
+    /// Which entry kinds can be returned as selections.
+    pub selection_mode: SelectionMode,
     /// Current incremental-search query (empty = no search active).
     pub search_query: String,
     /// Whether the explorer is currently capturing keystrokes for search input.
@@ -193,7 +216,9 @@ mod entries;
 mod keys;
 
 pub use self::builder::FileExplorerBuilder;
+#[cfg(test)]
 use self::entries::load_entries;
+use self::entries::try_load_entries;
 pub use self::entries::{entry_icon, fmt_size};
 
 impl FileExplorer {
@@ -207,33 +232,9 @@ impl FileExplorer {
     ///
     /// For more configuration options use [`FileExplorer::builder`] instead.
     pub fn new(initial_dir: PathBuf, extension_filter: Vec<String>) -> Self {
-        let mut explorer = Self {
-            current_dir: initial_dir,
-            entries: Vec::new(),
-            cursor: 0,
-            scroll_offset: 0,
-            extension_filter,
-            show_hidden: false,
-            status: String::new(),
-            sort_mode: SortMode::default(),
-            page_size: PAGE_SIZE,
-            search_query: String::new(),
-            search_active: false,
-            marked: HashSet::new(),
-            mkdir_active: false,
-            mkdir_input: String::new(),
-            touch_active: false,
-            touch_input: String::new(),
-            rename_active: false,
-            rename_input: String::new(),
-            theme_name: String::new(),
-            editor_name: String::new(),
-            disk_usage: None,
-            dir_size_cache: std::collections::HashMap::new(),
-            show_sizes: true,
-        };
-        explorer.reload();
-        explorer
+        Self::builder(initial_dir)
+            .extension_filter(extension_filter)
+            .build()
     }
 
     /// Return a [`FileExplorerBuilder`] for constructing an explorer with
@@ -254,6 +255,11 @@ impl FileExplorer {
         FileExplorerBuilder::new(initial_dir)
     }
 
+    /// Return the configured filesystem backend.
+    pub fn filesystem(&self) -> &crate::SharedFileSystem {
+        &self.filesystem
+    }
+
     /// Navigate to `path`, resetting cursor, scroll, and any active search.
     ///
     /// Accepts anything that converts into a [`PathBuf`] — a [`PathBuf`],
@@ -267,10 +273,33 @@ impl FileExplorer {
     /// explorer.navigate_to(std::path::Path::new("/home"));
     /// ```
     pub fn navigate_to(&mut self, path: impl Into<PathBuf>) {
-        self.current_dir = path.into();
+        if let Err(error) = self.try_navigate_to(path) {
+            self.entries.clear();
+            self.disk_usage = None;
+            self.status = error.to_string();
+            self.clamp_cursor();
+        }
+    }
+
+    /// Navigate to `path` while preserving filesystem errors for the host.
+    pub fn try_navigate_to(&mut self, path: impl Into<PathBuf>) -> Result<(), ExplorerError> {
+        let previous_dir = std::mem::replace(&mut self.current_dir, path.into());
+        let previous_cursor = self.cursor;
+        let previous_scroll = self.scroll_offset;
+        let previous_search_active = self.search_active;
+        let previous_search_query = std::mem::take(&mut self.search_query);
         self.cursor = 0;
         self.scroll_offset = 0;
-        self.reload();
+        self.search_active = false;
+        if let Err(error) = self.try_reload() {
+            self.current_dir = previous_dir;
+            self.cursor = previous_cursor;
+            self.scroll_offset = previous_scroll;
+            self.search_active = previous_search_active;
+            self.search_query = previous_search_query;
+            return Err(error);
+        }
+        Ok(())
     }
 
     // ── Key handling ─────────────────────────────────────────────────────────
@@ -370,6 +399,19 @@ impl FileExplorer {
     /// condition checks.
     pub fn entry_count(&self) -> usize {
         self.entries.len()
+    }
+
+    /// Replace visible entries supplied by a host-owned asynchronous loader.
+    ///
+    /// Entries are used as provided; hosts can sort/filter before applying.
+    pub fn replace_entries(&mut self, entries: Vec<FsEntry>) {
+        self.entries = entries;
+        self.clamp_cursor();
+    }
+
+    /// Set a host-provided status message.
+    pub fn set_status(&mut self, status: impl Into<String>) {
+        self.status = status.into();
     }
 
     /// The current human-readable status message.
@@ -479,19 +521,35 @@ impl FileExplorer {
     /// change.  Callers can invoke it manually after external filesystem
     /// mutations (e.g. a file was created or deleted in the watched directory).
     pub fn reload(&mut self) {
+        if let Err(error) = self.try_reload() {
+            self.entries.clear();
+            self.disk_usage = None;
+            self.status = error.to_string();
+            self.clamp_cursor();
+        }
+    }
+
+    /// Reload directory contents and preserve filesystem failures for hosts.
+    pub fn try_reload(&mut self) -> Result<(), ExplorerError> {
         self.status.clear();
-        self.entries = load_entries(
+        self.entries = try_load_entries(
+            self.filesystem.as_ref(),
             &self.current_dir,
             self.show_hidden,
             &self.extension_filter,
             self.sort_mode,
             &self.search_query,
-        );
-        self.disk_usage = crate::fs::disk_usage(&self.current_dir);
+        )
+        .map_err(|source| ExplorerError {
+            path: self.current_dir.clone(),
+            source,
+        })?;
+        self.disk_usage = self.filesystem.disk_usage(&self.current_dir);
         // After every reload the entry count may have shrunk (filter change,
         // external deletion, empty directory).  Clamp so cursor and
         // scroll_offset never point past the end of the new list.
         self.clamp_cursor();
+        Ok(())
     }
 
     // ── Directory size cache ─────────────────────────────────────────────
@@ -537,7 +595,7 @@ impl FileExplorer {
                 return (0, false);
             }
         }
-        let (bytes, partial) = crate::fs::dir_size(path);
+        let (bytes, partial) = self.filesystem.dir_size(path);
         self.dir_size_cache
             .insert(path.to_path_buf(), (bytes, partial, item_count));
         (bytes, partial)

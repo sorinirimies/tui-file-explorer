@@ -2,10 +2,11 @@
 name         = "tui-file-explorer"
 version      = "2.0.2"
 edition      = "2021"
+rust-version = "1.88"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
 repository   = "https://github.com/sorinirimies/tui-file-explorer"
-description  = "A self-contained, keyboard-driven file-browser widget for Ratatui"
+description  = "Embeddable keyboard-driven multi-pane file explorer for Ratatui"
 categories   = ["command-line-utilities", "filesystem"]
 keywords     = ["tui", "ratatui", "file-explorer", "widget", "terminal"]
 readme       = "README.md"
@@ -26,16 +27,16 @@ exclude      = [
 # binary. Library users who only want the widget can opt out:
 #
 #   [dependencies]
-#   tui-file-explorer = { version = "0.1", default-features = false }
+#   tui-file-explorer = { version = "2", default-features = false }
 #
 [features]
 default = ["cli"]
-# The `cli` feature pulls in `clap` and enables the `tfe` binary.
-# Library users who only want the widget can opt out:
-#
-#   [dependencies]
-#   tui-file-explorer = { version = "...", default-features = false }
-cli = ["dep:clap"]
+# Lightweight FileExplorer/DualPane builds need no optional features.
+preview = ["dep:image", "dep:ratatui-image"]
+persistence = ["dep:serde", "dep:serde_json"]
+full-app = ["preview", "persistence", "dep:tui-slider"]
+# The CLI includes the full embeddable application plus argument parsing.
+cli = ["full-app", "dep:clap"]
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
@@ -43,11 +44,11 @@ cli = ["dep:clap"]
 ratatui    = "0.30"
 crossterm  = "0.29"
 clap       = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
-tui-slider = "0.3.4"
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
-image         = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
-ratatui-image = { version = "11.0", default-features = false, features = ["crossterm", "image-defaults"] }
+tui-slider = { version = "0.3.4", optional = true }
+serde      = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+image         = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
+ratatui-image = { version = "11.0", default-features = false, features = ["crossterm", "image-defaults"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -90,3 +91,9 @@ path = "examples/open_file.rs"
 [[example]]
 name = "full"
 path = "examples/full.rs"
+required-features = ["full-app"]
+
+[[example]]
+name = "embed"
+path = "examples/embed.rs"
+required-features = ["full-app"]

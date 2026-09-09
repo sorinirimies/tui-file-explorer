@@ -20,10 +20,12 @@ use super::*;
 /// ```
 pub struct FileExplorerBuilder {
     initial_dir: PathBuf,
+    filesystem: crate::SharedFileSystem,
     extension_filter: Vec<String>,
     show_hidden: bool,
     sort_mode: SortMode,
     page_size: usize,
+    selection_mode: SelectionMode,
     show_sizes: bool,
 }
 
@@ -32,12 +34,20 @@ impl FileExplorerBuilder {
     pub fn new(initial_dir: PathBuf) -> Self {
         Self {
             initial_dir,
+            filesystem: crate::std_filesystem(),
             extension_filter: Vec::new(),
             show_hidden: false,
             sort_mode: SortMode::default(),
             page_size: PAGE_SIZE,
+            selection_mode: SelectionMode::default(),
             show_sizes: true,
         }
+    }
+
+    /// Use a custom filesystem backend.
+    pub fn filesystem(mut self, filesystem: crate::SharedFileSystem) -> Self {
+        self.filesystem = filesystem;
+        self
     }
 
     /// Set the full extension filter list at once.
@@ -119,6 +129,12 @@ impl FileExplorerBuilder {
         self
     }
 
+    /// Configure which entry kinds can be confirmed as selections.
+    pub fn selection_mode(mut self, mode: SelectionMode) -> Self {
+        self.selection_mode = mode;
+        self
+    }
+
     /// Set the number of entries scrolled by Page Up / Page Down.
     ///
     /// Defaults to 10.
@@ -128,9 +144,27 @@ impl FileExplorerBuilder {
     }
 
     /// Consume the builder and return a fully initialised [`FileExplorer`].
+    ///
+    /// Filesystem errors are retained as explorer status for backwards
+    /// compatibility. Use [`Self::try_build`] when the host needs typed errors.
     pub fn build(self) -> FileExplorer {
-        let mut explorer = FileExplorer {
+        let mut explorer = self.build_unloaded();
+        explorer.reload();
+        explorer
+    }
+
+    /// Build an explorer and return an error when its initial directory cannot
+    /// be read.
+    pub fn try_build(self) -> Result<FileExplorer, ExplorerError> {
+        let mut explorer = self.build_unloaded();
+        explorer.try_reload()?;
+        Ok(explorer)
+    }
+
+    fn build_unloaded(self) -> FileExplorer {
+        FileExplorer {
             current_dir: self.initial_dir,
+            filesystem: self.filesystem,
             entries: Vec::new(),
             cursor: 0,
             scroll_offset: 0,
@@ -139,6 +173,7 @@ impl FileExplorerBuilder {
             status: String::new(),
             sort_mode: self.sort_mode,
             page_size: self.page_size,
+            selection_mode: self.selection_mode,
             search_query: String::new(),
             search_active: false,
             marked: HashSet::new(),
@@ -153,8 +188,6 @@ impl FileExplorerBuilder {
             disk_usage: None,
             dir_size_cache: std::collections::HashMap::new(),
             show_sizes: self.show_sizes,
-        };
-        explorer.reload();
-        explorer
+        }
     }
 }

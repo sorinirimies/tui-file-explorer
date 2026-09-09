@@ -193,7 +193,7 @@ fn main() {
     }
 }
 
-/// Process-start instant used by [`vlog!`] to stamp every log line.
+/// Process-start instant used by the `vlog!` macro to stamp every log line.
 static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
 /// Conditionally log a message to stderr, a buffer, and an optional file.
@@ -975,11 +975,11 @@ fn run_loop<W: io::Write>(
         // `handle_event` sets `open_with_editor` when the user presses `e` or
         // Enter on a file.  We handle it here (in run_loop) because we need
         // access to the Terminal to tear it down and restore it.
-        if let Some(path) = app.open_with_editor.take() {
-            // Defensive guard: Editor::None should never set open_with_editor,
+        if let Some((path, editor)) = app.take_editor_request() {
+            // Defensive guard: Editor::None should never request an editor,
             // but if it somehow does, silently discard and move on.
-            if let Some(binary_str) = app.editor.binary() {
-                let editor_label = app.editor.label().to_string();
+            if let Some(binary_str) = editor.binary() {
+                let editor_label = editor.label().to_string();
                 let launch_msg = format!(
                     "launching editor '{}' ({}) for {}",
                     editor_label,

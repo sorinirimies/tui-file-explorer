@@ -545,3 +545,59 @@ fn render_debug_panel_shows_line_count() {
         "debug panel title should show the line count"
     );
 }
+
+#[test]
+fn draw_in_does_not_touch_cells_outside_area() {
+    let mut app = make_app_in(std::env::temp_dir());
+    let backend = ratatui::backend::TestBackend::new(80, 24);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    let area = Rect::new(10, 4, 50, 16);
+    terminal
+        .draw(|frame| {
+            let background = Paragraph::new(vec![Line::from("x".repeat(80)); 24]);
+            frame.render_widget(background, frame.area());
+            draw_in(&mut app, frame, area);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(0, 0)].symbol(), "x");
+    assert_eq!(buffer[(79, 23)].symbol(), "x");
+    assert_ne!(buffer[(area.x, area.y)].symbol(), "x");
+}
+
+#[test]
+fn draw_in_handles_tiny_areas_with_overlays() {
+    let mut app = make_app_in(std::env::temp_dir());
+    app.modal = Some(crate::Modal::Delete {
+        path: std::path::PathBuf::from("tiny.txt"),
+    });
+    app.snackbar = Some(crate::Snackbar::info("tiny"));
+    app.copy_progress = Some(crate::CopyProgress::new("tiny", 1));
+    let backend = ratatui::backend::TestBackend::new(8, 4);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| draw_in(&mut app, frame, Rect::new(2, 1, 3, 2)))
+        .unwrap();
+}
+
+#[test]
+fn draw_in_options_can_hide_action_bar() {
+    let mut app = make_app_in(std::env::temp_dir());
+    let backend = ratatui::backend::TestBackend::new(80, 24);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            draw_in_with_options(
+                &mut app,
+                frame,
+                frame.area(),
+                AppViewOptions {
+                    show_action_bar: false,
+                    ..AppViewOptions::default()
+                },
+            );
+        })
+        .unwrap();
+    let text = buffer_text(&terminal);
+    assert!(!text.contains("Navigate"));
+}

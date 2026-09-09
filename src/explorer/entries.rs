@@ -9,6 +9,7 @@ use super::*;
 ///   query (case-insensitive) are included.
 /// * Entries are sorted according to `sort_mode`; directories are always
 ///   placed before files regardless of the sort mode.
+#[cfg(test)]
 pub(crate) fn load_entries(
     dir: &Path,
     show_hidden: bool,
@@ -16,36 +17,43 @@ pub(crate) fn load_entries(
     sort_mode: SortMode,
     search_query: &str,
 ) -> Vec<FsEntry> {
-    let read = match fs::read_dir(dir) {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
+    try_load_entries(
+        crate::std_filesystem().as_ref(),
+        dir,
+        show_hidden,
+        ext_filter,
+        sort_mode,
+        search_query,
+    )
+    .unwrap_or_default()
+}
+
+pub(crate) fn try_load_entries(
+    filesystem: &dyn crate::FileSystem,
+    dir: &Path,
+    show_hidden: bool,
+    ext_filter: &[String],
+    sort_mode: SortMode,
+    search_query: &str,
+) -> std::io::Result<Vec<FsEntry>> {
+    let read = filesystem.read_dir(dir)?;
 
     let mut dirs: Vec<FsEntry> = Vec::new();
     let mut files: Vec<FsEntry> = Vec::new();
 
-    for entry in read.flatten() {
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
+    for fs_entry in read {
+        let name = &fs_entry.name;
 
         if !show_hidden && name.starts_with('.') {
             continue;
         }
 
-        let is_dir = path.is_dir();
-        let extension = if is_dir {
-            String::new()
-        } else {
-            path.extension()
-                .map(|e| e.to_string_lossy().to_lowercase())
-                .unwrap_or_default()
-        };
+        let is_dir = fs_entry.is_dir;
+        let extension = &fs_entry.extension;
 
         // Extension filter — applied to files only; directories always pass.
         if !is_dir && !ext_filter.is_empty() {
-            let matches = ext_filter
-                .iter()
-                .any(|f| f.eq_ignore_ascii_case(&extension));
+            let matches = ext_filter.iter().any(|f| f.eq_ignore_ascii_case(extension));
             if !matches {
                 continue;
             }
@@ -58,30 +66,6 @@ pub(crate) fn load_entries(
                 continue;
             }
         }
-
-        let size = if is_dir {
-            None
-        } else {
-            entry.metadata().ok().map(|m| m.len())
-        };
-
-        // Shallow (non-recursive) item count for directories — cheap enough
-        // to compute on every listing since it only reads one directory
-        // level, unlike a full recursive byte-size walk.
-        let item_count = if is_dir {
-            fs::read_dir(&path).ok().map(|rd| rd.flatten().count())
-        } else {
-            None
-        };
-
-        let fs_entry = FsEntry {
-            name,
-            path,
-            is_dir,
-            size,
-            item_count,
-            extension,
-        };
 
         if is_dir {
             dirs.push(fs_entry);
@@ -114,7 +98,7 @@ pub(crate) fn load_entries(
 
     // Dirs first, then sorted files.
     dirs.extend(files);
-    dirs
+    Ok(dirs)
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

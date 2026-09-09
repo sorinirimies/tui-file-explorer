@@ -5,10 +5,12 @@
 //!
 //! ## Design goals
 //!
-//! * **Zero application-specific dependencies** — only `ratatui`, `crossterm`,
-//!   and the standard library are required.
-//! * **Narrow public surface** — the public API is intentionally small so the
-//!   crate can evolve without breaking changes.
+//! * **Layered API** — use [`FileExplorer`], [`DualPane`], or the complete
+//!   `App` behind the `full-app` feature.
+//! * **Lightweight core** — with default features disabled, only `ratatui`,
+//!   `crossterm`, and platform filesystem bindings are required.
+//! * **Host control** — semantic commands, custom filesystems, typed outcomes,
+//!   and area-aware rendering integrate with an existing event loop.
 //! * **Extension filtering** — pass a list of allowed extensions so that only
 //!   relevant files are selectable (e.g. `["iso", "img"]`); directories are
 //!   always navigable.
@@ -213,8 +215,8 @@
 //! ### New folder — `n`
 //!
 //! Press `n` to enter mkdir mode.  Type the new folder name, then press
-//! `Enter` to create it (using `fs::create_dir_all`, so nested paths like
-//! `a/b/c` work) or `Esc` to cancel without creating anything.  On success
+//! `Enter` to create it (using the configured [`FileSystem`], so nested paths
+//! like `a/b/c` work) or `Esc` to cancel without creating anything.  On success
 //! [`ExplorerOutcome::MkdirCreated`] is returned and the cursor moves to the
 //! new directory.
 //!
@@ -245,46 +247,69 @@
 //! |-------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
 //! | `types`     | [`FsEntry`], [`ExplorerOutcome`], [`SortMode`]                                                                                                  |
 //! | `palette`   | Palette constants (all `pub`) + [`Theme`] builder + 43 named presets                                                                           |
-//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`], `load_entries`                                                         |
+//! | `explorer`  | [`FileExplorer`], [`FileExplorerBuilder`], [`entry_icon`], [`fmt_size`]                                                                         |
+//! | `filesystem` | [`FileSystem`], [`StdFileSystem`], and virtual backend support                                                                                 |
 //! | `dual_pane` | [`DualPane`], [`DualPaneBuilder`], [`DualPaneActive`], [`DualPaneOutcome`]                                                                      |
-//! | `render`    | [`render`], [`render_themed`], [`render_dual_pane`], [`render_dual_pane_themed`] — pure rendering, no I/O                                       |
-//! | `preview`   | [`PreviewState`], [`PreviewContent`], [`render_preview`] — text, image (halfblock), binary hex dump, directory stats                           |
+//! | `render`    | [`render()`], [`render_themed`], [`render_dual_pane`], [`render_dual_pane_themed`] — pure rendering, no I/O                                     |
+//! | `preview`   | `PreviewState`, `PreviewContent`, `render_preview` — optional text, image, binary hex dump, and directory preview support                    |
 //! | `inline_editor` | [`InlineEditor`], [`EditorAction`], [`render_inline_editor`] — built-in text editor                                                       |
 
 pub mod dual_pane;
 pub mod explorer;
+pub mod filesystem;
 pub mod inline_editor;
 pub mod palette;
+#[cfg(feature = "preview")]
 pub mod preview;
 pub mod render;
 pub mod types;
 
 // ── Full-app modules ──────────────────────────────────────────────────────────
 
+#[cfg(feature = "full-app")]
 pub mod app;
 pub mod fs;
+#[cfg(feature = "persistence")]
 pub mod persistence;
+#[cfg(feature = "full-app")]
 pub mod ui;
 
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
-pub use dual_pane::{DualPane, DualPaneActive, DualPaneBuilder, DualPaneOutcome};
-pub use explorer::{entry_icon, fmt_size, FileExplorer, FileExplorerBuilder, PAGE_SIZE};
+pub use dual_pane::{DualPane, DualPaneActive, DualPaneBuilder, DualPaneCommand, DualPaneOutcome};
+pub use explorer::{
+    entry_icon, fmt_size, ExplorerError, FileExplorer, FileExplorerBuilder, PAGE_SIZE,
+};
+pub use filesystem::{std_filesystem, FileSystem, SharedFileSystem, StdFileSystem, VirtualEntry};
 pub use palette::Theme;
 pub use render::{
     render, render_dual_pane, render_dual_pane_themed, render_themed, FOOTER_HEIGHT, HEADER_HEIGHT,
     MARK_INDICATOR, SCROLLBAR_CHAR,
 };
-pub use types::{ExplorerOutcome, FsEntry, SortMode};
+pub use types::{DiskUsage, ExplorerCommand, ExplorerOutcome, FsEntry, SelectionMode, SortMode};
 
 // ── Full-app re-exports ───────────────────────────────────────────────────────
 
-pub use app::{App, AppOptions, ClipOp, ClipboardItem, CopyProgress, Editor, Modal, Snackbar};
+#[cfg(feature = "full-app")]
+pub use app::{
+    execute_operation, execute_operation_with, execute_operation_with_progress, App, AppBuildError,
+    AppBuilder, AppCommand, AppEvent, AppOptions, AppOutcome, ClipOp, ClipboardItem, CopyProgress,
+    Editor, FileOperation, KeyBinding, KeyBindings, Modal, OperationApplyError, OperationFailure,
+    OperationId, OperationMode, OperationProgress, OperationRequest, OperationResult, PaneOptions,
+    Snackbar,
+};
 pub use fs::{copy_dir_all, resolve_output_path};
 pub use inline_editor::{render_inline_editor, EditorAction, InlineEditor};
-pub use persistence::{load_state, resolve_theme_idx, save_state, AppState};
+#[cfg(feature = "persistence")]
+pub use persistence::{
+    load_state, load_state_from, resolve_theme_idx, save_state, save_state_to, try_load_state_from,
+    AppState,
+};
+#[cfg(feature = "preview")]
 pub use preview::{render_preview, PreviewContent, PreviewState};
+#[cfg(feature = "full-app")]
 pub use ui::{
-    draw, render_action_bar, render_copy_progress, render_editor_panel, render_modal,
-    render_nav_hints, render_options_panel, render_snackbar, render_theme_panel,
+    draw, draw_in, draw_in_with_options, render_action_bar, render_copy_progress,
+    render_editor_panel, render_modal, render_nav_hints, render_options_panel, render_snackbar,
+    render_theme_panel, AppViewOptions,
 };

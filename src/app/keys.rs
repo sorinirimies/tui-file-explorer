@@ -10,7 +10,7 @@ use super::*;
 impl App {
     // ── Event handling ────────────────────────────────────────────────────────
 
-    /// Process a single [`KeyEvent`] and update application state.
+    /// Process a single [`crossterm::event::KeyEvent`] and update application state.
     ///
     /// This is the core key-dispatch method. Library consumers that read
     /// their own events (e.g. via a shared event loop) should call this
@@ -107,6 +107,18 @@ impl App {
                 },
             }
             return Ok(false);
+        }
+
+        // Active text modes consume printable keys before global shortcuts.
+        // This prevents names/search queries containing `p`, `d`, `t`, etc.
+        // from triggering application-level commands.
+        let pane_captures_text = self.active_pane().is_searching()
+            || self.active_pane().is_mkdir_active()
+            || self.active_pane().is_touch_active()
+            || self.active_pane().is_rename_active();
+        if pane_captures_text {
+            let outcome = self.active_pane_mut().handle_key(key);
+            return self.apply_explorer_outcome(outcome);
         }
 
         // ── Debug-log scroll (Ctrl+Up / Ctrl+Down) ───────────────────────────
@@ -301,7 +313,7 @@ impl App {
             KeyCode::Char('e') if key.modifiers.is_empty() => {
                 if self.editor != Editor::None {
                     if let Some(entry) = self.active_pane().current_entry() {
-                        if !entry.path.is_dir() {
+                        if !entry.is_dir {
                             self.open_with_editor = Some(entry.path.clone());
                         }
                         // Silently ignore dirs — no status message per spec.
@@ -318,46 +330,47 @@ impl App {
         // ── Delegate to active pane explorer ─────────────────────────────────
         // Clear any previous non-error status when navigating.
         let outcome = self.active_pane_mut().handle_key(key);
+        self.apply_explorer_outcome(outcome)
+    }
+
+    fn apply_explorer_outcome(&mut self, outcome: ExplorerOutcome) -> io::Result<bool> {
         match outcome {
             ExplorerOutcome::Selected(path) => {
-                if path.is_dir() {
-                    // A directory selection just navigates — exit normally.
+                if self.active_pane().filesystem.is_dir(&path) {
                     self.selected = Some(path);
-                    return Ok(true);
-                }
-                // File selected: need an editor to open it.
-                if self.editor != Editor::None {
+                    Ok(true)
+                } else if self.editor != Editor::None {
                     self.open_with_editor = Some(path);
-                    return Ok(false);
+                    Ok(false)
+                } else {
+                    self.notify_error("No editor set — open Editor picker (Shift + E) to pick one");
+                    Ok(false)
                 }
-                // No editor configured — stay in the TUI and tell the user.
-                self.notify_error("No editor set — open Editor picker (Shift + E) to pick one");
-                return Ok(false);
             }
-            ExplorerOutcome::Dismissed => return Ok(true),
+            ExplorerOutcome::Dismissed => Ok(true),
             ExplorerOutcome::MkdirCreated(path) => {
                 self.reload_and_notify(&path, "Created folder");
                 self.preview_state.invalidate();
+                Ok(false)
             }
             ExplorerOutcome::TouchCreated(path) => {
                 self.reload_and_notify(&path, "Created file");
                 self.preview_state.invalidate();
+                Ok(false)
             }
             ExplorerOutcome::RenameCompleted(path) => {
                 self.reload_and_notify(&path, "Renamed to");
                 self.preview_state.invalidate();
+                Ok(false)
             }
             ExplorerOutcome::Pending => {
-                if self.status_msg.starts_with("Error") || self.status_msg.starts_with("Delete") {
-                    // keep error messages visible
-                } else {
+                if !self.status_msg.starts_with("Error") && !self.status_msg.starts_with("Delete") {
                     self.status_msg.clear();
                 }
+                Ok(false)
             }
-            ExplorerOutcome::Unhandled => {}
+            ExplorerOutcome::Unhandled => Ok(false),
         }
-
-        Ok(false)
     }
 
     /// Dispatch a pre-read terminal [`Event`].

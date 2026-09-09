@@ -52,7 +52,7 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::{ExplorerOutcome, FileExplorer, SortMode};
+use crate::{ExplorerCommand, ExplorerOutcome, FileExplorer, SortMode};
 
 // ── DualPaneActive ────────────────────────────────────────────────────────────
 
@@ -106,6 +106,17 @@ pub enum DualPaneOutcome {
     TouchCreated(PathBuf),
     /// An entry was successfully renamed; contains the new path.
     RenameCompleted(PathBuf),
+}
+
+/// Semantic command accepted by [`DualPane::handle_command`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DualPaneCommand {
+    Explorer(ExplorerCommand),
+    NextPane,
+    PreviousPane,
+    FocusLeft,
+    FocusRight,
+    ToggleSinglePane,
 }
 
 // ── DualPane ─────────────────────────────────────────────────────────────────
@@ -188,6 +199,37 @@ impl DualPane {
     }
 
     // ── Key handling ─────────────────────────────────────────────────────────
+
+    /// Dispatch a semantic command without coupling host code to key bindings.
+    pub fn handle_command(&mut self, command: DualPaneCommand) -> DualPaneOutcome {
+        match command {
+            DualPaneCommand::Explorer(command) => match self.active_mut().handle_command(command) {
+                ExplorerOutcome::Selected(path) => DualPaneOutcome::Selected(path),
+                ExplorerOutcome::Dismissed => DualPaneOutcome::Dismissed,
+                ExplorerOutcome::Pending => DualPaneOutcome::Pending,
+                ExplorerOutcome::Unhandled => DualPaneOutcome::Unhandled,
+                ExplorerOutcome::MkdirCreated(path) => DualPaneOutcome::MkdirCreated(path),
+                ExplorerOutcome::TouchCreated(path) => DualPaneOutcome::TouchCreated(path),
+                ExplorerOutcome::RenameCompleted(path) => DualPaneOutcome::RenameCompleted(path),
+            },
+            DualPaneCommand::NextPane | DualPaneCommand::PreviousPane => {
+                self.active_side = self.active_side.other();
+                DualPaneOutcome::Pending
+            }
+            DualPaneCommand::FocusLeft => {
+                self.focus_left();
+                DualPaneOutcome::Pending
+            }
+            DualPaneCommand::FocusRight => {
+                self.focus_right();
+                DualPaneOutcome::Pending
+            }
+            DualPaneCommand::ToggleSinglePane => {
+                self.toggle_single_pane();
+                DualPaneOutcome::Pending
+            }
+        }
+    }
 
     /// Process a single keyboard event and return a [`DualPaneOutcome`].
     ///
@@ -296,7 +338,10 @@ pub struct DualPaneBuilder {
     right_dir: Option<PathBuf>,
     extensions: Vec<String>,
     show_hidden: bool,
+    show_sizes: bool,
     sort_mode: SortMode,
+    selection_mode: crate::SelectionMode,
+    filesystem: crate::SharedFileSystem,
     single_pane: bool,
     page_size: usize,
 }
@@ -311,7 +356,10 @@ impl DualPaneBuilder {
             right_dir: None,
             extensions: Vec::new(),
             show_hidden: false,
+            show_sizes: true,
             sort_mode: SortMode::default(),
+            selection_mode: crate::SelectionMode::default(),
+            filesystem: crate::std_filesystem(),
             single_pane: false,
             page_size: 10,
         }
@@ -387,6 +435,24 @@ impl DualPaneBuilder {
         self
     }
 
+    /// Set whether file and directory sizes are rendered in both panes.
+    pub fn show_sizes(mut self, show: bool) -> Self {
+        self.show_sizes = show;
+        self
+    }
+
+    /// Set which entry kinds can be confirmed in both panes.
+    pub fn selection_mode(mut self, mode: crate::SelectionMode) -> Self {
+        self.selection_mode = mode;
+        self
+    }
+
+    /// Use a custom filesystem backend for both panes.
+    pub fn filesystem(mut self, filesystem: crate::SharedFileSystem) -> Self {
+        self.filesystem = filesystem;
+        self
+    }
+
     /// Set the initial sort mode for both panes.
     ///
     /// ```no_run
@@ -436,15 +502,21 @@ impl DualPaneBuilder {
         let right_dir = self.right_dir.unwrap_or_else(|| self.left_dir.clone());
 
         let left = FileExplorer::builder(self.left_dir)
+            .filesystem(self.filesystem.clone())
             .extension_filter(self.extensions.clone())
             .show_hidden(self.show_hidden)
+            .show_sizes(self.show_sizes)
+            .selection_mode(self.selection_mode)
             .sort_mode(self.sort_mode)
             .page_size(self.page_size)
             .build();
 
         let right = FileExplorer::builder(right_dir)
+            .filesystem(self.filesystem)
             .extension_filter(self.extensions)
             .show_hidden(self.show_hidden)
+            .show_sizes(self.show_sizes)
+            .selection_mode(self.selection_mode)
             .sort_mode(self.sort_mode)
             .page_size(self.page_size)
             .build();

@@ -2,7 +2,7 @@
 //!
 //! Provides a minimal, modal-free text editor that can open, display, edit, and
 //! save plain-text files directly inside the terminal UI.  Only files up to
-//! [`MAX_EDIT_FILE_SIZE`] bytes are accepted — anything larger is rejected to
+//! `MAX_EDIT_FILE_SIZE` bytes are accepted — anything larger is rejected to
 //! avoid freezing the terminal.
 //!
 //! ## Key bindings
@@ -83,7 +83,7 @@ impl InlineEditor {
     /// Open a file for editing.
     ///
     /// Returns `Err` if the file does not exist, cannot be read, or exceeds
-    /// [`MAX_EDIT_FILE_SIZE`].
+    /// `MAX_EDIT_FILE_SIZE`.
     pub fn open(path: &Path) -> io::Result<Self> {
         let meta = fs::metadata(path)?;
         if meta.len() > MAX_EDIT_FILE_SIZE {

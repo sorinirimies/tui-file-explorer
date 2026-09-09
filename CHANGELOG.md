@@ -1,6 +1,19 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+- Full-app embedding with `draw_in`, configurable `AppViewOptions`, and responsive pane windows.
+- Structured `AppOutcome`/`AppEvent` dispatch, semantic commands, and custom key bindings.
+- Deferred copy/move/delete requests with progress, cancellation, stale-result protection, and host execution helpers.
+- `AppBuilder`, per-pane options, selection modes, checked explorer errors, host-owned state snapshots, and custom filesystem backends.
+- Lightweight `preview`, `persistence`, and `full-app` Cargo feature tiers plus feature-matrix CI.
+- Full embedding example in `examples/embed.rs`.
+
+### Changed
+- `default-features = false` now exposes the lightweight `FileExplorer`/`DualPane` API. Enable `full-app` when embedding `App` without the CLI.
+
 ## [2.0.2] - 2026-09-08
 
 ### Bug Fixes

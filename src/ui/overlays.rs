@@ -49,14 +49,17 @@ pub fn render_debug_panel(frame: &mut Frame, area: Rect, app: &App, theme: &Them
 /// clears whatever content is behind it. Error snackbars are tinted with the
 /// theme's brand (red/warning) colour; info snackbars use the success colour.
 pub fn render_snackbar(frame: &mut Frame, area: Rect, snackbar: &Snackbar, theme: &Theme) {
+    if area.is_empty() {
+        return;
+    }
     // Height: 3 rows (border top + content + border bottom).
     // Width: message length + 4 (2 padding + 2 border chars), capped to terminal width.
     let msg = &snackbar.message;
     let desired_width = (msg.len() as u16)
         .saturating_add(4)
         .min(area.width.saturating_sub(4));
-    let width = desired_width.max(20);
-    let height = 3u16;
+    let width = desired_width.max(20).min(area.width);
+    let height = 3u16.min(area.height);
 
     // Position: horizontally centred, 4 rows above the bottom of `area` so it
     // floats just above the action bar without obscuring it.
@@ -104,8 +107,13 @@ pub fn render_snackbar(frame: &mut Frame, area: Rect, snackbar: &Snackbar, theme
 /// - A `tui-slider` progress bar driven by `progress.fraction()`
 /// - The name of the file currently being processed
 pub fn render_copy_progress(frame: &mut Frame, area: Rect, progress: &CopyProgress, theme: &Theme) {
-    let width = (area.width / 2).max(50).min(area.width.saturating_sub(4));
-    let height = 7u16;
+    if area.is_empty() {
+        return;
+    }
+    let width = (area.width / 2)
+        .max(50)
+        .min(area.width.saturating_sub(4).max(1));
+    let height = 7u16.min(area.height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect::new(x, y, width, height);

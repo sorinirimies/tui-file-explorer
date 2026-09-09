@@ -45,9 +45,12 @@ impl App {
     pub fn add_pane(&mut self, dir: PathBuf) {
         let active = self.active_pane();
         let mut builder = FileExplorer::builder(dir)
+            .filesystem(active.filesystem.clone())
             .show_hidden(active.show_hidden)
             .show_sizes(active.show_sizes)
-            .sort_mode(active.sort_mode);
+            .selection_mode(active.selection_mode)
+            .sort_mode(active.sort_mode)
+            .page_size(active.page_size);
         if !active.extension_filter.is_empty() {
             builder = builder.extension_filter(active.extension_filter.clone());
         }

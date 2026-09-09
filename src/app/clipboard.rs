@@ -141,7 +141,7 @@ impl App {
                 return;
             }
 
-            if dst.exists() {
+            if self.active_pane().filesystem.exists(&dst) {
                 self.modal = Some(Modal::Overwrite {
                     src: src.clone(),
                     dst,
@@ -152,7 +152,24 @@ impl App {
         }
 
         // Multi-item (or single with no conflict): paste all paths.
-        self.do_paste_all(&clip.paths.clone(), &dst_dir, clip.op == ClipOp::Cut);
+        if self.operation_mode == OperationMode::Deferred {
+            let operation = if clip.op == ClipOp::Cut {
+                FileOperation::Move {
+                    sources: clip.paths,
+                    destination: dst_dir,
+                    overwrite: false,
+                }
+            } else {
+                FileOperation::Copy {
+                    sources: clip.paths,
+                    destination: dst_dir,
+                    overwrite: false,
+                }
+            };
+            self.queue_operation(operation);
+        } else {
+            self.do_paste_all(&clip.paths, &dst_dir, clip.op == ClipOp::Cut);
+        }
     }
 
     /// Perform the actual copy/move for a single src→dst pair.
@@ -160,19 +177,39 @@ impl App {
     /// Used by the overwrite-confirmation modal path (single file only).
     /// For multi-file paste use [`App::do_paste_all`].
     pub fn do_paste(&mut self, src: &Path, dst: &Path, is_cut: bool) {
-        let result = if src.is_dir() {
-            copy_dir_all(src, dst)
+        if self.operation_mode == OperationMode::Deferred {
+            let destination = dst.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
+            let operation = if is_cut {
+                FileOperation::Move {
+                    sources: vec![src.to_path_buf()],
+                    destination,
+                    overwrite: true,
+                }
+            } else {
+                FileOperation::Copy {
+                    sources: vec![src.to_path_buf()],
+                    destination,
+                    overwrite: true,
+                }
+            };
+            self.queue_operation(operation);
+            return;
+        }
+
+        let filesystem = self.active_pane().filesystem.clone();
+        let result = if filesystem.is_dir(src) {
+            filesystem.copy_dir(src, dst)
         } else {
-            fs::copy(src, dst).map(|_| ())
+            filesystem.copy_file(src, dst)
         };
 
         match result {
             Ok(()) => {
                 if is_cut {
-                    let _ = if src.is_dir() {
-                        fs::remove_dir_all(src)
+                    let _ = if filesystem.is_dir(src) {
+                        filesystem.remove_dir_all(src)
                     } else {
-                        fs::remove_file(src)
+                        filesystem.remove_file(src)
                     };
                     self.clipboard = None;
                 }
@@ -201,6 +238,25 @@ impl App {
     /// Errors are collected and reported in the status message alongside the
     /// success count.  On a fully successful cut the clipboard is cleared.
     pub fn do_paste_all(&mut self, srcs: &[PathBuf], dst_dir: &Path, is_cut: bool) {
+        if self.operation_mode == OperationMode::Deferred {
+            let operation = if is_cut {
+                FileOperation::Move {
+                    sources: srcs.to_vec(),
+                    destination: dst_dir.to_path_buf(),
+                    overwrite: false,
+                }
+            } else {
+                FileOperation::Copy {
+                    sources: srcs.to_vec(),
+                    destination: dst_dir.to_path_buf(),
+                    overwrite: false,
+                }
+            };
+            self.queue_operation(operation);
+            return;
+        }
+
+        let filesystem = self.active_pane().filesystem.clone();
         let mut errors: Vec<String> = Vec::new();
         let mut succeeded: usize = 0;
         let total = srcs.len();
@@ -240,19 +296,19 @@ impl App {
                 continue;
             }
 
-            let result = if src.is_dir() {
-                copy_dir_all(src, &dst)
+            let result = if filesystem.is_dir(src) {
+                filesystem.copy_dir(src, &dst)
             } else {
-                fs::copy(src, &dst).map(|_| ())
+                filesystem.copy_file(src, &dst)
             };
 
             match result {
                 Ok(()) => {
                     if is_cut {
-                        let _ = if src.is_dir() {
-                            fs::remove_dir_all(src)
+                        let _ = if filesystem.is_dir(src) {
+                            filesystem.remove_dir_all(src)
                         } else {
-                            fs::remove_file(src)
+                            filesystem.remove_file(src)
                         };
                     }
                     succeeded += 1;
@@ -317,14 +373,22 @@ impl App {
 
     /// Execute a confirmed multi-deletion and reload both panes.
     pub fn confirm_delete_many(&mut self, paths: &[PathBuf]) {
+        if self.operation_mode == OperationMode::Deferred {
+            self.queue_operation(FileOperation::Delete {
+                paths: paths.to_vec(),
+            });
+            return;
+        }
+
+        let filesystem = self.active_pane().filesystem.clone();
         let mut errors: Vec<String> = Vec::new();
         let mut deleted: usize = 0;
 
         for path in paths {
-            let result = if path.is_dir() {
-                std::fs::remove_dir_all(path)
+            let result = if filesystem.is_dir(path) {
+                filesystem.remove_dir_all(path)
             } else {
-                std::fs::remove_file(path)
+                filesystem.remove_file(path)
             };
             match result {
                 Ok(()) => deleted += 1,
@@ -354,15 +418,23 @@ impl App {
 
     /// Execute a confirmed deletion and reload both panes.
     pub fn confirm_delete(&mut self, path: &Path) {
+        if self.operation_mode == OperationMode::Deferred {
+            self.queue_operation(FileOperation::Delete {
+                paths: vec![path.to_path_buf()],
+            });
+            return;
+        }
+
         let name = path
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
-        let result = if path.is_dir() {
-            fs::remove_dir_all(path)
+        let filesystem = self.active_pane().filesystem.clone();
+        let result = if filesystem.is_dir(path) {
+            filesystem.remove_dir_all(path)
         } else {
-            fs::remove_file(path)
+            filesystem.remove_file(path)
         };
         match result {
             Ok(()) => {

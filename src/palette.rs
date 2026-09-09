@@ -4,7 +4,7 @@
 //! values when building complementary widgets.
 //!
 //! For full visual customisation pass a [`Theme`] to [`crate::render_themed`]
-//! instead of the zero-argument [`crate::render`].
+//! instead of the zero-argument [`crate::render()`].
 //!
 //! ## Named presets
 //!

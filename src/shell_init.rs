@@ -615,7 +615,7 @@ pub enum InitOutcome {
 /// 1. Resolve the shell — use `shell` when `Some`, otherwise call
 ///    [`detect_shell`].  If neither yields a known shell, print the bash/zsh
 ///    snippet to stdout with a hint and return [`InitOutcome::UnknownShell`].
-/// 2. Resolve the rc-file path via [`rc_path`].
+/// 2. Resolve the shell rc-file path.
 /// 3. If the snippet is already present ([`is_installed`]), return
 ///    [`InitOutcome::AlreadyInstalled`] without writing anything.
 /// 4. Try to [`install`].  On success return [`InitOutcome::Installed`].

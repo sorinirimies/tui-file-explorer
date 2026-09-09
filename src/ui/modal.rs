@@ -7,6 +7,9 @@ use super::*;
 /// The modal clears whatever is behind it, draws a double-border box with a
 /// title, a body message, and a key-hint footer.
 pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme) {
+    if area.is_empty() {
+        return;
+    }
     // ── MultiDeleteConfirm — taller modal with a scrollable name list ─────────
     if let Modal::MultiDelete { paths } = modal {
         let count = paths.len();
@@ -23,11 +26,11 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
             .unwrap_or(0);
         let w = (max_name_len as u16 + 8)
             .max(44)
-            .min(area.width.saturating_sub(4));
+            .min(area.width.saturating_sub(4).max(1));
         // Height: header line + one row per shown entry + optional overflow line
         //         + blank gap + hint line + 2 border rows.
         let list_rows = shown.len() + if remainder > 0 { 1 } else { 0 };
-        let h = (list_rows as u16 + 5).min(area.height.saturating_sub(2));
+        let h = (list_rows as u16 + 5).min(area.height.saturating_sub(2).max(1));
         let x = area.x + (area.width.saturating_sub(w)) / 2;
         let y = area.y + (area.height.saturating_sub(h)) / 2;
         let modal_area = Rect::new(x, y, w, h);
@@ -128,8 +131,10 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
         Modal::MultiDelete { .. } => unreachable!(),
     };
 
-    let w = (body.len() as u16 + 6).max(40).min(area.width - 4);
-    let h = 7u16;
+    let w = (body.len() as u16 + 6)
+        .max(40)
+        .min(area.width.saturating_sub(4).max(1));
+    let h = 7u16.min(area.height);
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let modal_area = Rect::new(x, y, w, h);

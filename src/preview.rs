@@ -86,7 +86,7 @@ pub struct TextPreview {
     /// Individual lines (no trailing newline).
     pub lines: Vec<String>,
     /// Total number of lines in the file (may exceed `lines.len()` when
-    /// truncated by [`MAX_PREVIEW_LINES`]).
+    /// truncated by `MAX_PREVIEW_LINES`).
     pub total_lines: usize,
 }
 

@@ -2,6 +2,45 @@
 
 use std::path::PathBuf;
 
+// ── ExplorerCommand ───────────────────────────────────────────────────────────
+
+/// Semantic command accepted by [`crate::FileExplorer::handle_command`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ExplorerCommand {
+    MoveUp,
+    MoveDown,
+    PageUp,
+    PageDown,
+    Top,
+    Bottom,
+    Ascend,
+    Navigate,
+    Confirm,
+    ToggleHidden,
+    ToggleSizes,
+    Search,
+    CycleSort,
+    ToggleMark,
+    NewDirectory,
+    NewFile,
+    Rename,
+    Dismiss,
+}
+
+// ── SelectionMode ─────────────────────────────────────────────────────────────
+
+/// Which entry kinds can be confirmed by `Enter`/`l`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectionMode {
+    /// Files are selected; directories are entered.
+    #[default]
+    Files,
+    /// Directories are selected; use Right Arrow to navigate into them.
+    Directories,
+    /// Files and directories are selected; use Right Arrow for navigation.
+    Any,
+}
+
 // ── SortMode ──────────────────────────────────────────────────────────────────
 
 /// Controls the order in which directory entries are listed.

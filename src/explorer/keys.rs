@@ -1,6 +1,31 @@
 use super::*;
 
 impl FileExplorer {
+    /// Dispatch a semantic command without coupling host code to key bindings.
+    pub fn handle_command(&mut self, command: ExplorerCommand) -> ExplorerOutcome {
+        let code = match command {
+            ExplorerCommand::MoveUp => KeyCode::Up,
+            ExplorerCommand::MoveDown => KeyCode::Down,
+            ExplorerCommand::PageUp => KeyCode::PageUp,
+            ExplorerCommand::PageDown => KeyCode::PageDown,
+            ExplorerCommand::Top => KeyCode::Home,
+            ExplorerCommand::Bottom => KeyCode::End,
+            ExplorerCommand::Ascend => KeyCode::Left,
+            ExplorerCommand::Navigate => KeyCode::Right,
+            ExplorerCommand::Confirm => KeyCode::Enter,
+            ExplorerCommand::ToggleHidden => KeyCode::Char('.'),
+            ExplorerCommand::ToggleSizes => KeyCode::Char('z'),
+            ExplorerCommand::Search => KeyCode::Char('/'),
+            ExplorerCommand::CycleSort => KeyCode::Char('s'),
+            ExplorerCommand::ToggleMark => KeyCode::Char(' '),
+            ExplorerCommand::NewDirectory => KeyCode::Char('n'),
+            ExplorerCommand::NewFile => KeyCode::Char('N'),
+            ExplorerCommand::Rename => KeyCode::Char('r'),
+            ExplorerCommand::Dismiss => KeyCode::Esc,
+        };
+        self.handle_key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
         // Only react to key-press events.  On Windows (and terminals that
         // negotiate the kitty keyboard protocol) crossterm delivers both
@@ -27,7 +52,7 @@ impl FileExplorer {
                 None => return ExplorerOutcome::Pending,
             };
             let dst = self.current_dir.join(&new_name);
-            match std::fs::rename(&src, &dst) {
+            match self.filesystem.rename(&src, &dst) {
                 Ok(()) => {
                     self.reload();
                     // Move cursor to the renamed entry.
@@ -56,19 +81,7 @@ impl FileExplorer {
             let new_file = self.current_dir.join(&name);
             // Create parent dirs if the name contains path separators,
             // then create (or truncate-to-zero) the file itself.
-            let create_result = (|| -> std::io::Result<()> {
-                if let Some(parent) = new_file.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                // OpenOptions::create(true) + write(true) creates the
-                // file if absent and leaves an existing one untouched.
-                std::fs::OpenOptions::new()
-                    .write(true)
-                    .create(true)
-                    .truncate(false)
-                    .open(&new_file)?;
-                Ok(())
-            })();
+            let create_result = self.filesystem.create_file(&new_file);
             match create_result {
                 Ok(()) => {
                     self.reload();
@@ -96,7 +109,7 @@ impl FileExplorer {
                 return ExplorerOutcome::Pending;
             }
             let new_dir = self.current_dir.join(&name);
-            match std::fs::create_dir_all(&new_dir) {
+            match self.filesystem.create_dir_all(&new_dir) {
                 Ok(()) => {
                     self.reload();
                     // Move cursor to the newly created directory.
@@ -367,12 +380,21 @@ impl FileExplorer {
         };
 
         if entry.is_dir {
+            if matches!(
+                self.selection_mode,
+                SelectionMode::Directories | SelectionMode::Any
+            ) {
+                return ExplorerOutcome::Selected(entry.path.clone());
+            }
             let path = entry.path.clone();
             // Clear search and marks when descending into a subdirectory.
             self.search_active = false;
             self.search_query.clear();
             self.marked.clear();
             self.navigate_to(path);
+            ExplorerOutcome::Pending
+        } else if self.selection_mode == SelectionMode::Directories {
+            self.status = "Only directories can be selected.".into();
             ExplorerOutcome::Pending
         } else {
             // All visible files already passed the extension filter in load_entries,

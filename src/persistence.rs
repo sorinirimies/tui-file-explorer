@@ -187,13 +187,15 @@ fn sort_mode_from_key(s: &str) -> Option<SortMode> {
 ///
 /// Returns a default empty state if the file does not exist or cannot be
 /// parsed. Directory fields are validated: stale paths are set to `None`.
-pub(crate) fn load_state_from(path: &Path) -> AppState {
-    let Ok(data) = fs::read_to_string(path) else {
-        return AppState::default();
-    };
-    let Ok(mut state) = serde_json::from_str::<AppState>(&data) else {
-        return AppState::default();
-    };
+pub fn load_state_from(path: &Path) -> AppState {
+    try_load_state_from(path).unwrap_or_default()
+}
+
+/// Load state from a JSON file while preserving I/O and parse failures.
+pub fn try_load_state_from(path: &Path) -> io::Result<AppState> {
+    let data = fs::read_to_string(path)?;
+    let mut state = serde_json::from_str::<AppState>(&data)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
     // Validate that directory paths still exist on disk.
     if let Some(ref p) = state.last_dir {
@@ -212,14 +214,14 @@ pub(crate) fn load_state_from(path: &Path) -> AppState {
         }
     }
 
-    state
+    Ok(state)
 }
 
 /// Save state to a JSON file at `path`.
 ///
 /// Uses atomic write (write to `.tmp`, then rename) to avoid corruption.
 /// Creates parent directories if they don't exist.
-pub(crate) fn save_state_to(path: &Path, state: &AppState) -> io::Result<()> {
+pub fn save_state_to(path: &Path, state: &AppState) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }

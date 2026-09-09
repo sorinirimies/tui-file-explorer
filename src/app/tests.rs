@@ -2165,6 +2165,16 @@ fn new_theme_idx_from_options_is_respected() {
     assert_eq!(app.theme_idx, 2);
 }
 
+#[test]
+fn new_clamps_invalid_theme_index() {
+    let app = App::new(AppOptions {
+        theme_idx: usize::MAX,
+        ..AppOptions::default()
+    });
+    assert_eq!(app.theme_idx, app.themes.len() - 1);
+    let _ = app.theme();
+}
+
 // ── next_theme / prev_theme index bounds ──────────────────────────────────
 
 #[test]

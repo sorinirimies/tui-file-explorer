@@ -638,6 +638,10 @@ fn malformed_json_returns_default() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "this is not valid json {{{").unwrap();
     assert_eq!(load_state_from(&path), AppState::default());
+    assert_eq!(
+        try_load_state_from(&path).unwrap_err().kind(),
+        io::ErrorKind::InvalidData
+    );
 }
 
 // ── Atomic write leaves no .tmp file ──────────────────────────────────────────
