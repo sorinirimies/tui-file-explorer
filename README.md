@@ -7,12 +7,18 @@
 [![CI](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/ci.yml)
 [![Downloads](https://img.shields.io/crates/d/tui-file-explorer)](https://crates.io/crates/tui-file-explorer)
 
-A keyboard-driven, two-pane file manager widget for [Ratatui](https://ratatui.rs).  
+A keyboard-driven, multi-pane file manager widget for [Ratatui](https://ratatui.rs).  
 Use it as an **embeddable library widget** or run it as the **standalone `tfe` CLI tool**.
 
 ---
 
 ## Preview
+
+### Dynamic multi-pane layout
+<img src="examples/vhs/generated/multi_pane.gif" alt="Dynamic multi-pane demo showing pane creation, focus cycling, and pane closing" width="800"/>
+
+### Multi-pane file operations
+<img src="examples/vhs/generated/multi_pane_file_ops.gif" alt="Multi-pane file operations demo copying marked files across three panes" width="800"/>
 
 ### Preview & editor
 <img src="examples/vhs/generated/preview.gif" alt="Preview demo" width="600"/>
@@ -894,6 +900,8 @@ Demonstrates the image preview feature:
 | Sort modes | `cargo run --example basic` → `s` | Three modes, combined with search |
 | **Dual-pane (library)** | `cargo run --example dual_pane` | `DualPane` widget, Tab focus, `w` toggle, status bar |
 | **Dual-pane (right dir)** | `cargo run --example dual_pane -- /tmp` | Independent left/right starting directories |
+| **Dynamic multi-pane** | `vhs examples/vhs/multi_pane.tape` | Open/close panes, forward/backward focus cycling, independent navigation |
+| **Multi-pane file operations** | `vhs examples/vhs/multi_pane_file_ops.tape` | Copy marked files from one pane into multiple destinations |
 | File operations | `cargo run --bin tfe` | Copy, cut, paste, delete, overwrite modal |
 | Theme switcher | `cargo run --example theme_switcher` | 43 live themes, sidebar catalogue |
 | Pane toggle | `cargo run --bin tfe` | Tab focus-switch, `w` single/two-pane, `T` theme panel |
@@ -1223,6 +1231,8 @@ vhs examples/vhs/file_ops.tape
 vhs examples/vhs/theme_switcher.tape
 vhs examples/vhs/pane_toggle.tape
 vhs examples/vhs/dual_pane.tape
+vhs examples/vhs/multi_pane.tape
+vhs examples/vhs/multi_pane_file_ops.tape
 vhs examples/vhs/options.tape
 vhs examples/vhs/editor_picker.tape
 vhs examples/vhs/create_entries.tape
@@ -1241,6 +1251,8 @@ GIFs are written to `examples/vhs/generated/` and tracked with **Git LFS**.
 | `theme_switcher.tape` | Live cycling of all 43 themes with sidebar | `cargo run --example theme_switcher` |
 | `pane_toggle.tape` | Tab focus-switch, `w` single/dual, `T` theme panel | `cargo run --bin tfe` |
 | `dual_pane.tape` | `DualPane` library widget — Tab, `w`, status bar | `cargo run --example dual_pane` |
+| `multi_pane.tape` | Dynamic 3/4-pane layout — Ctrl+T/Ctrl+W, Tab/Shift+Tab, `w` | `target/debug/tfe --no-cd /tmp/tfe-multi-pane-demo` |
+| `multi_pane_file_ops.tape` | Mark in one pane and copy into multiple destination panes | `target/debug/tfe --no-cd /tmp/tfe-multi-pane-ops` |
 | `options.tape` | Options panel, Shift+E editor picker, toggles, error snackbar | `cargo run --bin tfe` |
 | `editor_picker.tape` | Editor picker panel — Terminal Editors and IDEs & GUI Editors | `cargo run --example editor_picker` |
 | `create_entries.tape` | New folder (`n`), new file (`N`), rename (`r`), nested paths | `cargo run --example create_entries` |

@@ -229,6 +229,8 @@ vhs-all:
     vhs examples/vhs/theme_switcher.tape
     vhs examples/vhs/pane_toggle.tape
     vhs examples/vhs/dual_pane.tape
+    vhs examples/vhs/multi_pane.tape
+    vhs examples/vhs/multi_pane_file_ops.tape
     vhs examples/vhs/options.tape
     vhs examples/vhs/editor_picker.tape
     vhs examples/vhs/create_entries.tape
