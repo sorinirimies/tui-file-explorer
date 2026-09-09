@@ -7,11 +7,9 @@
 [![Downloads](https://img.shields.io/crates/d/tui-file-explorer)](https://crates.io/crates/tui-file-explorer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Use it as an embeddable widget or install the standalone `tfe` CLI.
+Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Install the standalone `tfe` CLI, or embed `FileExplorer`, `DualPane`, or the complete `App` in an existing Ratatui event loop. See [Library quick start](#library-quick-start).
 
 ## Preview
-
-All recordings use the same 1600×900 canvas and render at 800×450 below.
 
 ### Dynamic multi-pane layout
 
@@ -102,6 +100,8 @@ tfe
 ```
 
 ## Library quick start
+
+`tui-file-explorer` is designed for library use as well as the standalone CLI. Choose the state/rendering layer that fits your host application, create it once, render it inside `Terminal::draw`, and forward keyboard events from your existing event loop.
 
 | API | Use when | Provides |
 |---|---|---|
