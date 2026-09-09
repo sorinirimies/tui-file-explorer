@@ -19,9 +19,6 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 
 <img src="examples/vhs/generated/multi_pane_file_ops.gif" alt="Multi-pane file operations demo copying marked files across three panes" width="800" height="450"/>
 
-<details>
-<summary><strong>More demos</strong></summary>
-
 ### Preview and inline editor
 <img src="examples/vhs/generated/preview.gif" alt="Preview and inline editor demo" width="800" height="450"/>
 
@@ -61,8 +58,6 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 ### Create entries
 <img src="examples/vhs/generated/create_entries.gif" alt="Create entries demo" width="800" height="450"/>
 
-</details>
-
 ## Features
 
 - **Dynamic multi-pane layout** — `Tab`/`Shift+Tab` cycle focus, `Ctrl+T` opens a pane, `Ctrl+W` closes one, and `w` toggles focused single-pane mode.
@@ -101,7 +96,7 @@ tfe
 
 ## Library quick start
 
-`tui-file-explorer` is designed for library use as well as the standalone CLI. Choose the state/rendering layer that fits your host application, create it once, render it inside `Terminal::draw`, and forward keyboard events from your existing event loop.
+`tui-file-explorer` is designed for library use as well as the standalone CLI; no separate library crate is required. Choose the state/rendering layer that fits your host application, create it once, render it inside `Terminal::draw`, and forward keyboard events from your existing event loop. Use `default-features = false` when the `tfe` binary and `clap` are not needed.
 
 | API | Use when | Provides |
 |---|---|---|
