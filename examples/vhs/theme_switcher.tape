@@ -4,8 +4,8 @@ Output examples/vhs/generated/theme_switcher.gif
 
 Set Shell "bash"
 Set FontSize 14
-Set Width 1400
-Set Height 750
+Set Width 1600
+Set Height 900
 Set PlaybackSpeed 1.5
 Set Theme "Catppuccin Mocha"
 

@@ -234,6 +234,7 @@ vhs-all:
     vhs examples/vhs/options.tape
     vhs examples/vhs/editor_picker.tape
     vhs examples/vhs/create_entries.tape
+    vhs examples/vhs/preview.tape
     vhs examples/vhs/picture_preview.tape
     @echo "✅ All GIFs generated in examples/vhs/generated/"
 

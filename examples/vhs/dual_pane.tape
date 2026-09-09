@@ -6,7 +6,7 @@ Output examples/vhs/generated/dual_pane.gif
 
 Set Shell "bash"
 Set FontSize 14
-Set Width 1400
+Set Width 1600
 Set Height 900
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"

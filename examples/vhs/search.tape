@@ -4,8 +4,8 @@ Output examples/vhs/generated/search.gif
 
 Set Shell "bash"
 Set FontSize 14
-Set Width 1200
-Set Height 700
+Set Width 1600
+Set Height 900
 Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
