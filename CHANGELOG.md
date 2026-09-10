@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## [2.1.0] - 2026-09-10
 
+### Bug Fixes
+- Correct justfile remote names (gitea-microlab/starscream -> gitea/gitea_starscream)
+
 ### Documentation
 - Add multi-pane demo recordings
 - Streamline README and normalize demo sizes
@@ -17,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Update dependencies to latest releases
 - Release v2.0.2
 - Nightly cargo update 2026-09-10
+- Bump version to 2.1.0
 
 ### Merge
 - Reconcile Gitea release automation
@@ -69,12 +73,18 @@ All notable changes to this project will be documented in this file.
 ## [1.1.9] - 2026-07-10
 
 ### Bug Fixes
-- Skip from_query_stdio on Apple Terminal and non-tty stdout
 - Restore lost demo GIF LFS objects and regenerate picture_preview
 
 ### Miscellaneous
-- Bump version to 1.1.4
 - Bump version to 1.1.9
+
+## [1.1.4] - 2026-06-26
+
+### Bug Fixes
+- Skip from_query_stdio on Apple Terminal and non-tty stdout
+
+### Miscellaneous
+- Bump version to 1.1.4
 
 ## [1.1.3] - 2026-05-05
 
