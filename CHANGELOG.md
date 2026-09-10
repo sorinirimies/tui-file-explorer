@@ -3,6 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## [2.1.0] - 2026-09-10
 
+### Bug Fixes
+- Correct justfile remote names (gitea-microlab/starscream -> gitea/gitea_starscream)
+
 ### Documentation
 - Add multi-pane demo recordings
 - Streamline README and normalize demo sizes
@@ -17,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - Update dependencies to latest releases
 - Release v2.0.2
 - Nightly cargo update 2026-09-10
+- Bump version to 2.1.0
 
 ### Merge
 - Reconcile Gitea release automation
@@ -186,12 +190,8 @@ All notable changes to this project will be documented in this file.
 - Tfe <file> opens directly in configured editor
 
 ### Miscellaneous
-- Bump version to 0.9.0
-
-## [0.8.8] - 2026-03-24
-
-### Miscellaneous
 - Bump version to 0.8.8, add weekly deps-update CI workflows
+- Bump version to 0.9.0
 
 ## [0.8.7] - 2026-03-24
 
@@ -426,12 +426,8 @@ All notable changes to this project will be documented in this file.
 - Editor launch via e key (v0.3.7)
 
 ### Miscellaneous
-- Bump version to 0.3.8
-
-## [0.3.6] - 2026-03-05
-
-### Miscellaneous
 - Cleanup dead code, add 310 new tests, bump to v0.3.6
+- Bump version to 0.3.8
 
 ## [0.3.5] - 2026-03-05
 
