@@ -19,14 +19,22 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 
 <img src="examples/vhs/generated/multi_pane_file_ops.gif" alt="Multi-pane file operations demo copying marked files across three panes" width="800" height="450"/>
 
+### Basic navigation
+
+<img src="examples/vhs/generated/basic.gif" alt="Basic navigation demo" width="800" height="450"/>
+
+### Theme switcher
+
+<img src="examples/vhs/generated/theme_switcher.gif" alt="Theme switcher demo" width="800" height="450"/>
+
+<details>
+<summary><strong>More previews</strong></summary>
+
 ### Preview and inline editor
 <img src="examples/vhs/generated/preview.gif" alt="Preview and inline editor demo" width="800" height="450"/>
 
 ### Picture preview
 <img src="examples/vhs/generated/picture_preview.gif" alt="Picture preview demo" width="800" height="450"/>
-
-### Basic navigation
-<img src="examples/vhs/generated/basic.gif" alt="Basic navigation demo" width="800" height="450"/>
 
 ### Search
 <img src="examples/vhs/generated/search.gif" alt="Incremental search demo" width="800" height="450"/>
@@ -39,9 +47,6 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 
 ### File operations
 <img src="examples/vhs/generated/file_ops.gif" alt="File operations demo" width="800" height="450"/>
-
-### Theme switcher
-<img src="examples/vhs/generated/theme_switcher.gif" alt="Theme switcher demo" width="800" height="450"/>
 
 ### Pane toggle
 <img src="examples/vhs/generated/pane_toggle.gif" alt="Pane toggle demo" width="800" height="450"/>
@@ -57,6 +62,8 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 
 ### Create entries
 <img src="examples/vhs/generated/create_entries.gif" alt="Create entries demo" width="800" height="450"/>
+
+</details>
 
 ## Features
 
