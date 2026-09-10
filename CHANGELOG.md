@@ -1,18 +1,25 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [2.1.0] - 2026-09-10
 
-### Added
-- Full-app embedding with `draw_in`, configurable `AppViewOptions`, and responsive pane windows.
-- Structured `AppOutcome`/`AppEvent` dispatch, semantic commands, and custom key bindings.
-- Deferred copy/move/delete requests with progress, cancellation, stale-result protection, and host execution helpers.
-- `AppBuilder`, per-pane options, selection modes, checked explorer errors, host-owned state snapshots, and custom filesystem backends.
-- Lightweight `preview`, `persistence`, and `full-app` Cargo feature tiers plus feature-matrix CI.
-- Full embedding example in `examples/embed.rs`.
+### Documentation
+- Add multi-pane demo recordings
+- Streamline README and normalize demo sizes
+- Clarify library embedding
+- Show all previews and clarify library crate
+- Prioritize key previews
 
-### Changed
-- `default-features = false` now exposes the lightweight `FileExplorer`/`DualPane` API. Enable `full-app` when embedding `App` without the CLI.
+### Features
+- Expand embeddable library API
+
+### Miscellaneous
+- Update dependencies to latest releases
+- Release v2.0.2
+- Nightly cargo update 2026-09-10
+
+### Merge
+- Reconcile Gitea release automation
 
 ## [2.0.2] - 2026-09-08
 
@@ -21,6 +28,7 @@ All notable changes to this project will be documented in this file.
 
 ### Miscellaneous
 - Nightly cargo update 2026-08-20
+- Bump version to 2.0.2
 
 ### Refactor
 - Split explorer.rs and ui.rs into submodules
@@ -61,18 +69,12 @@ All notable changes to this project will be documented in this file.
 ## [1.1.9] - 2026-07-10
 
 ### Bug Fixes
+- Skip from_query_stdio on Apple Terminal and non-tty stdout
 - Restore lost demo GIF LFS objects and regenerate picture_preview
 
 ### Miscellaneous
-- Bump version to 1.1.9
-
-## [1.1.4] - 2026-06-26
-
-### Bug Fixes
-- Skip from_query_stdio on Apple Terminal and non-tty stdout
-
-### Miscellaneous
 - Bump version to 1.1.4
+- Bump version to 1.1.9
 
 ## [1.1.3] - 2026-05-05
 
@@ -116,14 +118,26 @@ All notable changes to this project will be documented in this file.
 
 ## [1.0.4] - 2026-04-21
 
+### Miscellaneous
+- Bump version to 1.0.4
+
+## [1.0.2] - 2026-04-17
+
 ### Bug Fixes
 - Use sort_by_key to satisfy clippy 1.95 unnecessary_sort_by lint
 
 ### Miscellaneous
-- Bump version to 1.0.0
-- Bump version to 1.0.1
 - Bump version to 1.0.2
-- Bump version to 1.0.4
+
+## [1.0.1] - 2026-04-17
+
+### Miscellaneous
+- Bump version to 1.0.1
+
+## [1.0.0] - 2026-04-17
+
+### Miscellaneous
+- Bump version to 1.0.0
 
 ## [0.9.8] - 2026-03-31
 
