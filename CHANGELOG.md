@@ -6,7 +6,10 @@ All notable changes to this project will be documented in this file.
 ### Features
 - Add adaptive horizontal/vertical action-hint layouts for narrow embedded views
 
-## [2.0.3] - 2026-09-10
+## [2.1.0] - 2026-09-10
+
+### Bug Fixes
+- Correct justfile remote names (gitea-microlab/starscream -> gitea/gitea_starscream)
 
 ### Documentation
 - Add multi-pane demo recordings
@@ -22,6 +25,7 @@ All notable changes to this project will be documented in this file.
 - Update dependencies to latest releases
 - Release v2.0.2
 - Nightly cargo update 2026-09-10
+- Bump version to 2.1.0
 
 ### Merge
 - Reconcile Gitea release automation
@@ -129,14 +133,26 @@ All notable changes to this project will be documented in this file.
 
 ## [1.0.4] - 2026-04-21
 
+### Miscellaneous
+- Bump version to 1.0.4
+
+## [1.0.2] - 2026-04-17
+
 ### Bug Fixes
 - Use sort_by_key to satisfy clippy 1.95 unnecessary_sort_by lint
 
 ### Miscellaneous
-- Bump version to 1.0.0
-- Bump version to 1.0.1
 - Bump version to 1.0.2
-- Bump version to 1.0.4
+
+## [1.0.1] - 2026-04-17
+
+### Miscellaneous
+- Bump version to 1.0.1
+
+## [1.0.0] - 2026-04-17
+
+### Miscellaneous
+- Bump version to 1.0.0
 
 ## [0.9.8] - 2026-03-31
 
