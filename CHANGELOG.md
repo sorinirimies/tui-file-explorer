@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 ### Miscellaneous
 - Release v2.1.0
 - Release v2.1.0
+- Bump version to 2.2.0
 
 ### Merge
 - Reconcile v2.1.0 release
