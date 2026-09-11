@@ -163,7 +163,7 @@ match outcome {
 }
 ```
 
-`AppViewOptions` controls action/debug bars, panel widths, preview allocation, and minimum pane width. `AppCommand` and `KeyBindings` support command palettes and custom shortcuts without replacing the state machine. See the complete [`embed` example](examples/embed.rs).
+`AppViewOptions` controls action/debug bars, panel widths, preview allocation, minimum pane width, and `HintLayout`. Its default `Auto` mode stacks action hints vertically below 90 columns. `AppCommand` and `KeyBindings` support command palettes and custom shortcuts without replacing the state machine. See the complete [`embed` example](examples/embed.rs).
 
 ### Single-pane widget
 
@@ -350,7 +350,7 @@ Main re-exports:
 |---|---|
 | Single pane | `FileExplorer`, `FileExplorerBuilder`, `ExplorerCommand`, `ExplorerOutcome`, `SelectionMode`, `FsEntry`, `SortMode`, `render`, `render_themed` |
 | Dual pane | `DualPane`, `DualPaneBuilder`, `DualPaneActive`, `DualPaneCommand`, `DualPaneOutcome`, `render_dual_pane`, `render_dual_pane_themed` |
-| Full app | `App`, `AppBuilder`, `PaneOptions`, `AppOutcome`, `AppEvent`, `AppCommand`, `KeyBindings`, `draw`, `draw_in`, `AppViewOptions` |
+| Full app | `App`, `AppBuilder`, `PaneOptions`, `AppOutcome`, `AppEvent`, `AppCommand`, `KeyBindings`, `draw`, `draw_in`, `AppViewOptions`, `HintLayout` |
 | Operations | `FileOperation`, `OperationRequest`, `OperationProgress`, `OperationResult`, `OperationMode` |
 | Filesystems | `FileSystem`, `StdFileSystem`, `SharedFileSystem`, `ExplorerError` |
 | Preview/editor | `PreviewState`, `PreviewContent`, `InlineEditor`, `EditorAction`, `render_preview`, `render_inline_editor` |

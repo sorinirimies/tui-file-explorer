@@ -311,5 +311,5 @@ pub use preview::{render_preview, PreviewContent, PreviewState};
 pub use ui::{
     draw, draw_in, draw_in_with_options, render_action_bar, render_copy_progress,
     render_editor_panel, render_modal, render_nav_hints, render_options_panel, render_snackbar,
-    render_theme_panel, AppViewOptions,
+    render_theme_panel, AppViewOptions, HintLayout,
 };

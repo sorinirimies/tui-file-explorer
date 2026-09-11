@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Features
+- Add adaptive horizontal/vertical action-hint layouts for narrow embedded views
+
 ## [2.0.3] - 2026-09-10
 
 ### Documentation

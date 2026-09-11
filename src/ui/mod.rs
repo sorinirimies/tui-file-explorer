@@ -44,6 +44,40 @@ fn dim_span<'a>(s: &'a str, theme: &Theme) -> Span<'a> {
 
 // ── Top-level draw ────────────────────────────────────────────────────────────
 
+/// Arrangement of paired action-bar hint cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HintLayout {
+    /// Stack hint cells when the available area is narrower than 90 columns.
+    #[default]
+    Auto,
+    /// `Navigate | File Ops` and `Global | Status` remain side by side.
+    Horizontal,
+    /// Stack each pair vertically for narrow embedded layouts.
+    Vertical,
+}
+
+impl HintLayout {
+    pub fn resolve(self, width: u16) -> Self {
+        match self {
+            Self::Auto if width < 90 => Self::Vertical,
+            Self::Auto => Self::Horizontal,
+            layout => layout,
+        }
+    }
+
+    pub fn action_bar_rows(self, width: u16) -> u16 {
+        match self.resolve(width) {
+            Self::Horizontal => 6,
+            Self::Vertical => 12,
+            Self::Auto => unreachable!(),
+        }
+    }
+
+    pub fn row_height(self, width: u16) -> u16 {
+        self.action_bar_rows(width) / 2
+    }
+}
+
 /// Layout controls for embedding the full application UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppViewOptions {
@@ -60,6 +94,8 @@ pub struct AppViewOptions {
     /// Minimum target width per visible pane. Extra panes remain open and the
     /// visible window follows the active pane.
     pub minimum_pane_width: u16,
+    /// Arrangement of action-bar hint cells.
+    pub hint_layout: HintLayout,
 }
 
 impl Default for AppViewOptions {
@@ -71,6 +107,7 @@ impl Default for AppViewOptions {
             settings_panel_width: 42,
             panes_with_preview_percent: 50,
             minimum_pane_width: 24,
+            hint_layout: HintLayout::Auto,
         }
     }
 }
@@ -122,12 +159,15 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
     };
 
     let show_debug = app.verbose && options.show_debug_panel;
+    let hint_layout = options.hint_layout.resolve(full.width);
+    let action_bar_height = hint_layout.action_bar_rows(full.width);
+    let action_row_height = hint_layout.row_height(full.width);
     let mut vertical_constraints = vec![Constraint::Min(0)];
     if show_debug {
         vertical_constraints.push(Constraint::Length(debug_height));
     }
     if options.show_action_bar {
-        vertical_constraints.push(Constraint::Length(6));
+        vertical_constraints.push(Constraint::Length(action_bar_height));
     }
     let v_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -145,7 +185,10 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
     let action_rows = action_area.map(|area| {
         Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), Constraint::Length(3)])
+            .constraints([
+                Constraint::Length(action_row_height),
+                Constraint::Length(action_row_height),
+            ])
             .split(area)
     });
 
@@ -291,7 +334,7 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
 
     // ── Action bar ────────────────────────────────────────────────────────────
     if let Some(rows) = action_rows {
-        render_nav_hints(frame, rows[0], rows[1], app, &theme);
+        render_nav_hints_with_layout(frame, rows[0], rows[1], app, &theme, hint_layout);
     }
 
     // ── Modal overlay ─────────────────────────────────────────────────────────
@@ -319,7 +362,7 @@ mod modal;
 mod overlays;
 mod panels;
 
-pub use self::action_bar::{render_action_bar, render_nav_hints};
+pub use self::action_bar::{render_action_bar, render_nav_hints, render_nav_hints_with_layout};
 #[cfg(test)]
 pub use self::action_bar::{render_action_bar_spans, render_nav_hints_spans};
 pub use self::modal::render_modal;

@@ -601,3 +601,37 @@ fn draw_in_options_can_hide_action_bar() {
     let text = buffer_text(&terminal);
     assert!(!text.contains("Navigate"));
 }
+
+#[test]
+fn hint_layout_auto_adapts_to_width() {
+    assert_eq!(HintLayout::Auto.resolve(89), HintLayout::Vertical);
+    assert_eq!(HintLayout::Auto.resolve(90), HintLayout::Horizontal);
+    assert_eq!(HintLayout::Horizontal.action_bar_rows(20), 6);
+    assert_eq!(HintLayout::Vertical.action_bar_rows(200), 12);
+}
+
+#[test]
+fn vertical_hint_layout_stacks_each_pair() {
+    let app = make_app_in(std::env::temp_dir());
+    let theme = Theme::default();
+    let backend = ratatui::backend::TestBackend::new(50, 12);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| {
+            render_nav_hints_with_layout(
+                frame,
+                Rect::new(0, 0, 50, 6),
+                Rect::new(0, 6, 50, 6),
+                &app,
+                &theme,
+                HintLayout::Vertical,
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let row = |y| (0..50).map(|x| buffer[(x, y)].symbol()).collect::<String>();
+    assert!(row(0).contains("Navigate"));
+    assert!(row(3).contains("File Ops"));
+    assert!(row(6).contains("Global"));
+    assert!(row(10).contains("No pending operations"));
+}

@@ -2,20 +2,36 @@ use super::*;
 
 // ── Action bar ────────────────────────────────────────────────────────────────
 
-/// Render the two hint rows and the status bar of the action area.
-///
-/// Layout (each row is 3 terminal rows tall):
-///   Row 0  ╭─ Navigate ──────────────────╮╭─ File Ops ──────────────────╮
-///   Row 1  ╭─ Global ────────────────────╮╭─ Status ────────────────────╮
+/// Render action hints horizontally for backwards compatibility.
 pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, theme: &Theme) {
+    render_nav_hints_with_layout(frame, row0, row1, app, theme, HintLayout::Horizontal);
+}
+
+/// Render action hints using a horizontal or vertically stacked layout.
+pub fn render_nav_hints_with_layout(
+    frame: &mut Frame,
+    row0: Rect,
+    row1: Rect,
+    app: &App,
+    theme: &Theme,
+    layout: HintLayout,
+) {
     let k = |s: &'static str| key_span(s, theme);
     let d = |s: &'static str| dim_span(s, theme);
+    let direction = match layout.resolve(row0.width) {
+        HintLayout::Vertical => Direction::Vertical,
+        HintLayout::Horizontal => Direction::Horizontal,
+        HintLayout::Auto => unreachable!(),
+    };
+    let split_pair = |area| {
+        Layout::default()
+            .direction(direction)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(area)
+    };
 
-    // ── Row 0: Navigate (left 50%) | File Ops (right 50%) ────────────────────
-    let row0_cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(row0);
+    // ── Row 0: Navigate (left/top) | File Ops (right/bottom) ─────────────────
+    let row0_cols = split_pair(row0);
 
     let nav_spans = vec![
         k("↑"),
@@ -85,11 +101,8 @@ pub fn render_nav_hints(frame: &mut Frame, row0: Rect, row1: Rect, app: &App, th
     );
     frame.render_widget(fileops_col, row0_cols[1]);
 
-    // ── Row 1: Global (left 50%) | Status (right 50%) ────────────────────────
-    let row1_cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(row1);
+    // ── Row 1: Global (left/top) | Status (right/bottom) ─────────────────────
+    let row1_cols = split_pair(row1);
 
     let global_spans = vec![
         k("Tab"),
