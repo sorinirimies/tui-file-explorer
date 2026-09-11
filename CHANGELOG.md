@@ -1,15 +1,28 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [2.2.0] - 2026-09-11
 
-### Features
-- Add adaptive horizontal/vertical action-hint layouts for narrow embedded views
+### Miscellaneous
+- Release v2.1.0
+- Release v2.1.0
+
+### Merge
+- Reconcile v2.1.0 release
+- Reconcile Gitea v2.1.0 release
 
 ## [2.1.0] - 2026-09-10
 
 ### Bug Fixes
 - Correct justfile remote names (gitea-microlab/starscream -> gitea/gitea_starscream)
+
+### Features
+- Add adaptive action hint layouts
+
+### Miscellaneous
+- Bump version to 2.1.0
+
+## [2.0.3] - 2026-09-10
 
 ### Documentation
 - Add multi-pane demo recordings
@@ -25,7 +38,7 @@ All notable changes to this project will be documented in this file.
 - Update dependencies to latest releases
 - Release v2.0.2
 - Nightly cargo update 2026-09-10
-- Bump version to 2.1.0
+- Bump version to 2.0.3
 
 ### Merge
 - Reconcile Gitea release automation
