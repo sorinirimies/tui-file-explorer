@@ -234,6 +234,13 @@ vhs-all:
     vhs examples/vhs/options.tape
     vhs examples/vhs/editor_picker.tape
     vhs examples/vhs/create_entries.tape
+    vhs examples/vhs/sizes.tape
+    vhs examples/vhs/fuzzy_find.tape
+    vhs examples/vhs/bookmarks.tape
+    vhs examples/vhs/undo_redo.tape
+    vhs examples/vhs/bulk_rename.tape
+    vhs examples/vhs/git_status.tape
+    vhs examples/vhs/archives.tape
     vhs examples/vhs/preview.tape
     vhs examples/vhs/picture_preview.tape
     @echo "✅ All GIFs generated in examples/vhs/generated/"
