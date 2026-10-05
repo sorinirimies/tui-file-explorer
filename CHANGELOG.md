@@ -1,14 +1,26 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [unreleased]
+## [3.0.0] - 2026-10-05
 
 ### Documentation
 - Regenerate CHANGELOG.md now that v2.2.0/v2.3.0 tags exist on origin
+- Regenerate CHANGELOG.md after merging Gitea reconciliation
+- Add VHS tapes for sizes, fuzzy finder, bookmarks, undo/redo, bulk rename, git and archives
+- Add generated GIFs for the new feature tapes
+
+### Features
+- Fuzzy finder, bookmarks, undo/redo, bulk rename, git markers, archives, keymap.toml, async loading
 
 ### Miscellaneous
 - Release v2.3.0
 - Nightly cargo update 2026-09-12
+- Nightly cargo update 2026-09-14
+- Nightly cargo update 2026-09-16
+- Nightly cargo update 2026-09-18
+
+### Ci
+- Make the nightly dependency update robust and add MSRV, audit and feature checks
 
 ### Merge
 - Reconcile Gitea nightly-deps + v2.3.0 release with local changelog fix
