@@ -635,3 +635,56 @@ fn vertical_hint_layout_stacks_each_pair() {
     assert!(row(6).contains("Global"));
     assert!(row(10).contains("No pending operations"));
 }
+
+// ── Delete modal wording ──────────────────────────────────────────────────
+
+fn modal_text(modal: &crate::Modal, to_trash: bool) -> String {
+    let backend = ratatui::backend::TestBackend::new(80, 24);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_modal_for(frame, frame.area(), modal, &Theme::default(), to_trash))
+        .unwrap();
+    terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|c| c.symbol())
+        .collect()
+}
+
+#[test]
+fn delete_modal_says_delete_by_default() {
+    let modal = crate::Modal::Delete {
+        path: std::path::PathBuf::from("notes.txt"),
+    };
+    let text = modal_text(&modal, false);
+    assert!(text.contains("Delete 'notes.txt'"));
+    assert!(!text.contains("trash"));
+}
+
+#[test]
+fn delete_modal_says_trash_when_trashing() {
+    let modal = crate::Modal::Delete {
+        path: std::path::PathBuf::from("notes.txt"),
+    };
+    assert!(modal_text(&modal, true).contains("Move 'notes.txt' to trash?"));
+}
+
+#[test]
+fn multi_delete_modal_says_trash_when_trashing() {
+    let modal = crate::Modal::MultiDelete {
+        paths: vec!["a".into(), "b".into()],
+    };
+    assert!(modal_text(&modal, true).contains("Move 2 item(s) to trash?"));
+    assert!(modal_text(&modal, false).contains("Delete 2 item(s)?"));
+}
+
+#[test]
+fn app_without_trash_support_never_enables_it() {
+    let app = App::new(crate::AppOptions {
+        use_trash: true,
+        ..crate::AppOptions::default()
+    });
+    assert_eq!(app.use_trash, crate::TRASH_SUPPORTED);
+}

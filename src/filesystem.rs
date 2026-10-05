@@ -23,6 +23,35 @@ pub trait FileSystem: fmt::Debug + Send + Sync {
     fn is_dir(&self, path: &Path) -> bool;
     fn disk_usage(&self, path: &Path) -> Option<DiskUsage>;
     fn dir_size(&self, path: &Path) -> (u64, bool);
+
+    /// Number of immediate children of the directory at `path`.
+    ///
+    /// Called lazily for the rows that are actually visible, so
+    /// [`read_dir`](Self::read_dir) can leave
+    /// [`FsEntry::item_count`] unset and stay fast on huge directories.
+    /// The default reports "unknown".
+    fn item_count(&self, _path: &Path) -> Option<usize> {
+        None
+    }
+
+    /// Bring a previously trashed `path` back to where it was deleted from.
+    ///
+    /// Only trash-backed filesystems on platforms with a restorable trash
+    /// (Linux, Windows) support this; the default reports
+    /// [`io::ErrorKind::Unsupported`].
+    fn restore_deleted(&self, _path: &Path) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "restoring deleted items is not supported here",
+        ))
+    }
+
+    /// `true` when paths are real OS paths (symlink targets, `git status` and
+    /// similar OS-level lookups are meaningful). Virtual backends keep the
+    /// default `false`.
+    fn is_local(&self) -> bool {
+        false
+    }
 }
 
 pub type SharedFileSystem = Arc<dyn FileSystem>;
@@ -48,19 +77,13 @@ impl FileSystem for StdFileSystem {
                     .map(|value| value.to_string_lossy().to_lowercase())
                     .unwrap_or_default()
             };
-            let item_count = if is_dir {
-                fs::read_dir(&path)
-                    .ok()
-                    .map(|items| items.flatten().count())
-            } else {
-                None
-            };
             entries.push(FsEntry {
                 name,
                 path,
                 is_dir,
                 size: (!is_dir).then_some(metadata.len()),
-                item_count,
+                // Filled lazily for visible rows (see `FileSystem::item_count`).
+                item_count: None,
                 extension,
             });
         }
@@ -92,7 +115,7 @@ impl FileSystem for StdFileSystem {
     }
 
     fn copy_dir(&self, source: &Path, destination: &Path) -> io::Result<()> {
-        crate::fs::copy_dir_all(source, destination)
+        crate::fs_util::copy_dir_all(source, destination)
     }
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
@@ -112,14 +135,115 @@ impl FileSystem for StdFileSystem {
     }
 
     fn disk_usage(&self, path: &Path) -> Option<DiskUsage> {
-        crate::fs::disk_usage(path)
+        crate::fs_util::disk_usage(path)
     }
 
     fn dir_size(&self, path: &Path) -> (u64, bool) {
-        crate::fs::dir_size(path)
+        crate::fs_util::dir_size(path)
+    }
+
+    fn item_count(&self, path: &Path) -> Option<usize> {
+        fs::read_dir(path).ok().map(|items| items.flatten().count())
+    }
+
+    fn is_local(&self) -> bool {
+        true
     }
 }
 
+/// Local filesystem that sends removals to the OS trash / recycle bin.
+///
+/// Everything except [`remove_file`](FileSystem::remove_file) and
+/// [`remove_dir_all`](FileSystem::remove_dir_all) behaves exactly like
+/// [`StdFileSystem`]. If the trash is unavailable (e.g. a headless Linux
+/// box without a trash directory) the removal **fails** rather than silently
+/// falling back to permanent deletion.
+#[cfg(feature = "trash")]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TrashFileSystem;
+
+#[cfg(feature = "trash")]
+impl FileSystem for TrashFileSystem {
+    fn read_dir(&self, path: &Path) -> io::Result<Vec<FsEntry>> {
+        StdFileSystem.read_dir(path)
+    }
+    fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        StdFileSystem.create_dir_all(path)
+    }
+    fn create_file(&self, path: &Path) -> io::Result<()> {
+        StdFileSystem.create_file(path)
+    }
+    fn rename(&self, source: &Path, destination: &Path) -> io::Result<()> {
+        StdFileSystem.rename(source, destination)
+    }
+    fn copy_file(&self, source: &Path, destination: &Path) -> io::Result<()> {
+        StdFileSystem.copy_file(source, destination)
+    }
+    fn copy_dir(&self, source: &Path, destination: &Path) -> io::Result<()> {
+        StdFileSystem.copy_dir(source, destination)
+    }
+    fn remove_file(&self, path: &Path) -> io::Result<()> {
+        trash::delete(path).map_err(io::Error::other)
+    }
+    fn remove_dir_all(&self, path: &Path) -> io::Result<()> {
+        trash::delete(path).map_err(io::Error::other)
+    }
+    fn exists(&self, path: &Path) -> bool {
+        StdFileSystem.exists(path)
+    }
+    fn is_dir(&self, path: &Path) -> bool {
+        StdFileSystem.is_dir(path)
+    }
+    fn disk_usage(&self, path: &Path) -> Option<DiskUsage> {
+        StdFileSystem.disk_usage(path)
+    }
+    fn dir_size(&self, path: &Path) -> (u64, bool) {
+        StdFileSystem.dir_size(path)
+    }
+    fn item_count(&self, path: &Path) -> Option<usize> {
+        StdFileSystem.item_count(path)
+    }
+    fn is_local(&self) -> bool {
+        true
+    }
+
+    #[cfg(any(
+        target_os = "windows",
+        all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        )
+    ))]
+    fn restore_deleted(&self, path: &Path) -> io::Result<()> {
+        // Newest trashed item that came from `path`.
+        let item = trash::os_limited::list()
+            .map_err(io::Error::other)?
+            .into_iter()
+            .filter(|i| i.original_path() == path)
+            .max_by_key(|i| i.time_deleted)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "not found in the trash"))?;
+        trash::os_limited::restore_all([item]).map_err(io::Error::other)
+    }
+}
+
+/// `true` when this build can send deletions to the OS trash.
+pub const TRASH_SUPPORTED: bool = cfg!(feature = "trash");
+
+/// Local filesystem backend, trash-backed when `use_trash` is requested *and*
+/// the `trash` feature is compiled in; plain [`StdFileSystem`] otherwise.
+#[must_use]
+pub fn local_filesystem(use_trash: bool) -> SharedFileSystem {
+    #[cfg(feature = "trash")]
+    if use_trash {
+        return Arc::new(TrashFileSystem);
+    }
+    let _ = use_trash;
+    Arc::new(StdFileSystem)
+}
+
+#[must_use]
 pub fn std_filesystem() -> SharedFileSystem {
     Arc::new(StdFileSystem)
 }

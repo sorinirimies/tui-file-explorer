@@ -127,12 +127,11 @@ impl App {
         // For a single-item clipboard check for same-dir cut and overwrite modal.
         if clip.paths.len() == 1 {
             let src = &clip.paths[0];
-            let file_name = match src.file_name() {
-                Some(n) => n.to_owned(),
-                None => {
-                    self.status_msg = "Cannot paste: clipboard path has no filename.".into();
-                    return;
-                }
+            let file_name = if let Some(n) = src.file_name() {
+                n.to_owned()
+            } else {
+                self.status_msg = "Cannot paste: clipboard path has no filename.".into();
+                return;
             };
             let dst = dst_dir.join(&file_name);
 
@@ -213,7 +212,7 @@ impl App {
                     };
                     self.clipboard = None;
                 }
-                for p in self.panes.iter_mut() {
+                for p in &mut self.panes {
                     p.reload();
                     p.clear_dir_size_cache();
                 }
@@ -259,6 +258,8 @@ impl App {
         let filesystem = self.active_pane().filesystem.clone();
         let mut errors: Vec<String> = Vec::new();
         let mut succeeded: usize = 0;
+        // (source, destination) of every item that was pasted, for undo.
+        let mut pasted: Vec<(PathBuf, PathBuf)> = Vec::new();
         let total = srcs.len();
         let verb_label = if is_cut { "Moving" } else { "Copying" };
 
@@ -269,15 +270,14 @@ impl App {
         ));
 
         for src in srcs {
-            let file_name = match src.file_name() {
-                Some(n) => n,
-                None => {
-                    errors.push(format!("skipped (no filename): {}", src.display()));
-                    if let Some(p) = &mut self.copy_progress {
-                        p.done += 1;
-                    }
-                    continue;
+            let file_name = if let Some(n) = src.file_name() {
+                n
+            } else {
+                errors.push(format!("skipped (no filename): {}", src.display()));
+                if let Some(p) = &mut self.copy_progress {
+                    p.done += 1;
                 }
+                continue;
             };
 
             // Update the "currently processing" label before the (potentially
@@ -312,6 +312,7 @@ impl App {
                         };
                     }
                     succeeded += 1;
+                    pasted.push((src.clone(), dst.clone()));
                 }
                 Err(e) => {
                     errors.push(format!(
@@ -326,6 +327,14 @@ impl App {
             }
         }
 
+        if !pasted.is_empty() {
+            self.record_undo(if is_cut {
+                UndoEntry::Move { pairs: pasted }
+            } else {
+                UndoEntry::Copy { pairs: pasted }
+            });
+        }
+
         // Clear progress now that the operation has finished.
         self.copy_progress = None;
 
@@ -333,7 +342,7 @@ impl App {
             self.clipboard = None;
         }
 
-        for p in self.panes.iter_mut() {
+        for p in &mut self.panes {
             p.reload();
             p.clear_dir_size_cache();
         }
@@ -383,6 +392,7 @@ impl App {
         let filesystem = self.active_pane().filesystem.clone();
         let mut errors: Vec<String> = Vec::new();
         let mut deleted: usize = 0;
+        let mut removed: Vec<PathBuf> = Vec::new();
 
         for path in paths {
             let result = if filesystem.is_dir(path) {
@@ -391,15 +401,22 @@ impl App {
                 filesystem.remove_file(path)
             };
             match result {
-                Ok(()) => deleted += 1,
+                Ok(()) => {
+                    deleted += 1;
+                    removed.push(path.clone());
+                }
                 Err(e) => errors.push(format!(
                     "'{}': {e}",
                     path.file_name().unwrap_or_default().to_string_lossy()
                 )),
             }
         }
+        // Only trashed items can come back.
+        if self.use_trash && !removed.is_empty() {
+            self.record_undo(UndoEntry::Delete { paths: removed });
+        }
 
-        for p in self.panes.iter_mut() {
+        for p in &mut self.panes {
             p.clear_marks();
             p.reload();
             p.clear_dir_size_cache();
@@ -438,7 +455,12 @@ impl App {
         };
         match result {
             Ok(()) => {
-                for p in self.panes.iter_mut() {
+                if self.use_trash {
+                    self.record_undo(UndoEntry::Delete {
+                        paths: vec![path.to_path_buf()],
+                    });
+                }
+                for p in &mut self.panes {
                     p.reload();
                     p.clear_dir_size_cache();
                 }

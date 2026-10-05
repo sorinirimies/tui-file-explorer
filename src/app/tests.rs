@@ -281,6 +281,47 @@ fn make_app(dir: PathBuf) -> App {
     })
 }
 
+// ── Size toggles ──────────────────────────────────────────────────────────
+
+#[test]
+fn z_toggles_sizes_and_shift_z_toggles_dir_sizes_on_active_pane() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    assert!(app.active_pane().show_sizes && app.active_pane().show_dir_sizes);
+
+    app.handle_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE))
+        .unwrap();
+    assert!(!app.active_pane().show_sizes);
+
+    app.handle_key(KeyEvent::new(KeyCode::Char('Z'), KeyModifiers::SHIFT))
+        .unwrap();
+    assert!(!app.active_pane().show_dir_sizes);
+}
+
+#[test]
+fn app_options_show_dir_sizes_false_applies_to_every_pane() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = App::new(AppOptions {
+        pane_dirs: vec![tmp.path().to_path_buf(), tmp.path().to_path_buf()],
+        show_dir_sizes: false,
+        ..AppOptions::default()
+    });
+    assert!(app.panes.iter().all(|p| !p.show_dir_sizes));
+}
+
+#[test]
+fn snapshot_and_restore_round_trip_dir_sizes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    app.active_pane_mut().show_dir_sizes = false;
+    let state = app.snapshot();
+    assert_eq!(state.show_dir_sizes, Some(false));
+
+    let mut fresh = make_app(tmp.path().to_path_buf());
+    fresh.restore(&state);
+    assert!(fresh.panes.iter().all(|p| !p.show_dir_sizes));
+}
+
 // ── ClipboardItem ─────────────────────────────────────────────────────────
 
 #[test]
@@ -1172,11 +1213,10 @@ fn copy_dir_skips_symlinks_without_failing() {
     symlink("/nonexistent/path", src_dir.path().join("broken_link")).expect("create symlink");
 
     // copy_dir_all should succeed, skipping the symlink.
-    let result = crate::fs::copy_dir_all(src_dir.path(), dst_dir.path());
+    let result = crate::fs_util::copy_dir_all(src_dir.path(), dst_dir.path());
     assert!(
         result.is_ok(),
-        "copy_dir_all should not fail on symlinks, got: {:?}",
-        result
+        "copy_dir_all should not fail on symlinks, got: {result:?}"
     );
 
     // The real file must be copied.
@@ -1204,7 +1244,7 @@ fn copy_dir_skips_valid_symlink_to_file() {
     fs::write(src_dir.path().join("normal.txt"), b"normal").expect("write normal");
     symlink(&target, src_dir.path().join("link_to_target")).expect("create symlink");
 
-    let result = crate::fs::copy_dir_all(src_dir.path(), dst_dir.path());
+    let result = crate::fs_util::copy_dir_all(src_dir.path(), dst_dir.path());
     assert!(result.is_ok(), "should succeed skipping symlinks");
 
     // Normal file is copied.

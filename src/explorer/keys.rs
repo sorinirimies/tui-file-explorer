@@ -1,142 +1,163 @@
-use super::*;
+use super::{background::AfterLoad, *};
+
+impl ExplorerCommand {
+    /// The command bound to `key` in the built-in keymap, if any.
+    #[must_use]
+    pub fn from_key(key: KeyEvent) -> Option<Self> {
+        Keymap::builtin().resolve(key)
+    }
+}
+
+// ── Text prompts (rename / touch / mkdir) ─────────────────────────────────────
+
+impl PromptKind {
+    fn outcome(self, from: PathBuf, to: PathBuf) -> ExplorerOutcome {
+        match self {
+            Self::Rename => ExplorerOutcome::RenameCompleted { from, to },
+            Self::Touch => ExplorerOutcome::TouchCreated(to),
+            Self::Mkdir => ExplorerOutcome::MkdirCreated(to),
+        }
+    }
+}
 
 impl FileExplorer {
-    /// Dispatch a semantic command without coupling host code to key bindings.
-    pub fn handle_command(&mut self, command: ExplorerCommand) -> ExplorerOutcome {
-        let code = match command {
-            ExplorerCommand::MoveUp => KeyCode::Up,
-            ExplorerCommand::MoveDown => KeyCode::Down,
-            ExplorerCommand::PageUp => KeyCode::PageUp,
-            ExplorerCommand::PageDown => KeyCode::PageDown,
-            ExplorerCommand::Top => KeyCode::Home,
-            ExplorerCommand::Bottom => KeyCode::End,
-            ExplorerCommand::Ascend => KeyCode::Left,
-            ExplorerCommand::Navigate => KeyCode::Right,
-            ExplorerCommand::Confirm => KeyCode::Enter,
-            ExplorerCommand::ToggleHidden => KeyCode::Char('.'),
-            ExplorerCommand::ToggleSizes => KeyCode::Char('z'),
-            ExplorerCommand::Search => KeyCode::Char('/'),
-            ExplorerCommand::CycleSort => KeyCode::Char('s'),
-            ExplorerCommand::ToggleMark => KeyCode::Char(' '),
-            ExplorerCommand::NewDirectory => KeyCode::Char('n'),
-            ExplorerCommand::NewFile => KeyCode::Char('N'),
-            ExplorerCommand::Rename => KeyCode::Char('r'),
-            ExplorerCommand::Dismiss => KeyCode::Esc,
+    /// Feed one key to the open prompt. Always consumes the event.
+    fn handle_prompt_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
+        let Some(prompt) = self.prompt.as_mut() else {
+            return ExplorerOutcome::Pending;
         };
-        self.handle_key(KeyEvent::new(code, KeyModifiers::NONE))
+        match key.code {
+            // Printable character (no modifiers, or Shift only) → append.
+            KeyCode::Char(c)
+                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+            {
+                prompt.text.push(c);
+            }
+            KeyCode::Backspace => {
+                prompt.text.pop();
+            }
+            KeyCode::Enter => return self.commit_prompt(),
+            // Esc cancels without committing.
+            KeyCode::Esc => self.prompt = None,
+            // Any other key stays in the prompt and is swallowed.
+            _ => {}
+        }
+        ExplorerOutcome::Pending
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
-        // Only react to key-press events.  On Windows (and terminals that
-        // negotiate the kitty keyboard protocol) crossterm delivers both
-        // Press *and* Release events for every physical key-press.  Without
-        // this guard the handler runs twice per key — which double-toggles
-        // marks, double-navigates, etc.
-        if key.kind != crossterm::event::KeyEventKind::Press {
+    /// Apply the prompt's text to the filesystem and close it.
+    fn commit_prompt(&mut self) -> ExplorerOutcome {
+        let Some(Prompt { kind, text }) = self.prompt.take() else {
+            return ExplorerOutcome::Pending;
+        };
+        let name = text.trim();
+        if name.is_empty() {
             return ExplorerOutcome::Pending;
         }
 
-        // ── Rename-mode interception ──────────────────────────────────────────
-        // When rename mode is active every printable character feeds the new
-        // name.  Enter confirms the rename; Esc cancels.
-        handle_input_mode!(self, key, rename_active, rename_input, {
-            let new_name = self.rename_input.trim().to_string();
-            self.rename_active = false;
-            self.rename_input.clear();
-            if new_name.is_empty() {
-                return ExplorerOutcome::Pending;
-            }
-            // Grab the source path before we reload.
-            let src = match self.entries.get(self.cursor) {
-                Some(e) => e.path.clone(),
-                None => return ExplorerOutcome::Pending,
-            };
-            let dst = self.current_dir.join(&new_name);
-            match self.filesystem.rename(&src, &dst) {
-                Ok(()) => {
-                    self.reload();
-                    // Move cursor to the renamed entry.
-                    if let Some(idx) = self.entries.iter().position(|e| e.path == dst) {
-                        self.cursor = idx;
-                    }
-                    return ExplorerOutcome::RenameCompleted(dst);
-                }
-                Err(e) => {
-                    self.status = format!("rename failed: {e}");
+        let target = self.current_dir.join(name);
+        let mut from = target.clone();
+        let result = match kind {
+            PromptKind::Rename => {
+                // The source is whatever is under the cursor *before* reload.
+                let Some(src) = self.entries.get(self.cursor).map(|e| e.path.clone()) else {
                     return ExplorerOutcome::Pending;
-                }
+                };
+                from = src.clone();
+                self.filesystem.rename(&src, &target)
             }
-        });
+            PromptKind::Touch => self.filesystem.create_file(&target),
+            PromptKind::Mkdir => self.filesystem.create_dir_all(&target),
+        };
 
-        // ── Touch-mode interception ───────────────────────────────────────────
-        // When touch mode is active every printable character feeds the new
-        // file name.  Enter confirms creation; Esc cancels.
-        handle_input_mode!(self, key, touch_active, touch_input, {
-            let name = self.touch_input.trim().to_string();
-            self.touch_active = false;
-            self.touch_input.clear();
-            if name.is_empty() {
-                return ExplorerOutcome::Pending;
+        match result {
+            Ok(()) => {
+                self.reload_with(AfterLoad {
+                    select: Some(target.clone()),
+                    cursor: None,
+                });
+                kind.outcome(from, target)
             }
-            let new_file = self.current_dir.join(&name);
-            // Create parent dirs if the name contains path separators,
-            // then create (or truncate-to-zero) the file itself.
-            let create_result = self.filesystem.create_file(&new_file);
-            match create_result {
-                Ok(()) => {
-                    self.reload();
-                    // Move cursor to the newly created file.
-                    if let Some(idx) = self.entries.iter().position(|e| e.path == new_file) {
-                        self.cursor = idx;
-                    }
-                    return ExplorerOutcome::TouchCreated(new_file);
-                }
-                Err(e) => {
-                    self.status = format!("touch failed: {e}");
-                    return ExplorerOutcome::Pending;
-                }
+            Err(e) => {
+                self.status = format!("{} failed: {e}", kind.verb());
+                ExplorerOutcome::Pending
             }
-        });
+        }
+    }
 
-        // ── Mkdir-mode interception ───────────────────────────────────────────
-        // When mkdir mode is active every printable character feeds the new
-        // folder name.  Enter confirms creation; Esc cancels.
-        handle_input_mode!(self, key, mkdir_active, mkdir_input, {
-            let name = self.mkdir_input.trim().to_string();
-            self.mkdir_active = false;
-            self.mkdir_input.clear();
-            if name.is_empty() {
-                return ExplorerOutcome::Pending;
+    /// Navigate to `path`: a directory is entered; for a file, its parent
+    /// directory is opened with the file highlighted.
+    ///
+    /// Clears search and marks (the listing changes wholesale).
+    pub fn go_to(&mut self, path: &Path) {
+        let (dir, select) = if self.filesystem.is_dir(path) {
+            (path.to_path_buf(), None)
+        } else {
+            match path.parent() {
+                Some(parent) => (parent.to_path_buf(), Some(path)),
+                None => return,
             }
-            let new_dir = self.current_dir.join(&name);
-            match self.filesystem.create_dir_all(&new_dir) {
-                Ok(()) => {
-                    self.reload();
-                    // Move cursor to the newly created directory.
-                    if let Some(idx) = self.entries.iter().position(|e| e.path == new_dir) {
-                        self.cursor = idx;
-                    }
-                    return ExplorerOutcome::MkdirCreated(new_dir);
-                }
-                Err(e) => {
-                    self.status = format!("mkdir failed: {e}");
-                    return ExplorerOutcome::Pending;
-                }
-            }
+        };
+        self.current_dir = dir;
+        self.search_active = false;
+        self.search_query.clear();
+        self.marked.clear();
+        self.cursor = 0;
+        self.scroll_offset = 0;
+        self.reload_with(AfterLoad {
+            select: select.map(Path::to_path_buf),
+            cursor: None,
         });
+    }
 
-        // ── Search-mode interception ──────────────────────────────────────────
-        // When search is active, printable characters feed the query rather than
-        // triggering navigation shortcuts.  Navigation keys (arrows, Enter, etc.)
-        // fall through to the normal handler below so the list remains usable
-        // while filtering.
+    /// Move the cursor onto `path` if it is visible.
+    pub fn select_path(&mut self, path: &Path) {
+        if let Some(idx) = self.entries.iter().position(|e| e.path == path) {
+            self.cursor = idx;
+        }
+    }
+
+    /// Re-read the directory but keep the cursor on (or near) its old row.
+    fn reload_keep_cursor(&mut self) {
+        // `reload` already restores the row (clamped), also when deferred.
+        self.reload();
+    }
+
+    /// Reset the list position after the visible entries changed wholesale.
+    fn reload_from_top(&mut self) {
+        self.cursor = 0;
+        self.scroll_offset = 0;
+        self.reload();
+    }
+}
+
+// ── Public key / command entry points ─────────────────────────────────────────
+
+impl FileExplorer {
+    /// Dispatch a semantic command without coupling host code to key bindings.
+    ///
+    /// Routed through [`handle_key`](Self::handle_key) so active prompts and
+    /// incremental search see it exactly like the equivalent key press.
+    pub fn handle_command(&mut self, command: ExplorerCommand) -> ExplorerOutcome {
+        self.handle_key(self.keymap.canonical_key(command))
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
+        press_only!(key, ExplorerOutcome::Pending);
+
+        // An open rename / touch / mkdir prompt owns the keyboard.
+        if self.prompt.is_some() {
+            return self.handle_prompt_key(key);
+        }
+
+        // While searching, printable characters feed the query rather than
+        // triggering shortcuts. Navigation keys fall through so the filtered
+        // list stays usable.
         if self.search_active {
             match key.code {
                 KeyCode::Char(c) if key.modifiers.is_empty() => {
                     self.search_query.push(c);
-                    self.cursor = 0;
-                    self.scroll_offset = 0;
-                    self.reload();
+                    self.reload_from_top();
                     return ExplorerOutcome::Pending;
                 }
                 KeyCode::Backspace => {
@@ -145,157 +166,72 @@ impl FileExplorer {
                         self.search_active = false;
                     } else {
                         self.search_query.pop();
-                        self.cursor = 0;
-                        self.scroll_offset = 0;
-                        self.reload();
+                        self.reload_from_top();
                     }
                     return ExplorerOutcome::Pending;
                 }
+                // First Esc cancels search; a second (inactive) one dismisses.
                 KeyCode::Esc => {
-                    // First Esc cancels search; second Esc (when already
-                    // inactive) dismisses the explorer entirely.
                     self.search_active = false;
                     self.search_query.clear();
-                    self.cursor = 0;
-                    self.scroll_offset = 0;
-                    self.reload();
+                    self.reload_from_top();
                     return ExplorerOutcome::Pending;
                 }
-                _ => {} // navigation keys fall through
+                _ => {}
             }
         }
 
-        match key.code {
-            // ── Dismiss ──────────────────────────────────────────────────────
-            KeyCode::Esc => ExplorerOutcome::Dismissed,
+        match self.keymap.resolve(key) {
+            Some(command) => self.execute(command),
+            None => ExplorerOutcome::Unhandled,
+        }
+    }
 
-            // ── Vim-style quit ───────────────────────────────────────────────
-            KeyCode::Char('q') if key.modifiers.is_empty() => ExplorerOutcome::Dismissed,
-
-            // ── Move up ──────────────────────────────────────────────────────
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.move_up();
-                ExplorerOutcome::Pending
-            }
-
-            // ── Move down ────────────────────────────────────────────────────
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.move_down();
-                ExplorerOutcome::Pending
-            }
-
-            // ── Page up ──────────────────────────────────────────────────────
-            KeyCode::PageUp => {
-                for _ in 0..self.page_size {
-                    self.move_up();
-                }
-                ExplorerOutcome::Pending
-            }
-
-            // ── Page down ────────────────────────────────────────────────────
-            KeyCode::PageDown => {
-                for _ in 0..self.page_size {
-                    self.move_down();
-                }
-                ExplorerOutcome::Pending
-            }
-
-            // ── Jump to top ──────────────────────────────────────────────────
-            KeyCode::Home | KeyCode::Char('g') => {
+    /// Run `command` directly (no prompt / search interception).
+    fn execute(&mut self, command: ExplorerCommand) -> ExplorerOutcome {
+        use ExplorerCommand as C;
+        match command {
+            C::Dismiss => return ExplorerOutcome::Dismissed,
+            C::MoveUp => self.move_up(),
+            C::MoveDown => self.move_down(),
+            C::PageUp => (0..self.page_size).for_each(|_| self.move_up()),
+            C::PageDown => (0..self.page_size).for_each(|_| self.move_down()),
+            C::Top => {
                 self.cursor = 0;
                 self.scroll_offset = 0;
-                ExplorerOutcome::Pending
             }
-
-            // ── Jump to bottom ───────────────────────────────────────────────
-            KeyCode::End | KeyCode::Char('G') => {
+            C::Bottom => {
                 if !self.entries.is_empty() {
                     self.cursor = self.entries.len() - 1;
                 }
-                ExplorerOutcome::Pending
             }
-
-            // ── Ascend (go to parent) ─────────────────────────────────────────
-            // Left arrow / Backspace / h all ascend to the parent directory.
-            KeyCode::Left | KeyCode::Backspace | KeyCode::Char('h') => {
-                self.ascend();
-                ExplorerOutcome::Pending
-            }
-
-            // ── Navigate right (pure navigation, never exits) ─────────────────
-            // Right arrow descends into a directory; on a file it just moves
-            // the cursor down so the user can keep browsing.
-            KeyCode::Right => self.navigate(),
-
-            // ── Confirm / descend ─────────────────────────────────────────────
-            // Enter / l descend into a directory or confirm (select) a file,
-            // which signals the caller to exit the TUI.
-            KeyCode::Enter | KeyCode::Char('l') => self.confirm(),
-
-            // ── Toggle hidden files ─────────────────────────────────
-            KeyCode::Char('.') => {
+            C::Ascend => self.ascend(),
+            // Navigate / Confirm may select a file, so they report outcomes.
+            C::Navigate => return self.navigate(),
+            C::Confirm => return self.confirm(),
+            C::ToggleHidden => {
                 self.show_hidden = !self.show_hidden;
-                let was = self.cursor;
-                self.reload();
-                self.cursor = was.min(self.entries.len().saturating_sub(1));
-                ExplorerOutcome::Pending
+                self.reload_keep_cursor();
             }
-
-            // ── Toggle file/folder size display ───────────────────────
-            KeyCode::Char('z') if key.modifiers.is_empty() => {
-                self.show_sizes = !self.show_sizes;
-                ExplorerOutcome::Pending
-            }
-
-            // ── Activate incremental search ───────────────────────────────────
-            KeyCode::Char('/') if key.modifiers.is_empty() => {
-                self.search_active = true;
-                ExplorerOutcome::Pending
-            }
-
-            // ── Cycle sort mode ───────────────────────────────────────────────
-            KeyCode::Char('s') if key.modifiers.is_empty() => {
+            C::ToggleSizes => self.show_sizes = !self.show_sizes,
+            C::ToggleDirSizes => self.show_dir_sizes = !self.show_dir_sizes,
+            C::Search => self.search_active = true,
+            C::CycleSort => {
                 self.sort_mode = self.sort_mode.next();
-                let was = self.cursor;
-                self.reload();
-                self.cursor = was.min(self.entries.len().saturating_sub(1));
-                ExplorerOutcome::Pending
+                self.reload_keep_cursor();
             }
-
-            // ── Toggle space-mark on current entry ────────────────────────────
-            KeyCode::Char(' ') => {
-                self.toggle_mark();
-                ExplorerOutcome::Pending
-            }
-
-            // ── Activate mkdir mode ───────────────────────────────────────────
-            KeyCode::Char('n') if key.modifiers.is_empty() => {
-                self.mkdir_active = true;
-                self.mkdir_input.clear();
-                ExplorerOutcome::Pending
-            }
-
-            // ── Activate touch (new file) mode ────────────────────────────────
-            // Shift+N — complement to `n` (mkdir).
-            KeyCode::Char('N') if key.modifiers.is_empty() => {
-                self.touch_active = true;
-                self.touch_input.clear();
-                ExplorerOutcome::Pending
-            }
-
-            // ── Activate rename mode ──────────────────────────────────────────
-            // `r` — pre-fills the input with the current entry's name so the
-            // user can edit it rather than type from scratch.
-            KeyCode::Char('r') if key.modifiers.is_empty() => {
+            C::ToggleMark => self.toggle_mark(),
+            C::NewDirectory => self.open_prompt(PromptKind::Mkdir, ""),
+            C::NewFile => self.open_prompt(PromptKind::Touch, ""),
+            // Pre-fill with the current name so it can be edited in place.
+            C::Rename => {
                 if let Some(entry) = self.entries.get(self.cursor) {
-                    self.rename_input = entry.name.clone();
-                    self.rename_active = true;
+                    let name = entry.name.clone();
+                    self.open_prompt(PromptKind::Rename, name);
                 }
-                ExplorerOutcome::Pending
             }
-
-            _ => ExplorerOutcome::Unhandled,
         }
+        ExplorerOutcome::Pending
     }
 
     // ── Internal navigation helpers ───────────────────────────────────────────
@@ -330,7 +266,7 @@ impl FileExplorer {
     }
 
     pub(crate) fn ascend(&mut self) {
-        if let Some(parent) = self.current_dir.parent().map(|p| p.to_path_buf()) {
+        if let Some(parent) = self.current_dir.parent().map(std::path::Path::to_path_buf) {
             let prev = self.current_dir.clone();
             self.current_dir = parent;
             self.cursor = 0;
@@ -339,13 +275,11 @@ impl FileExplorer {
             self.search_active = false;
             self.search_query.clear();
             self.marked.clear();
-            self.reload();
-            // Try to land the cursor on the directory we just came from.
-            if let Some(idx) = self.entries.iter().position(|e| e.path == prev) {
-                self.cursor = idx;
-            }
-            // Always clamp in case the parent is empty or shorter than expected.
-            self.clamp_cursor();
+            // Land the cursor on the directory we just came from.
+            self.reload_with(AfterLoad {
+                select: Some(prev),
+                cursor: None,
+            });
         } else {
             // Already at root — stay put, do nothing.
             self.status = "Already at the filesystem root.".to_string();

@@ -8,6 +8,7 @@
 use super::*;
 
 impl App {
+    #[must_use]
     pub fn active_pane(&self) -> &FileExplorer {
         &self.panes[self.active_idx]
     }
@@ -18,6 +19,7 @@ impl App {
     }
 
     /// Number of panes currently open.
+    #[must_use]
     pub fn pane_count(&self) -> usize {
         self.panes.len()
     }
@@ -48,6 +50,10 @@ impl App {
             .filesystem(active.filesystem.clone())
             .show_hidden(active.show_hidden)
             .show_sizes(active.show_sizes)
+            .show_dir_sizes(active.show_dir_sizes)
+            .keymap(active.keymap.clone())
+            .show_git(active.show_git)
+            .async_loading(active.async_loading)
             .selection_mode(active.selection_mode)
             .sort_mode(active.sort_mode)
             .page_size(active.page_size);

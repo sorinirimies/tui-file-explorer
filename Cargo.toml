@@ -2,7 +2,7 @@
 name         = "tui-file-explorer"
 version      = "2.3.0"
 edition      = "2021"
-rust-version = "1.88"
+rust-version = "1.90"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
 repository   = "https://github.com/sorinirimies/tui-file-explorer"
@@ -27,16 +27,20 @@ exclude      = [
 # binary. Library users who only want the widget can opt out:
 #
 #   [dependencies]
-#   tui-file-explorer = { version = "2", default-features = false }
+#   tui-file-explorer = { version = "3", default-features = false }
 #
 [features]
 default = ["cli"]
 # Lightweight FileExplorer/DualPane builds need no optional features.
-preview = ["dep:image", "dep:ratatui-image"]
-persistence = ["dep:serde", "dep:serde_json"]
+preview = ["dep:image", "dep:ratatui-image", "archive"]
+# Archive (zip / tar / tar.gz) listing for previews and extraction.
+archive = ["dep:zip", "dep:tar", "dep:flate2"]
+persistence = ["dep:serde", "dep:serde_json", "dep:toml"]
 full-app = ["preview", "persistence", "dep:tui-slider"]
 # The CLI includes the full embeddable application plus argument parsing.
-cli = ["full-app", "dep:clap"]
+cli = ["full-app", "trash", "dep:clap"]
+# Send deleted entries to the OS trash / recycle bin instead of unlinking.
+trash = ["dep:trash"]
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
@@ -49,6 +53,11 @@ serde      = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 image         = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
 ratatui-image = { version = "11.0", default-features = false, features = ["crossterm", "image-defaults"], optional = true }
+trash         = { version = "5.2.9", optional = true }
+toml          = { version = "1.1.6", default-features = false, features = ["parse", "serde"], optional = true }
+zip           = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true }
+tar           = { version = "0.4.46", default-features = false, optional = true }
+flate2        = { version = "1.1.10", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

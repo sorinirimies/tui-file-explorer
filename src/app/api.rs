@@ -1,6 +1,6 @@
 use std::{fmt, io, path::PathBuf, time::Instant};
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
 use super::{App, AppOptions, Editor, OperationRequest};
 use crate::{AppState, FileExplorer, SelectionMode, SortMode, Theme};
@@ -64,51 +64,64 @@ pub enum AppEvent {
     },
 }
 
-/// Semantic command accepted by [`App::dispatch_command`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum AppCommand {
-    MoveUp,
-    MoveDown,
-    PageUp,
-    PageDown,
-    Top,
-    Bottom,
-    Ascend,
-    Open,
-    Confirm,
-    NextPane,
-    PreviousPane,
-    OpenPane,
-    ClosePane,
-    ToggleSinglePane,
-    Search,
-    CycleSort,
-    ToggleHidden,
-    ToggleSizes,
-    ToggleMark,
-    Cut,
-    Paste,
-    Delete,
-    NewDirectory,
-    NewFile,
-    Rename,
-    TogglePreview,
-    PreviewDown,
-    PreviewUp,
-    OpenExternalEditor,
-    OpenInlineEditor,
-    ToggleThemePanel,
-    ToggleOptionsPanel,
-    ToggleEditorPanel,
-    NextTheme,
-    PreviousTheme,
-    ToggleCdOnExit,
-    Dismiss,
-    Quit,
+command_enum! {
+    /// Semantic command accepted by [`App::dispatch_command`].
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum AppCommand {
+        MoveUp => "move_up",
+        MoveDown => "move_down",
+        PageUp => "page_up",
+        PageDown => "page_down",
+        Top => "top",
+        Bottom => "bottom",
+        Ascend => "ascend",
+        Open => "open",
+        Confirm => "confirm",
+        NextPane => "next_pane",
+        PreviousPane => "previous_pane",
+        OpenPane => "open_pane",
+        ClosePane => "close_pane",
+        ToggleSinglePane => "toggle_single_pane",
+        Search => "search",
+        CycleSort => "cycle_sort",
+        ToggleHidden => "toggle_hidden",
+        ToggleSizes => "toggle_sizes",
+        ToggleDirSizes => "toggle_dir_sizes",
+        ToggleMark => "toggle_mark",
+        Cut => "cut",
+        Paste => "paste",
+        Delete => "delete",
+        NewDirectory => "new_directory",
+        NewFile => "new_file",
+        Rename => "rename",
+        TogglePreview => "toggle_preview",
+        PreviewDown => "preview_down",
+        PreviewUp => "preview_up",
+        OpenExternalEditor => "open_external_editor",
+        OpenInlineEditor => "open_inline_editor",
+        ToggleThemePanel => "toggle_theme_panel",
+        ToggleOptionsPanel => "toggle_options_panel",
+        ToggleEditorPanel => "toggle_editor_panel",
+        NextTheme => "next_theme",
+        PreviousTheme => "previous_theme",
+        ToggleCdOnExit => "toggle_cd_on_exit",
+        Dismiss => "dismiss",
+        Quit => "quit",
+        Undo => "undo",
+        Redo => "redo",
+        BulkRename => "bulk_rename",
+        ToggleBookmark => "toggle_bookmark",
+        OpenBookmarks => "open_bookmarks",
+        FuzzyFind => "fuzzy_find",
+        ToggleGit => "toggle_git",
+        ExtractArchive => "extract_archive",
+    }
 }
 
 impl AppCommand {
-    fn key_event(self) -> KeyEvent {
+    /// The built-in key that triggers this command.
+    #[must_use]
+    pub fn key_event(self) -> KeyEvent {
         let (code, modifiers) = match self {
             Self::MoveUp => (KeyCode::Up, KeyModifiers::NONE),
             Self::MoveDown => (KeyCode::Down, KeyModifiers::NONE),
@@ -128,6 +141,7 @@ impl AppCommand {
             Self::CycleSort => (KeyCode::Char('s'), KeyModifiers::NONE),
             Self::ToggleHidden => (KeyCode::Char('.'), KeyModifiers::NONE),
             Self::ToggleSizes => (KeyCode::Char('z'), KeyModifiers::NONE),
+            Self::ToggleDirSizes => (KeyCode::Char('Z'), KeyModifiers::SHIFT),
             Self::ToggleMark => (KeyCode::Char(' '), KeyModifiers::NONE),
             Self::Cut => (KeyCode::Char('x'), KeyModifiers::NONE),
             Self::Paste => (KeyCode::Char('p'), KeyModifiers::NONE),
@@ -148,6 +162,14 @@ impl AppCommand {
             Self::ToggleCdOnExit => (KeyCode::Char('C'), KeyModifiers::SHIFT),
             Self::Dismiss => (KeyCode::Esc, KeyModifiers::NONE),
             Self::Quit => (KeyCode::Char('q'), KeyModifiers::NONE),
+            Self::Undo => (KeyCode::Char('u'), KeyModifiers::NONE),
+            Self::Redo => (KeyCode::Char('r'), KeyModifiers::CONTROL),
+            Self::BulkRename => (KeyCode::Char('R'), KeyModifiers::SHIFT),
+            Self::ToggleBookmark => (KeyCode::Char('b'), KeyModifiers::NONE),
+            Self::OpenBookmarks => (KeyCode::Char('B'), KeyModifiers::SHIFT),
+            Self::FuzzyFind => (KeyCode::Char('f'), KeyModifiers::NONE),
+            Self::ToggleGit => (KeyCode::Char('v'), KeyModifiers::NONE),
+            Self::ExtractArchive => (KeyCode::Char('X'), KeyModifiers::SHIFT),
         };
         KeyEvent::new(code, modifiers)
     }
@@ -165,14 +187,18 @@ pub struct KeyBinding {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct KeyBindings {
     bindings: Vec<KeyBinding>,
+    /// Commands whose built-in key has been replaced via [`Self::remap`].
+    remapped: Vec<AppCommand>,
 }
 
 impl KeyBindings {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Add or replace one key mapping.
+    #[must_use]
     pub fn bind(mut self, code: KeyCode, modifiers: KeyModifiers, command: AppCommand) -> Self {
         self.bindings
             .retain(|binding| binding.code != code || binding.modifiers != modifiers);
@@ -184,16 +210,65 @@ impl KeyBindings {
         self
     }
 
+    #[must_use]
     pub fn unbind(mut self, code: KeyCode, modifiers: KeyModifiers) -> Self {
         self.bindings
             .retain(|binding| binding.code != code || binding.modifiers != modifiers);
         self
     }
 
+    /// Replace the keys of `command` with `chords`.
+    ///
+    /// Unlike [`bind`](Self::bind), this also *disables the built-in key* of
+    /// the command (unless a chord reuses it), so `x` stops cutting once
+    /// `cut` is moved elsewhere.
+    #[must_use]
+    pub fn remap(mut self, command: AppCommand, chords: &[crate::KeyChord]) -> Self {
+        self.bindings.retain(|b| b.command != command);
+        if !self.remapped.contains(&command) {
+            self.remapped.push(command);
+        }
+        for chord in chords {
+            let event = chord.to_event();
+            // Uppercase letters arrive with or without SHIFT depending on the
+            // terminal; accept both.
+            let mut mods = vec![event.modifiers];
+            if matches!(chord.mods, crate::ChordMods::Plain | crate::ChordMods::Any) {
+                if let KeyCode::Char(c) = event.code {
+                    if c.is_uppercase() {
+                        mods.push(KeyModifiers::NONE);
+                    }
+                }
+            }
+            for m in mods {
+                self = self.bind(event.code, m, command);
+            }
+        }
+        self
+    }
+
+    /// Translate a physical key into the event the built-in handler expects.
+    ///
+    /// * custom binding  → that command's built-in key,
+    /// * a remapped command's old built-in key → `None` (swallowed),
+    /// * anything else → the key unchanged.
+    #[must_use]
+    pub fn translate(&self, key: KeyEvent) -> Option<KeyEvent> {
+        if let Some(command) = self.resolve(key) {
+            return Some(command.key_event());
+        }
+        let swallowed = self.remapped.iter().any(|c| {
+            let built_in = c.key_event();
+            built_in.code == key.code && built_in.modifiers == key.modifiers
+        });
+        (!swallowed).then_some(key)
+    }
+
     pub fn bindings(&self) -> &[KeyBinding] {
         &self.bindings
     }
 
+    #[must_use]
     pub fn resolve(&self, key: KeyEvent) -> Option<AppCommand> {
         self.bindings
             .iter()
@@ -201,8 +276,9 @@ impl KeyBindings {
             .map(|binding| binding.command)
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.bindings.is_empty()
+        self.bindings.is_empty() && self.remapped.is_empty()
     }
 }
 
@@ -214,6 +290,9 @@ pub struct PaneOptions {
     pub extensions: Vec<String>,
     pub show_hidden: bool,
     pub show_sizes: bool,
+    pub show_dir_sizes: bool,
+    pub keymap: crate::Keymap,
+    pub async_loading: bool,
     pub sort_mode: SortMode,
     pub page_size: usize,
     pub selection_mode: SelectionMode,
@@ -227,29 +306,53 @@ impl PaneOptions {
             extensions: Vec::new(),
             show_hidden: false,
             show_sizes: true,
+            show_dir_sizes: true,
+            keymap: crate::Keymap::default(),
+            async_loading: false,
             sort_mode: SortMode::default(),
             page_size: crate::PAGE_SIZE,
             selection_mode: SelectionMode::default(),
         }
     }
 
+    #[must_use]
     pub fn filesystem(mut self, filesystem: crate::SharedFileSystem) -> Self {
         self.filesystem = filesystem;
         self
     }
 
+    #[must_use]
     pub fn extension(mut self, extension: impl Into<String>) -> Self {
         self.extensions.push(extension.into());
         self
     }
 
+    #[must_use]
     pub fn show_hidden(mut self, show: bool) -> Self {
         self.show_hidden = show;
         self
     }
 
+    #[must_use]
     pub fn show_sizes(mut self, show: bool) -> Self {
         self.show_sizes = show;
+        self
+    }
+
+    #[must_use]
+    pub fn show_dir_sizes(mut self, show: bool) -> Self {
+        self.show_dir_sizes = show;
+        self
+    }
+
+    #[must_use]
+    pub fn keymap(mut self, keymap: crate::Keymap) -> Self {
+        self.keymap = keymap;
+        self
+    }
+
+    pub fn async_loading(mut self, enabled: bool) -> Self {
+        self.async_loading = enabled;
         self
     }
 
@@ -258,11 +361,13 @@ impl PaneOptions {
         self
     }
 
+    #[must_use]
     pub fn page_size(mut self, page_size: usize) -> Self {
         self.page_size = page_size.max(1);
         self
     }
 
+    #[must_use]
     pub fn selection_mode(mut self, selection_mode: SelectionMode) -> Self {
         self.selection_mode = selection_mode;
         self
@@ -274,6 +379,9 @@ impl PaneOptions {
             .extension_filter(self.extensions)
             .show_hidden(self.show_hidden)
             .show_sizes(self.show_sizes)
+            .show_dir_sizes(self.show_dir_sizes)
+            .keymap(self.keymap)
+            .async_loading(self.async_loading)
             .sort_mode(self.sort_mode)
             .page_size(self.page_size)
             .selection_mode(self.selection_mode)
@@ -328,51 +436,61 @@ impl Default for AppBuilder {
 }
 
 impl AppBuilder {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn pane(mut self, pane: PaneOptions) -> Self {
         self.panes.push(pane);
         self
     }
 
+    #[must_use]
     pub fn theme_index(mut self, theme_index: usize) -> Self {
         self.options.theme_idx = theme_index;
         self
     }
 
     /// Replace the selected preset's palette with a host-defined theme.
+    #[must_use]
     pub fn theme(mut self, theme: Theme) -> Self {
         self.theme_override = Some(theme);
         self
     }
 
+    #[must_use]
     pub fn editor(mut self, editor: Editor) -> Self {
         self.options.editor = editor;
         self
     }
 
+    #[must_use]
     pub fn single_pane(mut self, enabled: bool) -> Self {
         self.options.single_pane = enabled;
         self
     }
 
+    #[must_use]
     pub fn cd_on_exit(mut self, enabled: bool) -> Self {
         self.options.cd_on_exit = enabled;
         self
     }
 
+    #[must_use]
     pub fn verbose(mut self, enabled: bool) -> Self {
         self.options.verbose = enabled;
         self
     }
 
+    #[must_use]
     pub fn key_bindings(mut self, key_bindings: KeyBindings) -> Self {
         self.key_bindings = key_bindings;
         self
     }
 
+    #[must_use]
     pub fn operation_mode(mut self, operation_mode: super::OperationMode) -> Self {
         self.operation_mode = operation_mode;
         self
@@ -408,10 +526,12 @@ impl AppBuilder {
 }
 
 impl App {
+    #[must_use]
     pub fn builder() -> AppBuilder {
         AppBuilder::new()
     }
 
+    #[must_use]
     pub fn panes(&self) -> &[FileExplorer] {
         &self.panes
     }
@@ -429,6 +549,7 @@ impl App {
         Ok(())
     }
 
+    #[must_use]
     pub fn active_pane_index(&self) -> usize {
         self.active_idx
     }
@@ -455,6 +576,21 @@ impl App {
         Ok(())
     }
 
+    /// Use `keymap` for explorer navigation in every pane (and new ones).
+    pub fn set_keymap(&mut self, keymap: &crate::Keymap) {
+        for pane in &mut self.panes {
+            pane.keymap = keymap.clone();
+        }
+    }
+
+    /// Apply a parsed `keymap.toml`: explorer keys on every pane, app-level
+    /// remaps via [`set_key_bindings`](Self::set_key_bindings).
+    pub fn apply_keymap_config(&mut self, config: &crate::KeymapConfig) {
+        self.set_keymap(&config.explorer);
+        self.key_bindings = config.app.clone();
+    }
+
+    #[must_use]
     pub fn key_bindings(&self) -> &KeyBindings {
         &self.key_bindings
     }
@@ -481,22 +617,18 @@ impl App {
 
     /// Dispatch a key using custom bindings, preserving modal/editor priority.
     pub fn dispatch_key(&mut self, key: KeyEvent) -> io::Result<AppOutcome> {
-        if key.kind != KeyEventKind::Press {
-            return Ok(AppOutcome::Ignored);
-        }
-        let pane_captures_text = self.active_pane().search_active
-            || self.active_pane().mkdir_active
-            || self.active_pane().touch_active
-            || self.active_pane().rename_active;
+        press_only!(key, Ok(AppOutcome::Ignored));
+        let pane_captures_text =
+            self.active_pane().search_active || self.active_pane().has_prompt();
         let mapped = if self.inline_editor.is_some() || self.modal.is_some() || pane_captures_text {
-            key
+            Some(key)
         } else {
-            self.key_bindings
-                .resolve(key)
-                .map(AppCommand::key_event)
-                .unwrap_or(key)
+            self.key_bindings.translate(key)
         };
-        self.dispatch_key_event(mapped)
+        match mapped {
+            Some(mapped) => self.dispatch_key_event(mapped),
+            None => Ok(AppOutcome::Continue),
+        }
     }
 
     fn dispatch_key_event(&mut self, key: KeyEvent) -> io::Result<AppOutcome> {
@@ -560,8 +692,7 @@ impl App {
             return Ok(self
                 .selected
                 .clone()
-                .map(AppOutcome::Selected)
-                .unwrap_or(AppOutcome::Dismissed));
+                .map_or(AppOutcome::Dismissed, AppOutcome::Selected));
         }
         if self.open_with_editor != previous_editor_request {
             if let Some(path) = self.open_with_editor.clone() {
@@ -615,6 +746,7 @@ impl App {
     }
 
     /// Capture host-storable application state without writing global files.
+    #[must_use]
     pub fn snapshot(&self) -> AppState {
         let active = self.active_pane();
         AppState {
@@ -624,6 +756,10 @@ impl App {
             sort_mode: Some(active.sort_mode),
             show_hidden: Some(active.show_hidden),
             show_sizes: Some(active.show_sizes),
+            show_dir_sizes: Some(active.show_dir_sizes),
+            use_trash: Some(self.use_trash),
+            show_git: Some(active.show_git),
+            bookmarks: Some(self.bookmarks.clone()),
             single_pane: Some(self.single_pane),
             cd_on_exit: Some(self.cd_on_exit),
             editor: Some(self.editor.to_key()),
@@ -663,12 +799,19 @@ impl App {
         if let Some(dirs) = pane_dirs {
             let show_hidden = state.show_hidden.unwrap_or(false);
             let show_sizes = state.show_sizes.unwrap_or(true);
+            let show_dir_sizes = state.show_dir_sizes.unwrap_or(true);
+            let show_git = state.show_git.unwrap_or(false);
             let sort_mode = state.sort_mode.unwrap_or_default();
             let filesystem = self
                 .panes
                 .first()
-                .map(|pane| pane.filesystem().clone())
-                .unwrap_or_else(crate::std_filesystem);
+                .map_or_else(crate::std_filesystem, |pane| pane.filesystem().clone());
+            let keymap = self
+                .panes
+                .first()
+                .map(|pane| pane.keymap.clone())
+                .unwrap_or_default();
+            let async_loading = self.panes.first().is_some_and(|pane| pane.async_loading);
             self.panes = dirs
                 .into_iter()
                 .map(|directory| {
@@ -676,10 +819,17 @@ impl App {
                         .filesystem(filesystem.clone())
                         .show_hidden(show_hidden)
                         .show_sizes(show_sizes)
+                        .show_dir_sizes(show_dir_sizes)
+                        .show_git(show_git)
+                        .async_loading(async_loading)
+                        .keymap(keymap.clone())
                         .sort_mode(sort_mode)
                         .build()
                 })
                 .collect();
+        }
+        if let Some(bookmarks) = &state.bookmarks {
+            self.bookmarks.clone_from(bookmarks);
         }
         if let Some(index) = state.active_pane_idx {
             self.active_idx = index.min(self.panes.len().saturating_sub(1));

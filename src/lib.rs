@@ -254,21 +254,81 @@
 //! | `preview`   | `PreviewState`, `PreviewContent`, `render_preview` — optional text, image, binary hex dump, and directory preview support                    |
 //! | `inline_editor` | [`InlineEditor`], [`EditorAction`], [`render_inline_editor`] — built-in text editor                                                       |
 
+/// Define a fieldless command enum together with its stable snake_case names
+/// (used by config files): `ALL`, `name()` and `from_name()`.
+macro_rules! command_enum {
+    (
+        $(#[$meta:meta])*
+        $vis:vis enum $name:ident {
+            $( $(#[$vmeta:meta])* $variant:ident => $text:literal ),+ $(,)?
+        }
+    ) => {
+        $(#[$meta])*
+        $vis enum $name {
+            $( $(#[$vmeta])* $variant ),+
+        }
+
+        impl $name {
+            /// Every variant, in declaration order.
+            pub const ALL: &'static [Self] = &[ $( Self::$variant ),+ ];
+
+            /// Stable snake_case name used in config files.
+            #[must_use]
+            pub fn name(self) -> &'static str {
+                match self { $( Self::$variant => $text ),+ }
+            }
+
+            /// Parse a [`name`](Self::name) (case-insensitive, `-` == `_`).
+            #[must_use]
+            pub fn from_name(name: &str) -> Option<Self> {
+                let wanted = name.trim().to_ascii_lowercase().replace('-', "_");
+                Self::ALL.iter().copied().find(|c| c.name() == wanted)
+            }
+        }
+    };
+}
+
+/// Saturating `usize → u16` for terminal geometry (never wraps).
+pub(crate) fn to_u16(n: usize) -> u16 {
+    u16::try_from(n).unwrap_or(u16::MAX)
+}
+
+/// Early-return from a key handler for anything but a key *press*.
+///
+/// On Windows (and terminals that negotiate the kitty keyboard protocol)
+/// crossterm delivers both `Press` and `Release` events for every physical
+/// key. Without this guard handlers run twice per key — double-toggling
+/// marks, double-navigating, and so on.
+macro_rules! press_only {
+    ($key:expr, $ret:expr) => {
+        if $key.kind != ::crossterm::event::KeyEventKind::Press {
+            return $ret;
+        }
+    };
+}
+
+#[cfg(feature = "archive")]
+pub mod archive;
+pub mod bulk_rename;
 pub mod dual_pane;
 pub mod explorer;
 pub mod filesystem;
+pub mod git;
 pub mod inline_editor;
+pub mod keymap;
 pub mod palette;
+pub mod picker;
 #[cfg(feature = "preview")]
 pub mod preview;
 pub mod render;
 pub mod types;
+pub mod worker;
 
 // ── Full-app modules ──────────────────────────────────────────────────────────
 
 #[cfg(feature = "full-app")]
 pub mod app;
-pub mod fs;
+pub mod fs_util;
 #[cfg(feature = "persistence")]
 pub mod persistence;
 #[cfg(feature = "full-app")]
@@ -280,13 +340,21 @@ pub use dual_pane::{DualPane, DualPaneActive, DualPaneBuilder, DualPaneCommand, 
 pub use explorer::{
     entry_icon, fmt_size, ExplorerError, FileExplorer, FileExplorerBuilder, PAGE_SIZE,
 };
-pub use filesystem::{std_filesystem, FileSystem, SharedFileSystem, StdFileSystem, VirtualEntry};
+#[cfg(feature = "trash")]
+pub use filesystem::TrashFileSystem;
+pub use filesystem::{
+    local_filesystem, std_filesystem, FileSystem, SharedFileSystem, StdFileSystem, VirtualEntry,
+    TRASH_SUPPORTED,
+};
 pub use palette::Theme;
 pub use render::{
     render, render_dual_pane, render_dual_pane_themed, render_themed, FOOTER_HEIGHT, HEADER_HEIGHT,
     MARK_INDICATOR, SCROLLBAR_CHAR,
 };
-pub use types::{DiskUsage, ExplorerCommand, ExplorerOutcome, FsEntry, SelectionMode, SortMode};
+pub use types::{
+    DiskUsage, ExplorerCommand, ExplorerOutcome, FsEntry, Prompt, PromptKind, SelectionMode,
+    SortMode,
+};
 
 // ── Full-app re-exports ───────────────────────────────────────────────────────
 
@@ -298,18 +366,25 @@ pub use app::{
     OperationId, OperationMode, OperationProgress, OperationRequest, OperationResult, PaneOptions,
     Snackbar,
 };
-pub use fs::{copy_dir_all, resolve_output_path};
+pub use fs_util::{copy_dir_all, resolve_output_path};
+pub use git::{GitMark, GitStatus};
 pub use inline_editor::{render_inline_editor, EditorAction, InlineEditor};
+#[cfg(feature = "full-app")]
+pub use keymap::{
+    default_keymap_toml, keymap_path, load_keymap_config, parse_keymap_config, KeymapConfig,
+};
+pub use keymap::{ChordMods, KeyChord, Keymap, KeymapError};
 #[cfg(feature = "persistence")]
 pub use persistence::{
     load_state, load_state_from, resolve_theme_idx, save_state, save_state_to, try_load_state_from,
-    AppState,
+    try_save_state, AppState,
 };
+pub use picker::{fuzzy_match, render_picker, Picker, PickerAction, PickerItem, PickerKind};
 #[cfg(feature = "preview")]
 pub use preview::{render_preview, PreviewContent, PreviewState};
 #[cfg(feature = "full-app")]
 pub use ui::{
     draw, draw_in, draw_in_with_options, render_action_bar, render_copy_progress,
-    render_editor_panel, render_modal, render_nav_hints, render_options_panel, render_snackbar,
-    render_theme_panel, AppViewOptions, HintLayout,
+    render_editor_panel, render_modal, render_modal_for, render_nav_hints, render_options_panel,
+    render_snackbar, render_theme_panel, AppViewOptions, HintLayout,
 };

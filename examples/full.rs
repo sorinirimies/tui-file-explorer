@@ -85,7 +85,7 @@ fn event_loop(
         if let Some(path) = app.open_with_editor.take() {
             if let Some(binary) = app.editor.binary() {
                 open_in_editor(terminal, &binary, &path)?;
-                for p in app.panes.iter_mut() {
+                for p in &mut app.panes {
                     p.reload();
                 }
                 let fname = path

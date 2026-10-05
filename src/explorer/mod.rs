@@ -37,7 +37,11 @@ use std::{
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::types::{DiskUsage, ExplorerCommand, ExplorerOutcome, FsEntry, SelectionMode, SortMode};
+use crate::keymap::Keymap;
+use crate::types::{
+    DiskUsage, ExplorerCommand, ExplorerOutcome, FsEntry, Prompt, PromptKind, SelectionMode,
+    SortMode,
+};
 
 /// Default number of entries scrolled by Page Up / Page Down.
 pub const PAGE_SIZE: usize = 10;
@@ -123,18 +127,12 @@ pub struct FileExplorer {
     pub search_active: bool,
     /// Paths that have been space-marked for a multi-item operation.
     pub marked: HashSet<PathBuf>,
-    /// Whether the explorer is currently capturing keystrokes for a new folder name.
-    pub mkdir_active: bool,
-    /// The folder name being typed when `mkdir_active` is true.
-    pub mkdir_input: String,
-    /// Whether the explorer is currently capturing keystrokes for a new file name.
-    pub touch_active: bool,
-    /// The file name being typed when `touch_active` is true.
-    pub touch_input: String,
-    /// Whether the explorer is currently capturing keystrokes for a rename operation.
-    pub rename_active: bool,
-    /// The new name being typed when `rename_active` is true.
-    pub rename_input: String,
+    /// The open rename / new-file / new-folder prompt, if any. While `Some`,
+    /// the prompt owns the keyboard.
+    pub prompt: Option<Prompt>,
+    /// Key bindings used by [`handle_key`](Self::handle_key) and
+    /// [`handle_command`](Self::handle_command).
+    pub keymap: Keymap,
     /// Cache of computed recursive directory sizes, keyed by absolute path.
     ///
     /// Each entry stores `(total_bytes, is_partial, item_count_at_computation)`.
@@ -144,6 +142,22 @@ pub struct FileExplorer {
     /// renamed directly inside that directory, without requiring a full
     /// recursive re-walk on every render or keystroke. See
     /// [`Self::ensure_dir_size_before`] / [`Self::clear_dir_size_cache`].
+    /// Lazily resolved symlink targets for visible rows (`None` = not a link).
+    /// Cleared on every reload.
+    /// Read directories on a worker thread instead of blocking the caller.
+    ///
+    /// Off by default (so `reload` is deterministic for embedders and tests);
+    /// the `tfe` binary turns it on. A read that finishes within a few
+    /// milliseconds is applied synchronously; slower ones show
+    /// [`is_loading`](Self::is_loading) until they complete.
+    pub async_loading: bool,
+    /// Off-thread work in flight (folder sizes, `git status`).
+    pub(crate) bg: background::Background,
+    /// Whether the git change column is shown (see [`Self::set_show_git`]).
+    pub show_git: bool,
+    /// Latest `git status` for the current directory, when enabled.
+    pub(crate) git: Option<crate::git::GitStatus>,
+    pub(crate) link_cache: std::collections::HashMap<PathBuf, Option<PathBuf>>,
     pub(crate) dir_size_cache: std::collections::HashMap<PathBuf, (u64, bool, usize)>,
     /// Total/free space for the storage device backing `current_dir`.
     ///
@@ -159,58 +173,16 @@ pub struct FileExplorer {
     /// snappier browsing of huge trees (network mounts, `node_modules`,
     /// build output, ...). Toggle with `z`. Defaults to `true`.
     pub show_sizes: bool,
+    /// Whether directories show their *recursive* byte size.
+    ///
+    /// Only meaningful while [`show_sizes`](Self::show_sizes) is `true`. When
+    /// `false`, files still show their size but directories show only the
+    /// cheap shallow item count and the recursive walk never runs. Toggle
+    /// with `Shift+Z`. Defaults to `true`.
+    pub show_dir_sizes: bool,
 }
 
-// ── handle_input_mode! ────────────────────────────────────────────────────────
-//
-// De-duplicates the character-input boilerplate shared by rename_active,
-// touch_active, and mkdir_active.
-//
-// Parameters
-// ----------
-// $self     – the `&mut self` receiver (ident)
-// $key      – the `KeyEvent` local (ident, taken by value in handle_key)
-// $active   – the boolean field name (e.g. `rename_active`)
-// $input    – the String field name  (e.g. `rename_input`)
-// $on_enter – an expression that is spliced in as the `KeyCode::Enter` arm
-//             body.  It must arrange for `$active` to be set to false,
-//             `$input` to be cleared, and for the function to return.
-//
-// The macro wraps the whole match in `if $self.$active { … }` so execution
-// falls through when the mode is inactive.
-
-macro_rules! handle_input_mode {
-    ($self:ident, $key:ident, $active:ident, $input:ident, $on_enter:expr) => {
-        if $self.$active {
-            match $key.code {
-                // Printable character (no modifiers, or Shift only) → append.
-                KeyCode::Char(c)
-                    if $key.modifiers.is_empty()
-                        || $key.modifiers == crossterm::event::KeyModifiers::SHIFT =>
-                {
-                    $self.$input.push(c);
-                    return ExplorerOutcome::Pending;
-                }
-                // Backspace → pop last char.
-                KeyCode::Backspace => {
-                    $self.$input.pop();
-                    return ExplorerOutcome::Pending;
-                }
-                // Enter → caller-supplied logic.
-                KeyCode::Enter => $on_enter,
-                // Esc → cancel without committing.
-                KeyCode::Esc => {
-                    $self.$active = false;
-                    $self.$input.clear();
-                    return ExplorerOutcome::Pending;
-                }
-                // Any other key → stay in mode, consume the event.
-                _ => return ExplorerOutcome::Pending,
-            }
-        }
-    };
-}
-
+mod background;
 mod builder;
 mod entries;
 mod keys;
@@ -231,6 +203,7 @@ impl FileExplorer {
     /// Pass an empty `Vec` to allow all files.
     ///
     /// For more configuration options use [`FileExplorer::builder`] instead.
+    #[must_use]
     pub fn new(initial_dir: PathBuf, extension_filter: Vec<String>) -> Self {
         Self::builder(initial_dir)
             .extension_filter(extension_filter)
@@ -251,11 +224,13 @@ impl FileExplorer {
     ///     .sort_mode(SortMode::SizeDesc)
     ///     .build();
     /// ```
+    #[must_use]
     pub fn builder(initial_dir: PathBuf) -> FileExplorerBuilder {
         FileExplorerBuilder::new(initial_dir)
     }
 
     /// Return the configured filesystem backend.
+    #[must_use]
     pub fn filesystem(&self) -> &crate::SharedFileSystem {
         &self.filesystem
     }
@@ -309,6 +284,7 @@ impl FileExplorer {
     /// Call this from your application's key-handling function and act on
     /// [`ExplorerOutcome::Selected`] / [`ExplorerOutcome::Dismissed`].
     /// Return the set of currently marked paths (for multi-item operations).
+    #[must_use]
     pub fn marked_paths(&self) -> &HashSet<PathBuf> {
         &self.marked
     }
@@ -335,38 +311,74 @@ impl FileExplorer {
     // ── Queries ───────────────────────────────────────────────────────────────
 
     /// The currently highlighted [`FsEntry`], or `None` if the list is empty.
+    #[must_use]
     pub fn current_entry(&self) -> Option<&FsEntry> {
         self.entries.get(self.cursor)
     }
 
+    /// The text typed into the open prompt of `kind` (empty when another
+    /// prompt, or none, is open).
+    fn prompt_text(&self, kind: PromptKind) -> &str {
+        match &self.prompt {
+            Some(p) if p.kind == kind => &p.text,
+            _ => "",
+        }
+    }
+
+    /// Whether a prompt of `kind` is open.
+    #[must_use]
+    pub fn is_prompt_active(&self, kind: PromptKind) -> bool {
+        self.prompt.as_ref().is_some_and(|p| p.kind == kind)
+    }
+
+    /// Whether any text prompt (rename / new file / new folder) is open.
+    #[must_use]
+    pub fn has_prompt(&self) -> bool {
+        self.prompt.is_some()
+    }
+
+    /// Open a prompt of `kind` pre-filled with `text`.
+    pub fn open_prompt(&mut self, kind: PromptKind, text: impl Into<String>) {
+        self.prompt = Some(Prompt {
+            kind,
+            text: text.into(),
+        });
+    }
+
     /// Whether the explorer is in mkdir (new-folder input) mode.
+    #[must_use]
     pub fn is_mkdir_active(&self) -> bool {
-        self.mkdir_active
+        self.is_prompt_active(PromptKind::Mkdir)
     }
 
     /// The folder name being typed when mkdir mode is active.
+    #[must_use]
     pub fn mkdir_input(&self) -> &str {
-        &self.mkdir_input
+        self.prompt_text(PromptKind::Mkdir)
     }
 
     /// Whether the explorer is in touch (new-file input) mode.
+    #[must_use]
     pub fn is_touch_active(&self) -> bool {
-        self.touch_active
+        self.is_prompt_active(PromptKind::Touch)
     }
 
     /// The file name being typed when touch mode is active.
+    #[must_use]
     pub fn touch_input(&self) -> &str {
-        &self.touch_input
+        self.prompt_text(PromptKind::Touch)
     }
 
     /// Whether the explorer is in rename (entry-rename input) mode.
+    #[must_use]
     pub fn is_rename_active(&self) -> bool {
-        self.rename_active
+        self.is_prompt_active(PromptKind::Rename)
     }
 
     /// The new name being typed when rename mode is active.
+    #[must_use]
     pub fn rename_input(&self) -> &str {
-        &self.rename_input
+        self.prompt_text(PromptKind::Rename)
     }
 
     // ── Inspectors ────────────────────────────────────────────────────────────
@@ -380,6 +392,7 @@ impl FileExplorer {
     /// let mut explorer = FileExplorer::new(std::path::PathBuf::from("/"), vec![]);
     /// assert!(explorer.is_at_root());
     /// ```
+    #[must_use]
     pub fn is_at_root(&self) -> bool {
         self.current_dir.parent().is_none()
     }
@@ -389,6 +402,7 @@ impl FileExplorer {
     /// This reflects the *filtered, visible* set — hidden files are excluded
     /// unless `show_hidden` is `true`, and an active search query narrows
     /// the set further.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -397,6 +411,7 @@ impl FileExplorer {
     ///
     /// Equivalent to `explorer.entries.len()` but reads more naturally in
     /// condition checks.
+    #[must_use]
     pub fn entry_count(&self) -> usize {
         self.entries.len()
     }
@@ -420,6 +435,7 @@ impl FileExplorer {
     /// to select a file that does not match the extension filter) and is
     /// cleared on the next successful navigation.  Returns an empty string
     /// when there is nothing to report.
+    #[must_use]
     pub fn status(&self) -> &str {
         &self.status
     }
@@ -432,6 +448,7 @@ impl FileExplorer {
     /// let explorer = FileExplorer::new(std::path::PathBuf::from("/tmp"), vec![]);
     /// assert_eq!(explorer.sort_mode(), SortMode::Name);
     /// ```
+    #[must_use]
     pub fn sort_mode(&self) -> SortMode {
         self.sort_mode
     }
@@ -439,12 +456,14 @@ impl FileExplorer {
     /// The current incremental-search query string.
     ///
     /// Returns an empty string when no search is active.
+    #[must_use]
     pub fn search_query(&self) -> &str {
         &self.search_query
     }
 
     /// Returns `true` when the explorer is actively capturing keystrokes for
     /// incremental search input.
+    #[must_use]
     pub fn is_searching(&self) -> bool {
         self.search_active
     }
@@ -520,17 +539,24 @@ impl FileExplorer {
     /// Called automatically after every navigation action or configuration
     /// change.  Callers can invoke it manually after external filesystem
     /// mutations (e.g. a file was created or deleted in the watched directory).
+    ///
+    /// With [`async_loading`](Self::async_loading) enabled a slow read does
+    /// not block: the list shows "loading" and fills in on a later
+    /// [`poll_background`](Self::poll_background).
     pub fn reload(&mut self) {
-        if let Err(error) = self.try_reload() {
-            self.entries.clear();
-            self.disk_usage = None;
-            self.status = error.to_string();
-            self.clamp_cursor();
-        }
+        let cursor = self.cursor;
+        self.reload_with(background::AfterLoad {
+            select: None,
+            cursor: Some(cursor),
+        });
     }
 
     /// Reload directory contents and preserve filesystem failures for hosts.
+    ///
+    /// Always synchronous (it must return the error), and it supersedes any
+    /// background read in flight.
     pub fn try_reload(&mut self) -> Result<(), ExplorerError> {
+        self.bg.cancel_load();
         self.status.clear();
         self.entries = try_load_entries(
             self.filesystem.as_ref(),
@@ -545,6 +571,9 @@ impl FileExplorer {
             source,
         })?;
         self.disk_usage = self.filesystem.disk_usage(&self.current_dir);
+        self.link_cache.clear();
+        self.bg.clear_counted();
+        self.refresh_git();
         // After every reload the entry count may have shrunk (filter change,
         // external deletion, empty directory).  Clamp so cursor and
         // scroll_offset never point past the end of the new list.
@@ -554,61 +583,26 @@ impl FileExplorer {
 
     // ── Directory size cache ─────────────────────────────────────────────
 
-    /// Return the cached recursive size for the directory at `path`,
-    /// recomputing it (bounded by [`crate::fs::DIR_SIZE_MAX_ENTRIES`] /
-    /// [`crate::fs::DIR_SIZE_MAX_DURATION`], plus an optional shared
-    /// `deadline`) if it is missing or stale.
-    ///
-    /// `item_count` should be the directory's current shallow entry count
-    /// (i.e. [`FsEntry::item_count`]); it is used as a cheap staleness check
-    /// — a mismatch against the cached value means something changed
-    /// directly inside the directory since it was last computed.
-    ///
-    /// When `deadline` is `Some` and has already passed, a cache miss is left
-    /// uncomputed for this call (returning `(0, false)`) instead of
-    /// performing the walk — this lets callers share one wall-clock budget
-    /// across many rows in a single render pass so a folder full of large
-    /// subdirectories can never make a render noticeably slow; skipped
-    /// directories keep showing their cheap shallow item count and get
-    /// picked up on a later redraw. Pass `None` for unbounded behaviour.
-    ///
-    /// Returns `(total_bytes, is_partial)`. Intended for renderers that only
-    /// need sizes for the currently visible rows, since this may perform a
-    /// bounded filesystem walk.
-    pub(crate) fn ensure_dir_size_before(
-        &mut self,
-        path: &Path,
-        item_count: Option<usize>,
-        deadline: Option<std::time::Instant>,
-    ) -> (u64, bool) {
-        let Some(item_count) = item_count else {
-            return (0, false);
-        };
-        if let Some(&(bytes, partial, cached_count)) = self.dir_size_cache.get(path) {
-            if cached_count == item_count {
-                return (bytes, partial);
-            }
-        }
-        if let Some(deadline) = deadline {
-            if std::time::Instant::now() >= deadline {
-                // Out of budget this frame — leave uncached, try again later.
-                return (0, false);
-            }
-        }
-        let (bytes, partial) = self.filesystem.dir_size(path);
-        self.dir_size_cache
-            .insert(path.to_path_buf(), (bytes, partial, item_count));
-        (bytes, partial)
-    }
-
     /// Clear every cached recursive directory size.
     ///
     /// Call this after operations that can change file sizes *without*
     /// necessarily changing any visible directory's immediate entry count
     /// (the heuristic `ensure_dir_size_before` relies on) — e.g. a
     /// multi-file paste or delete that touches nested subdirectories.
+    /// The symlink target of `path`, if it is a symlink (cached until reload).
+    pub(crate) fn link_target(&mut self, path: &Path) -> Option<PathBuf> {
+        if !self.filesystem.is_local() {
+            return None;
+        }
+        self.link_cache
+            .entry(path.to_path_buf())
+            .or_insert_with(|| std::fs::read_link(path).ok())
+            .clone()
+    }
+
     pub fn clear_dir_size_cache(&mut self) {
         self.dir_size_cache.clear();
+        self.bg.clear_dir_sizes();
     }
 }
 

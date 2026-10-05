@@ -55,7 +55,7 @@ pub fn render_snackbar(frame: &mut Frame, area: Rect, snackbar: &Snackbar, theme
     // Height: 3 rows (border top + content + border bottom).
     // Width: message length + 4 (2 padding + 2 border chars), capped to terminal width.
     let msg = &snackbar.message;
-    let desired_width = (msg.len() as u16)
+    let desired_width = crate::to_u16(msg.len())
         .saturating_add(4)
         .min(area.width.saturating_sub(4));
     let width = desired_width.max(20).min(area.width);

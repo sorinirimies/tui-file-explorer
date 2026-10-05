@@ -66,7 +66,9 @@ pub fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
 /// When `print_dir` is `false` the original `path` is returned unchanged.
 pub fn resolve_output_path(path: PathBuf, print_dir: bool) -> PathBuf {
     if print_dir {
-        path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
+        path.parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or(path)
     } else {
         path
     }
@@ -86,6 +88,7 @@ pub fn resolve_output_path(path: PathBuf, print_dir: bool) -> PathBuf {
 /// per-entry via [`crate::FsEntry::size`] (files) and
 /// [`crate::FsEntry::item_count`] (directories).
 #[cfg(unix)]
+#[must_use]
 pub fn disk_usage(path: &Path) -> Option<DiskUsage> {
     use std::os::unix::ffi::OsStrExt;
 
@@ -191,6 +194,7 @@ pub const DIR_SIZE_MAX_DURATION: Duration = Duration::from_millis(25);
 ///
 /// The walk is iterative (an explicit stack) rather than recursive, so a
 /// pathologically deep directory tree can't blow the call stack.
+#[must_use]
 pub fn dir_size(dir: &Path) -> (u64, bool) {
     let start = Instant::now();
     let mut total: u64 = 0;

@@ -57,6 +57,7 @@ pub enum HintLayout {
 }
 
 impl HintLayout {
+    #[must_use]
     pub fn resolve(self, width: u16) -> Self {
         match self {
             Self::Auto if width < 90 => Self::Vertical,
@@ -65,6 +66,7 @@ impl HintLayout {
         }
     }
 
+    #[must_use]
     pub fn action_bar_rows(self, width: u16) -> u16 {
         match self.resolve(width) {
             Self::Horizontal => 6,
@@ -73,6 +75,7 @@ impl HintLayout {
         }
     }
 
+    #[must_use]
     pub fn row_height(self, width: u16) -> u16 {
         self.action_bar_rows(width) / 2
     }
@@ -132,6 +135,8 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
     if app.panes.is_empty() {
         return;
     }
+    // Pick up finished background work (previews, fuzzy walk, extraction).
+    app.poll_background();
     let theme = *app.theme();
     let full = area;
 
@@ -220,15 +225,15 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
             h_constraints.push(Constraint::Percentage(40));
         } else {
             let pct = (options.panes_with_preview_percent.min(100)
-                / visible_pane_count.max(1) as u16)
-                .max(1);
+                / crate::to_u16(visible_pane_count.max(1)))
+            .max(1);
             for _ in 0..visible_pane_count {
                 h_constraints.push(Constraint::Percentage(pct));
             }
         }
         h_constraints.push(Constraint::Min(0)); // Preview takes remaining space
     } else {
-        let pct = (100 / visible_pane_count.max(1)) as u16;
+        let pct = crate::to_u16(100 / visible_pane_count.max(1));
         for _ in 0..visible_pane_count {
             h_constraints.push(Constraint::Percentage(pct));
         }
@@ -257,7 +262,7 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
     let theme_changed = app.panes[0].theme_name != app.theme_name();
     if theme_changed {
         let theme_name = app.theme_name().to_string();
-        for p in app.panes.iter_mut() {
+        for p in &mut app.panes {
             p.theme_name = theme_name.clone();
         }
     }
@@ -269,7 +274,7 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
     };
     if app.panes[0].editor_name != editor_label {
         let editor_name = editor_label.to_string();
-        for p in app.panes.iter_mut() {
+        for p in &mut app.panes {
             p.editor_name = editor_name.clone();
         }
     }
@@ -337,9 +342,14 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
         render_nav_hints_with_layout(frame, rows[0], rows[1], app, &theme, hint_layout);
     }
 
+    // ── Picker overlay (bookmarks / fuzzy finder) ─────────────────────────────
+    if let Some(picker) = &app.picker {
+        crate::picker::render_picker(frame, full, picker, &theme);
+    }
+
     // ── Modal overlay ─────────────────────────────────────────────────────────
     if let Some(modal) = &app.modal {
-        render_modal(frame, full, modal, &theme);
+        render_modal_for(frame, full, modal, &theme, app.use_trash);
     }
 
     // ── Copy progress overlay ─────────────────────────────────────────────────
@@ -349,7 +359,11 @@ pub fn draw_in_with_options(app: &mut App, frame: &mut Frame, area: Rect, option
 
     // ── Snackbar overlay ──────────────────────────────────────────────────────
     // Expire stale snackbars first, then render if one is still active.
-    if app.snackbar.as_ref().is_some_and(|s| s.is_expired()) {
+    if app
+        .snackbar
+        .as_ref()
+        .is_some_and(super::app::Snackbar::is_expired)
+    {
         app.snackbar = None;
     }
     if let Some(snackbar) = &app.snackbar {
@@ -365,7 +379,7 @@ mod panels;
 pub use self::action_bar::{render_action_bar, render_nav_hints, render_nav_hints_with_layout};
 #[cfg(test)]
 pub use self::action_bar::{render_action_bar_spans, render_nav_hints_spans};
-pub use self::modal::render_modal;
+pub use self::modal::{render_modal, render_modal_for};
 pub use self::overlays::{render_copy_progress, render_debug_panel, render_snackbar};
 pub use self::panels::{render_editor_panel, render_options_panel, render_theme_panel};
 

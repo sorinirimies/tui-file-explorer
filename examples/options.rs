@@ -349,7 +349,7 @@ fn event_loop(
                     .into_owned();
                 app.status = format!("📄 Created file '{name}'");
             }
-            DualPaneOutcome::RenameCompleted(path) => {
+            DualPaneOutcome::RenameCompleted { to: path, .. } => {
                 let name = path
                     .file_name()
                     .unwrap_or_default()

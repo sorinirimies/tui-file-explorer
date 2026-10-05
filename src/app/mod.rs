@@ -121,6 +121,7 @@ impl Editor {
     /// found first is returned; if neither is on `$PATH` the string `"hx"` is
     /// returned as a best-effort fallback so the error message names a real
     /// binary.
+    #[must_use]
     pub fn binary(&self) -> Option<String> {
         match self {
             Editor::None => Option::None,
@@ -165,6 +166,7 @@ impl Editor {
     }
 
     /// Return a short human-readable label (shown in the options panel).
+    #[must_use]
     pub fn label(&self) -> &str {
         match self {
             Editor::None => "none",
@@ -200,7 +202,7 @@ impl Editor {
     ///
     /// `Custom` variants skip back to `None` — the user must set them via
     /// `--editor` or direct persistence editing.
-    #[allow(dead_code)]
+    #[must_use]
     pub fn cycle(&self) -> Editor {
         match self {
             Editor::None => Editor::Helix,
@@ -217,6 +219,7 @@ impl Editor {
     }
 
     /// Serialise to the on-disk key string.
+    #[must_use]
     pub fn to_key(&self) -> String {
         match self {
             Editor::None => "none".to_string(),
@@ -250,6 +253,7 @@ impl Editor {
     ///
     /// Returns `None` (the Rust `Option`) for an empty string; unknown values
     /// are treated as `Custom` so that third-party editors survive round-trips.
+    #[must_use]
     pub fn from_key(s: &str) -> Option<Editor> {
         if s.is_empty() {
             return Option::None;
@@ -297,20 +301,17 @@ fn which_on_path(name: &str) -> bool {
     std::env::split_paths(&path_var).any(|dir| {
         let candidate = dir.join(name);
         // `metadata` follows symlinks, so a symlink to an executable is OK.
-        candidate
-            .metadata()
-            .map(|m| {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    m.is_file() && (m.permissions().mode() & 0o111 != 0)
-                }
-                #[cfg(not(unix))]
-                {
-                    m.is_file()
-                }
-            })
-            .unwrap_or(false)
+        candidate.metadata().is_ok_and(|m| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                m.is_file() && (m.permissions().mode() & 0o111 != 0)
+            }
+            #[cfg(not(unix))]
+            {
+                m.is_file()
+            }
+        })
     })
 }
 
@@ -340,6 +341,21 @@ pub struct AppOptions {
     /// Show file/folder sizes on startup. Defaults to `true`; set to `false`
     /// for the snappiest possible browsing of huge directory trees.
     pub show_sizes: bool,
+    /// Compute recursive folder sizes on startup. When `false` folders show a
+    /// shallow item count instead. Defaults to `true`.
+    pub show_dir_sizes: bool,
+    /// Send deletions to the OS trash instead of unlinking them. Needs the
+    /// `trash` feature; ignored (permanent delete) without it. Defaults to
+    /// `false` for library users — the `tfe` binary turns it on.
+    pub use_trash: bool,
+    /// Show git change markers (`M`, `A`, `?`, …) next to entries.
+    pub show_git: bool,
+    /// Saved bookmark folders.
+    pub bookmarks: Vec<PathBuf>,
+    /// Read directories on a background thread so a slow disk never freezes
+    /// the UI (see [`FileExplorer::async_loading`]). Off by default; `tfe`
+    /// enables it.
+    pub async_loading: bool,
     /// Index into the theme catalogue to use on startup.
     pub theme_idx: usize,
     /// Whether the theme-picker side-panel should be open on startup.
@@ -367,6 +383,11 @@ impl Default for AppOptions {
             extensions: vec![],
             show_hidden: false,
             show_sizes: true,
+            show_dir_sizes: true,
+            use_trash: false,
+            show_git: false,
+            bookmarks: Vec::new(),
+            async_loading: false,
             theme_idx: 0,
             show_theme_panel: false,
             single_pane: false,
@@ -382,6 +403,7 @@ impl Default for AppOptions {
 use crate::inline_editor::{EditorAction, InlineEditor};
 use crate::preview::PreviewState;
 
+use crate::picker::Picker;
 use crate::{ExplorerOutcome, FileExplorer, SortMode, Theme};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
@@ -409,6 +431,7 @@ pub struct ClipboardItem {
 
 impl ClipboardItem {
     /// A small emoji that visually distinguishes copy from cut in the action bar.
+    #[must_use]
     pub fn icon(&self) -> &'static str {
         match self.op {
             ClipOp::Copy => "\u{1F4CB}", // 📋
@@ -417,6 +440,7 @@ impl ClipboardItem {
     }
 
     /// A short human-readable label for the current operation.
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self.op {
             ClipOp::Copy => "Copy",
@@ -425,11 +449,13 @@ impl ClipboardItem {
     }
 
     /// Number of paths in the clipboard.
+    #[must_use]
     pub fn count(&self) -> usize {
         self.paths.len()
     }
 
     /// The first (or only) path — convenience accessor for single-item clipboard.
+    #[must_use]
     pub fn first_path(&self) -> Option<&PathBuf> {
         self.paths.first()
     }
@@ -482,7 +508,6 @@ pub struct Snackbar {
 
 impl Snackbar {
     /// Create a new info snackbar that lasts 3 seconds.
-    #[allow(dead_code)]
     pub fn info(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -501,6 +526,7 @@ impl Snackbar {
     }
 
     /// Returns `true` if the snackbar's display window has passed.
+    #[must_use]
     pub fn is_expired(&self) -> bool {
         Instant::now() >= self.expires_at
     }
@@ -531,6 +557,7 @@ impl CopyProgress {
     }
 
     /// Returns the fraction complete as a value in `0.0..=1.0`.
+    #[must_use]
     pub fn fraction(&self) -> f64 {
         if self.total == 0 {
             1.0
@@ -540,6 +567,7 @@ impl CopyProgress {
     }
 
     /// Returns `true` when all items have been processed.
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.done >= self.total
     }
@@ -549,6 +577,8 @@ pub struct App {
     /// All explorer panes, in left-to-right display order. Always has at
     /// least one entry.
     pub panes: Vec<FileExplorer>,
+    /// Whether deletions go to the OS trash (see [`AppOptions::use_trash`]).
+    pub use_trash: bool,
     /// Index into `panes` of the pane that currently has keyboard focus.
     pub active_idx: usize,
     /// The most recently yanked entry, if any.
@@ -597,6 +627,19 @@ pub struct App {
     pub preview_state: PreviewState,
     /// The active inline editor, if any (opened with `i`).
     pub inline_editor: Option<InlineEditor>,
+    /// The open list overlay (bookmarks / fuzzy finder), if any.
+    pub picker: Option<Picker>,
+    /// Saved bookmark folders (`b` toggles, `B` opens the list).
+    pub bookmarks: Vec<PathBuf>,
+    /// Reversible actions, oldest first (`u` undoes the newest).
+    pub undo_stack: Vec<UndoEntry>,
+    /// Undone actions that `Ctrl+R` can re-apply, oldest first.
+    pub redo_stack: Vec<UndoEntry>,
+    /// The bulk rename awaiting the editor, if any (`R`).
+    pub bulk_rename: Option<BulkRenameSession>,
+    picker_task: Option<crate::worker::Task<features::WalkMsg>>,
+    #[cfg(feature = "archive")]
+    extract_task: Option<features::ExtractJob>,
     /// Host-defined key remappings used by `dispatch_key`.
     key_bindings: KeyBindings,
     operation_mode: OperationMode,
@@ -608,6 +651,7 @@ pub struct App {
 
 impl App {
     /// Construct a new `App` from an [`AppOptions`] config struct.
+    #[must_use]
     pub fn new(opts: AppOptions) -> Self {
         let dirs = if opts.pane_dirs.is_empty() {
             vec![PathBuf::from(".")]
@@ -618,9 +662,13 @@ impl App {
             .into_iter()
             .map(|dir| {
                 FileExplorer::builder(dir)
+                    .filesystem(crate::local_filesystem(opts.use_trash))
+                    .show_git(opts.show_git)
+                    .async_loading(opts.async_loading)
                     .extension_filter(opts.extensions.clone())
                     .show_hidden(opts.show_hidden)
                     .show_sizes(opts.show_sizes)
+                    .show_dir_sizes(opts.show_dir_sizes)
                     .sort_mode(opts.sort_mode)
                     .build()
             })
@@ -629,6 +677,7 @@ impl App {
         let theme_idx = opts.theme_idx.min(themes.len().saturating_sub(1));
         Self {
             panes,
+            use_trash: opts.use_trash && crate::TRASH_SUPPORTED,
             active_idx: 0,
             clipboard: None,
             themes,
@@ -652,6 +701,14 @@ impl App {
             show_preview: false,
             preview_state: PreviewState::new(),
             inline_editor: None,
+            picker: None,
+            bookmarks: opts.bookmarks,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            bulk_rename: None,
+            picker_task: None,
+            #[cfg(feature = "archive")]
+            extract_task: None,
             key_bindings: KeyBindings::default(),
             operation_mode: OperationMode::Immediate,
             next_operation_id: 1,
@@ -674,6 +731,7 @@ impl App {
     /// Everything before this index is a terminal editor; everything from
     /// this index onward is a GUI editor or IDE.  Used by the editor panel
     /// to render the two section headers.
+    #[must_use]
     pub fn first_ide_idx() -> usize {
         // None, Helix, Neovim, Vim, Nano, Micro, Emacs  →  7 terminal entries
         7
@@ -683,6 +741,7 @@ impl App {
     ///
     /// Used by the editor-picker panel to populate the list and navigate it.
     /// Terminal editors come first, then GUI editors/IDEs.
+    #[must_use]
     pub fn all_editors() -> Vec<Editor> {
         vec![
             // ── Terminal editors ──────────────────────────────────────────────
@@ -725,14 +784,13 @@ impl App {
     // ── Snackbar helpers ──────────────────────────────────────────────────────
 
     /// Show an info snackbar with the given message (auto-expires after 3 s).
-    #[allow(dead_code)]
     pub fn notify(&mut self, msg: impl Into<String>) {
         self.snackbar = Some(Snackbar::info(msg));
     }
 
     /// Reload both panes and show a notification with the entry name.
     fn reload_and_notify(&mut self, path: &std::path::Path, verb: &str) {
-        for p in self.panes.iter_mut() {
+        for p in &mut self.panes {
             p.reload();
         }
         let name = path
@@ -751,16 +809,19 @@ impl App {
     // ── Theme helpers ─────────────────────────────────────────────────────────
 
     /// Return a reference to the currently selected [`Theme`].
+    #[must_use]
     pub fn theme(&self) -> &Theme {
         &self.themes[self.theme_idx].2
     }
 
     /// Return the name of the currently selected theme.
+    #[must_use]
     pub fn theme_name(&self) -> &str {
         self.themes[self.theme_idx].0
     }
 
     /// Return the description of the currently selected theme.
+    #[must_use]
     pub fn theme_desc(&self) -> &str {
         self.themes[self.theme_idx].1
     }
@@ -781,6 +842,7 @@ impl App {
 
 mod api;
 mod clipboard;
+mod features;
 mod keys;
 mod operation;
 mod pane;
@@ -789,6 +851,7 @@ pub use api::{
     AppBuildError, AppBuilder, AppCommand, AppEvent, AppOutcome, KeyBinding, KeyBindings,
     PaneOptions,
 };
+pub use features::{BulkRenameSession, UndoEntry};
 pub use operation::{
     execute_operation, execute_operation_with, execute_operation_with_progress, FileOperation,
     OperationApplyError, OperationFailure, OperationId, OperationMode, OperationProgress,

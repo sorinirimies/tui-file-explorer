@@ -36,6 +36,12 @@ macro_rules! assert_field_round_trips {
 assert_field_round_trips! {
     show_hidden_true_round_trips:  show_hidden  = true,
     show_hidden_false_round_trips: show_hidden  = false,
+    show_sizes_false_round_trips:  show_sizes   = false,
+    show_git_true_round_trips:     show_git     = true,
+    bookmarks_round_trip:          bookmarks    = vec![PathBuf::from("/x/y"), PathBuf::from("/z")],
+    use_trash_true_round_trips:    use_trash    = true,
+    show_dir_sizes_true_round_trips:  show_dir_sizes = true,
+    show_dir_sizes_false_round_trips: show_dir_sizes = false,
     single_pane_true_round_trips:  single_pane  = true,
     single_pane_false_round_trips: single_pane  = false,
     cd_on_exit_true_round_trips:   cd_on_exit   = true,
@@ -135,6 +141,10 @@ fn full_state_round_trips() {
         sort_mode: Some(SortMode::SizeDesc),
         show_hidden: Some(true),
         show_sizes: Some(true),
+        show_dir_sizes: Some(true),
+        use_trash: Some(true),
+        show_git: Some(true),
+        bookmarks: Some(vec![PathBuf::from("/a"), PathBuf::from("/b")]),
         single_pane: Some(false),
         cd_on_exit: Some(true),
         editor: Some("nvim".into()),
@@ -618,6 +628,10 @@ fn active_pane_persists_with_full_state() {
         sort_mode: Some(SortMode::SizeDesc),
         show_hidden: Some(true),
         show_sizes: Some(true),
+        show_dir_sizes: Some(true),
+        use_trash: Some(true),
+        show_git: Some(false),
+        bookmarks: Some(vec![]),
         single_pane: Some(false),
         cd_on_exit: Some(true),
         editor: Some("nvim".into()),
@@ -661,4 +675,14 @@ fn atomic_write_leaves_no_tmp_file() {
         "temporary file should be cleaned up after atomic rename"
     );
     assert!(path.exists(), "final JSON file should exist");
+}
+
+#[test]
+fn legacy_state_without_dir_sizes_field_loads_as_none() {
+    let (_dir, path) = tmp_state_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, r#"{"show_sizes": false}"#).unwrap();
+    let state = load_state_from(&path);
+    assert_eq!(state.show_sizes, Some(false));
+    assert_eq!(state.show_dir_sizes, None);
 }

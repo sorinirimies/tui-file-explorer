@@ -251,7 +251,7 @@ fn event_loop(
             ExplorerOutcome::Dismissed => return Ok(()),
             ExplorerOutcome::MkdirCreated(_)
             | ExplorerOutcome::TouchCreated(_)
-            | ExplorerOutcome::RenameCompleted(_)
+            | ExplorerOutcome::RenameCompleted { .. }
             | ExplorerOutcome::Pending
             | ExplorerOutcome::Unhandled => {}
         }

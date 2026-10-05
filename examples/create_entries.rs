@@ -142,7 +142,7 @@ fn event_loop(
                 app.status = format!("📄 Created file '{name}'");
             }
 
-            ExplorerOutcome::RenameCompleted(path) => {
+            ExplorerOutcome::RenameCompleted { to: path, .. } => {
                 let name = path
                     .file_name()
                     .unwrap_or_default()

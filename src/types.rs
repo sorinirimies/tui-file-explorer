@@ -4,27 +4,72 @@ use std::path::PathBuf;
 
 // ── ExplorerCommand ───────────────────────────────────────────────────────────
 
-/// Semantic command accepted by [`crate::FileExplorer::handle_command`].
+command_enum! {
+    /// Semantic command accepted by [`crate::FileExplorer::handle_command`].
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum ExplorerCommand {
+        MoveUp => "move_up",
+        MoveDown => "move_down",
+        PageUp => "page_up",
+        PageDown => "page_down",
+        Top => "top",
+        Bottom => "bottom",
+        Ascend => "ascend",
+        Navigate => "navigate",
+        Confirm => "confirm",
+        ToggleHidden => "toggle_hidden",
+        ToggleSizes => "toggle_sizes",
+        ToggleDirSizes => "toggle_dir_sizes",
+        Search => "search",
+        CycleSort => "cycle_sort",
+        ToggleMark => "toggle_mark",
+        NewDirectory => "new_directory",
+        NewFile => "new_file",
+        Rename => "rename",
+        Dismiss => "dismiss",
+    }
+}
+
+// ── Prompt ────────────────────────────────────────────────────────────────────
+
+/// Which single-line text prompt an explorer is showing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ExplorerCommand {
-    MoveUp,
-    MoveDown,
-    PageUp,
-    PageDown,
-    Top,
-    Bottom,
-    Ascend,
-    Navigate,
-    Confirm,
-    ToggleHidden,
-    ToggleSizes,
-    Search,
-    CycleSort,
-    ToggleMark,
-    NewDirectory,
-    NewFile,
+pub enum PromptKind {
+    /// Rename the entry under the cursor.
     Rename,
-    Dismiss,
+    /// Create a new empty file.
+    Touch,
+    /// Create a new directory.
+    Mkdir,
+}
+
+impl PromptKind {
+    /// Footer label shown in front of the typed text.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Rename => " \u{270F}\u{FE0F}  Rename: ",
+            Self::Touch => " \u{1F4C4} New file: ",
+            Self::Mkdir => " \u{1F4C2} New folder: ",
+        }
+    }
+
+    /// Short verb used in status messages (`"mkdir failed: …"`).
+    #[must_use]
+    pub fn verb(self) -> &'static str {
+        match self {
+            Self::Rename => "rename",
+            Self::Touch => "touch",
+            Self::Mkdir => "mkdir",
+        }
+    }
+}
+
+/// An open text prompt: what it is for and what has been typed so far.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Prompt {
+    pub kind: PromptKind,
+    pub text: String,
 }
 
 // ── SelectionMode ─────────────────────────────────────────────────────────────
@@ -74,6 +119,7 @@ impl SortMode {
     /// Return the next mode in the cycle: `Name → SizeDesc → Extension → Name`.
     ///
     /// Intended for the `s` key binding that cycles sort modes at runtime.
+    #[must_use]
     pub fn next(self) -> Self {
         match self {
             Self::Name => Self::SizeDesc,
@@ -91,6 +137,7 @@ impl SortMode {
     /// assert_eq!(SortMode::SizeDesc.label(),  "size ↓");
     /// assert_eq!(SortMode::Extension.label(), "ext");
     /// ```
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Name => "name",
@@ -131,7 +178,7 @@ pub struct FsEntry {
 /// directory, as reported by the OS (`statvfs` on Unix, `GetDiskFreeSpaceExW`
 /// on Windows).
 ///
-/// Obtained via [`crate::fs::disk_usage`] and refreshed on every
+/// Obtained via [`crate::fs_util::disk_usage`] and refreshed on every
 /// [`crate::FileExplorer::reload`], since navigating across a mount point
 /// (e.g. into a different external drive) changes which device applies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -144,6 +191,7 @@ pub struct DiskUsage {
 
 impl DiskUsage {
     /// Bytes currently in use (`total_bytes - free_bytes`, saturating).
+    #[must_use]
     pub fn used_bytes(&self) -> u64 {
         self.total_bytes.saturating_sub(self.free_bytes)
     }
@@ -151,6 +199,7 @@ impl DiskUsage {
     /// Fraction of the filesystem currently in use, in the range `0.0..=1.0`.
     ///
     /// Returns `0.0` when `total_bytes` is zero to avoid dividing by zero.
+    #[must_use]
     pub fn used_fraction(&self) -> f64 {
         if self.total_bytes == 0 {
             0.0
@@ -178,7 +227,7 @@ pub enum ExplorerOutcome {
     /// A new empty file was successfully created at the given path.
     TouchCreated(PathBuf),
     /// An entry was successfully renamed; contains the new path.
-    RenameCompleted(PathBuf),
+    RenameCompleted { from: PathBuf, to: PathBuf },
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -385,22 +434,32 @@ mod tests {
     #[test]
     fn explorer_outcome_rename_completed_carries_path() {
         let path = PathBuf::from("/tmp/renamed.txt");
-        let outcome = ExplorerOutcome::RenameCompleted(path.clone());
-        assert_eq!(outcome, ExplorerOutcome::RenameCompleted(path));
+        let from = PathBuf::from("/tmp/old.txt");
+        let outcome = ExplorerOutcome::RenameCompleted {
+            from: from.clone(),
+            to: path.clone(),
+        };
+        assert_eq!(outcome, ExplorerOutcome::RenameCompleted { from, to: path });
     }
 
     #[test]
     fn explorer_outcome_rename_completed_neq_touch_created() {
         let path = PathBuf::from("/tmp/file.txt");
         assert_ne!(
-            ExplorerOutcome::RenameCompleted(path.clone()),
+            ExplorerOutcome::RenameCompleted {
+                from: path.clone(),
+                to: path.clone(),
+            },
             ExplorerOutcome::TouchCreated(path),
         );
     }
 
     #[test]
     fn explorer_outcome_rename_completed_is_clone() {
-        let a = ExplorerOutcome::RenameCompleted(PathBuf::from("/tmp/x.txt"));
+        let a = ExplorerOutcome::RenameCompleted {
+            from: PathBuf::from("/tmp/w.txt"),
+            to: PathBuf::from("/tmp/x.txt"),
+        };
         let b = a.clone();
         assert_eq!(a, b);
     }

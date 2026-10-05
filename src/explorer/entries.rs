@@ -172,6 +172,7 @@ icon_map! {
 /// assert_eq!(fmt_size(2_097_152),     "2.0 MB");
 /// assert_eq!(fmt_size(1_073_741_824), "1.0 GB");
 /// ```
+#[must_use]
 pub fn fmt_size(bytes: u64) -> String {
     const KB: u64 = 1_024;
     const MB: u64 = 1_024 * KB;

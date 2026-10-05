@@ -32,7 +32,7 @@ use crate::{
     dual_pane::DualPane,
     explorer::{entry_icon, fmt_size},
     palette::Theme,
-    FileExplorer,
+    FileExplorer, PromptKind,
 };
 
 // ── Render constants ──────────────────────────────────────────────────────────
@@ -48,14 +48,6 @@ pub const HEADER_HEIGHT: u16 = 3;
 
 /// Default footer height in terminal rows.
 pub const FOOTER_HEIGHT: u16 = 3;
-
-/// Total wall-clock budget shared across every directory-size computation in
-/// a single [`render_list`] pass (see [`FileExplorer::show_sizes`]).
-///
-/// Keeps a redraw snappy even when many uncached, large subdirectories are
-/// visible at once: only as many as fit in this budget are computed eagerly,
-/// the rest fall back to their cheap shallow item count until a later frame.
-const SIZE_RENDER_BUDGET: std::time::Duration = std::time::Duration::from_millis(15);
 
 // ── Scroll-thumb helper ───────────────────────────────────────────────────────
 
@@ -101,57 +93,62 @@ pub(crate) fn paint_scrollbar(
     }
 }
 
-// ── render_input_footer! ──────────────────────────────────────────────────────
+// ── Git marker ────────────────────────────────────────────────────────────────
 
-/// Render an inline text-input footer and early-return from `render_footer`.
-///
-/// Checks `$explorer.$active`; if true, renders a single-line [`Paragraph`]
-/// containing: label span + typed-input span + cursor-block span + hint span,
-/// then calls `frame.render_widget(…, area)` and `return`.
-///
-/// Parameters
-/// ----------
-/// `$explorer`   — `&FileExplorer` reference (named `explorer` in the function)
-/// `$frame`      — `&mut Frame`
-/// `$area`       — `Rect`
-/// `$theme`      — `&Theme`
-/// `$active`     — field name on `$explorer` (e.g. `mkdir_active`)
-/// `$input_expr` — expression that yields the input string (e.g.
-///                 `explorer.mkdir_input()` or `&explorer.search_query`)
-/// `$label`      — string literal for the label span
-/// `$colour`     — `theme` field name for both label and border colour
-/// `$hint`       — string literal for the trailing hint
-macro_rules! render_input_footer {
-    ($explorer:expr, $frame:expr, $area:expr, $theme:expr,
-     $active:ident, $input_expr:expr, $label:expr, $colour:ident, $hint:expr) => {
-        if $explorer.$active {
-            let left_line = Line::from(vec![
-                Span::styled(
-                    $label,
-                    Style::default()
-                        .fg($theme.$colour)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    $input_expr,
-                    Style::default()
-                        .fg($theme.accent)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("\u{2588}", Style::default().fg($theme.accent)),
-                Span::styled($hint, Style::default().fg($theme.dim)),
-            ]);
-            let para = Paragraph::new(left_line).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg($theme.$colour))
-                    .style(Style::default().bg($theme.bg)),
-            );
-            $frame.render_widget(para, $area);
-            return;
-        }
+/// One-column git status marker (`M`, `A`, `?`, …), blank when unchanged.
+fn git_marker_span(mark: Option<crate::GitMark>, theme: &Theme) -> Span<'static> {
+    use crate::GitMark;
+    let Some(mark) = mark else {
+        return Span::raw(" ");
     };
+    let colour = match mark {
+        GitMark::Added => theme.success,
+        GitMark::Untracked => theme.accent,
+        GitMark::Modified => theme.dir,
+        GitMark::Renamed => theme.accent,
+        GitMark::Deleted | GitMark::Conflict => theme.brand,
+    };
+    Span::styled(
+        mark.symbol().to_string(),
+        Style::default().fg(colour).add_modifier(Modifier::BOLD),
+    )
+}
+
+// ── Input footer ──────────────────────────────────────────────────────────────
+
+/// Render a single-line text-input footer: label + typed text + cursor block
+/// + trailing hint, inside a rounded border drawn in `colour`.
+fn render_input_footer(
+    frame: &mut Frame,
+    area: Rect,
+    theme: &Theme,
+    label: &str,
+    input: &str,
+    colour: ratatui::style::Color,
+    hint: &str,
+) {
+    let line = Line::from(vec![
+        Span::styled(
+            label.to_string(),
+            Style::default().fg(colour).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            input.to_string(),
+            Style::default()
+                .fg(theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("\u{2588}", Style::default().fg(theme.accent)),
+        Span::styled(hint.to_string(), Style::default().fg(theme.dim)),
+    ]);
+    let para = Paragraph::new(line).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(colour))
+            .style(Style::default().bg(theme.bg)),
+    );
+    frame.render_widget(para, area);
 }
 
 // ── Public render entry-points ────────────────────────────────────────────────
@@ -409,24 +406,27 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
         .entries
         .len()
         .min(explorer.scroll_offset.saturating_add(visible_height));
+    // Pick up finished off-thread work (folder sizes, git status) first so a
+    // result computed since the last frame is drawn immediately.
+    explorer.poll_background();
     if explorer.show_sizes {
-        // Share one small wall-clock budget across every uncached directory
-        // visible this frame, so a folder full of large subdirectories can
-        // never make a single render pass noticeably slow. Rows that don't
-        // make the cut this frame keep showing their cheap shallow item
-        // count and get picked up on a later redraw.
-        let deadline = std::time::Instant::now() + SIZE_RENDER_BUDGET;
-        for idx in explorer.scroll_offset..visible_end {
-            let (path, item_count) = {
-                let entry = &explorer.entries[idx];
-                if !entry.is_dir {
-                    continue;
-                }
-                (entry.path.clone(), entry.item_count)
-            };
-            explorer.ensure_dir_size_before(&path, item_count, Some(deadline));
+        let visible = explorer.scroll_offset..visible_end;
+        // Cheap shallow item counts for the visible directories only…
+        explorer.fill_item_counts(visible.clone());
+        // …and recursive sizes computed in the background; rows show their
+        // item count until the real size arrives on a later frame.
+        if explorer.show_dir_sizes {
+            explorer.request_dir_sizes(visible);
         }
     }
+
+    // Resolve symlink targets for the visible rows (cached until reload).
+    let link_targets: Vec<Option<std::path::PathBuf>> = (explorer.scroll_offset..visible_end)
+        .map(|idx| {
+            let path = explorer.entries[idx].path.clone();
+            explorer.link_target(&path)
+        })
+        .collect();
 
     let items: Vec<ListItem> = explorer
         .entries
@@ -458,7 +458,12 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
             let size_str = if !explorer.show_sizes {
                 String::new()
             } else if entry.is_dir {
-                match explorer.dir_size_cache.get(&entry.path) {
+                let cached = if explorer.show_dir_sizes {
+                    explorer.dir_size_cache.get(&entry.path)
+                } else {
+                    None
+                };
+                match cached {
                     Some(&(bytes, partial, _)) if partial => format!("{}+", fmt_size(bytes)),
                     Some(&(bytes, _, _)) => fmt_size(bytes),
                     None => match entry.item_count {
@@ -486,14 +491,26 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
                 Span::styled(" ", Style::default())
             };
 
-            let mut spans = vec![
-                marker,
+            let mut spans = vec![marker];
+            if explorer.show_git {
+                spans.push(git_marker_span(explorer.git_mark(&entry.path), theme));
+            }
+            spans.extend([
                 Span::styled(
                     format!("{icon} "),
                     Style::default().fg(if entry.is_dir { theme.dir } else { theme.fg }),
                 ),
                 Span::styled(entry.name.as_str(), name_style),
-            ];
+            ]);
+
+            if let Some(Some(target)) = link_targets.get(visible_idx) {
+                spans.push(Span::styled(
+                    format!(" \u{2192} {}", target.display()),
+                    Style::default()
+                        .fg(theme.dim)
+                        .add_modifier(Modifier::ITALIC),
+                ));
+            }
 
             if !size_str.is_empty() {
                 spans.push(Span::styled(
@@ -528,10 +545,15 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
     } else {
         format!("{}/{count}", explorer.cursor + 1)
     };
-    let title = if marked_count > 0 {
-        format!(" Files {pos}  ◆ {marked_count} marked ")
+    let loading = if explorer.is_loading() {
+        " · loading…"
     } else {
-        format!(" Files {pos} ")
+        ""
+    };
+    let title = if marked_count > 0 {
+        format!(" Files {pos}  ◆ {marked_count} marked{loading} ")
+    } else {
+        format!(" Files {pos}{loading} ")
     };
 
     let block = Block::default()
@@ -563,57 +585,36 @@ fn render_list(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect, theme
 // ── Footer ────────────────────────────────────────────────────────────────────
 
 fn render_footer(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: &Theme) {
-    // ── Mkdir input (shown instead of status bar while mkdir mode is active) ──
-    render_input_footer!(
-        explorer,
-        frame,
-        area,
-        theme,
-        mkdir_active,
-        explorer.mkdir_input(),
-        " \u{1F4C2} New folder: ",
-        success,
-        "  Enter confirm  Esc cancel"
-    );
-
-    // ── Touch input (shown instead of status bar while touch mode is active) ──
-    render_input_footer!(
-        explorer,
-        frame,
-        area,
-        theme,
-        touch_active,
-        explorer.touch_input(),
-        " \u{1F4C4} New file: ",
-        accent,
-        "  Enter confirm  Esc cancel"
-    );
-
-    // ── Rename input (shown instead of status bar while rename mode is active) ─
-    render_input_footer!(
-        explorer,
-        frame,
-        area,
-        theme,
-        rename_active,
-        explorer.rename_input(),
-        " \u{270F}\u{FE0F}  Rename: ",
-        brand,
-        "  Enter confirm  Esc cancel"
-    );
-
-    // ── Search input (shown instead of status bar while search is active) ─────
-    render_input_footer!(
-        explorer,
-        frame,
-        area,
-        theme,
-        search_active,
-        explorer.search_query.as_str(),
-        " / ",
-        brand,
-        "  Backspace delete  Esc cancel"
-    );
+    // A prompt or an active search replaces the status bar.
+    if let Some(prompt) = &explorer.prompt {
+        let colour = match prompt.kind {
+            PromptKind::Mkdir => theme.success,
+            PromptKind::Touch => theme.accent,
+            PromptKind::Rename => theme.brand,
+        };
+        render_input_footer(
+            frame,
+            area,
+            theme,
+            prompt.kind.label(),
+            &prompt.text,
+            colour,
+            "  Enter confirm  Esc cancel",
+        );
+        return;
+    }
+    if explorer.search_active {
+        render_input_footer(
+            frame,
+            area,
+            theme,
+            " / ",
+            &explorer.search_query,
+            theme.brand,
+            "  Backspace delete  Esc cancel",
+        );
+        return;
+    }
 
     // ── Sort / filter status (full width) ─────────────────────────────────────
     let status = if explorer.status.is_empty() {
@@ -689,7 +690,7 @@ mod tests {
     fn render_footer_mkdir_active_does_not_panic() {
         let mut terminal = make_terminal();
         let mut explorer = make_explorer();
-        explorer.mkdir_active = true;
+        explorer.open_prompt(PromptKind::Mkdir, "");
         terminal
             .draw(|frame| {
                 render(&mut explorer, frame, frame.area());
@@ -713,11 +714,114 @@ mod tests {
         );
     }
 
+    fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|c| c.symbol())
+            .collect()
+    }
+
+    /// The rendered screen row containing `needle` (list rows only — the
+    /// footer's disk-usage text is machine dependent).
+    fn row_with(terminal: &Terminal<TestBackend>, needle: &str) -> String {
+        let buf = terminal.backend().buffer();
+        let width = buf.area.width as usize;
+        buf.content()
+            .chunks(width)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+            .find(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no row contains {needle:?}"))
+    }
+
+    fn explorer_with_dir_and_file() -> (tempfile::TempDir, FileExplorer) {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("folder_x")).unwrap();
+        std::fs::write(
+            tmp.path().join("folder_x").join("inner.txt"),
+            vec![0u8; 2048],
+        )
+        .unwrap();
+        std::fs::write(tmp.path().join("file.bin"), vec![0u8; 4096]).unwrap();
+        let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        (tmp, explorer)
+    }
+
+    #[test]
+    fn render_list_without_dir_sizes_shows_item_count_and_skips_walk() {
+        let (_tmp, mut explorer) = explorer_with_dir_and_file();
+        explorer.show_dir_sizes = false;
+        let mut terminal = make_terminal();
+        terminal
+            .draw(|frame| render(&mut explorer, frame, frame.area()))
+            .unwrap();
+        assert!(
+            explorer.dir_size_cache.is_empty(),
+            "show_dir_sizes=false must skip the recursive walk"
+        );
+        assert!(
+            row_with(&terminal, "folder_x").contains("1 item"),
+            "folder should show its item count"
+        );
+        assert!(
+            row_with(&terminal, "file.bin").contains("KB"),
+            "file size must still be shown"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn render_list_shows_symlink_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("real.txt"), b"x").unwrap();
+        std::os::unix::fs::symlink(tmp.path().join("real.txt"), tmp.path().join("alias")).unwrap();
+        let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+        let mut terminal = make_terminal();
+        terminal
+            .draw(|frame| render(&mut explorer, frame, frame.area()))
+            .unwrap();
+        let text = buffer_text(&terminal);
+        assert!(text.contains("alias"), "{text}");
+        assert!(text.contains('\u{2192}'), "symlink arrow missing");
+    }
+
+    #[test]
+    fn render_list_with_dir_sizes_walks_and_caches() {
+        let (_tmp, mut explorer) = explorer_with_dir_and_file();
+        let mut terminal = make_terminal();
+        terminal
+            .draw(|frame| render(&mut explorer, frame, frame.area()))
+            .unwrap();
+        // Folder sizes are computed off-thread; wait for them.
+        explorer.wait_for_background(std::time::Duration::from_secs(5));
+        assert!(!explorer.dir_size_cache.is_empty());
+
+        // The next frame shows the real size instead of the item count.
+        terminal
+            .draw(|frame| render(&mut explorer, frame, frame.area()))
+            .unwrap();
+        assert!(row_with(&terminal, "folder_x").contains("KB"));
+    }
+
+    #[test]
+    fn render_list_with_sizes_off_hides_file_sizes_too() {
+        let (_tmp, mut explorer) = explorer_with_dir_and_file();
+        explorer.show_sizes = false;
+        let mut terminal = make_terminal();
+        terminal
+            .draw(|frame| render(&mut explorer, frame, frame.area()))
+            .unwrap();
+        assert!(!row_with(&terminal, "folder_x").contains("item"));
+        assert!(!row_with(&terminal, "file.bin").contains("KB"));
+    }
+
     #[test]
     fn render_footer_touch_active_does_not_panic() {
         let mut terminal = make_terminal();
         let mut explorer = make_explorer();
-        explorer.touch_active = true;
+        explorer.open_prompt(PromptKind::Touch, "");
         terminal
             .draw(|frame| {
                 render(&mut explorer, frame, frame.area());
@@ -729,7 +833,7 @@ mod tests {
     fn render_footer_rename_active_does_not_panic() {
         let mut terminal = make_terminal();
         let mut explorer = make_explorer();
-        explorer.rename_active = true;
+        explorer.open_prompt(PromptKind::Rename, "");
         terminal
             .draw(|frame| {
                 render(&mut explorer, frame, frame.area());

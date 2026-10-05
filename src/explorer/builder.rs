@@ -27,10 +27,15 @@ pub struct FileExplorerBuilder {
     page_size: usize,
     selection_mode: SelectionMode,
     show_sizes: bool,
+    show_dir_sizes: bool,
+    keymap: Keymap,
+    show_git: bool,
+    async_loading: bool,
 }
 
 impl FileExplorerBuilder {
     /// Create a builder rooted at `initial_dir`.
+    #[must_use]
     pub fn new(initial_dir: PathBuf) -> Self {
         Self {
             initial_dir,
@@ -41,10 +46,15 @@ impl FileExplorerBuilder {
             page_size: PAGE_SIZE,
             selection_mode: SelectionMode::default(),
             show_sizes: true,
+            show_dir_sizes: true,
+            keymap: Keymap::default(),
+            show_git: false,
+            async_loading: false,
         }
     }
 
     /// Use a custom filesystem backend.
+    #[must_use]
     pub fn filesystem(mut self, filesystem: crate::SharedFileSystem) -> Self {
         self.filesystem = filesystem;
         self
@@ -61,6 +71,7 @@ impl FileExplorerBuilder {
     ///     .extension_filter(vec!["iso".into(), "img".into()])
     ///     .build();
     /// ```
+    #[must_use]
     pub fn extension_filter(mut self, filter: Vec<String>) -> Self {
         self.extension_filter = filter;
         self
@@ -78,6 +89,7 @@ impl FileExplorerBuilder {
     ///     .allow_extension("img")
     ///     .build();
     /// ```
+    #[must_use]
     pub fn allow_extension(mut self, ext: impl Into<String>) -> Self {
         self.extension_filter.push(ext.into());
         self
@@ -92,6 +104,7 @@ impl FileExplorerBuilder {
     ///     .show_hidden(true)
     ///     .build();
     /// ```
+    #[must_use]
     pub fn show_hidden(mut self, show: bool) -> Self {
         self.show_hidden = show;
         self
@@ -110,8 +123,53 @@ impl FileExplorerBuilder {
     ///     .show_sizes(false)
     ///     .build();
     /// ```
+    #[must_use]
     pub fn show_sizes(mut self, show: bool) -> Self {
         self.show_sizes = show;
+        self
+    }
+
+    /// Set whether directories show their recursive byte size on startup.
+    ///
+    /// Defaults to `true`. With `false`, files still show their size but
+    /// directories show a shallow item count and the (potentially slow)
+    /// recursive walk is skipped. Has no effect when
+    /// [`show_sizes`](Self::show_sizes) is `false`.
+    ///
+    /// ```no_run
+    /// use tui_file_explorer::FileExplorer;
+    ///
+    /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
+    ///     .show_dir_sizes(false)
+    ///     .build();
+    /// ```
+    #[must_use]
+    pub fn show_dir_sizes(mut self, show: bool) -> Self {
+        self.show_dir_sizes = show;
+        self
+    }
+
+    /// Read directories on a background thread (see
+    /// [`FileExplorer::async_loading`]). Off by default.
+    #[must_use]
+    pub fn async_loading(mut self, enabled: bool) -> Self {
+        self.async_loading = enabled;
+        self
+    }
+
+    /// Show a git change marker (`M`, `A`, `?`, …) next to changed entries.
+    ///
+    /// Off by default; runs `git status` on a background thread.
+    #[must_use]
+    pub fn show_git(mut self, show: bool) -> Self {
+        self.show_git = show;
+        self
+    }
+
+    /// Replace the key bindings (defaults to [`Keymap::default`]).
+    #[must_use]
+    pub fn keymap(mut self, keymap: Keymap) -> Self {
+        self.keymap = keymap;
         self
     }
 
@@ -124,12 +182,14 @@ impl FileExplorerBuilder {
     ///     .sort_mode(SortMode::SizeDesc)
     ///     .build();
     /// ```
+    #[must_use]
     pub fn sort_mode(mut self, mode: SortMode) -> Self {
         self.sort_mode = mode;
         self
     }
 
     /// Configure which entry kinds can be confirmed as selections.
+    #[must_use]
     pub fn selection_mode(mut self, mode: SelectionMode) -> Self {
         self.selection_mode = mode;
         self
@@ -138,6 +198,7 @@ impl FileExplorerBuilder {
     /// Set the number of entries scrolled by Page Up / Page Down.
     ///
     /// Defaults to 10.
+    #[must_use]
     pub fn page_size(mut self, size: usize) -> Self {
         self.page_size = size;
         self
@@ -147,6 +208,7 @@ impl FileExplorerBuilder {
     ///
     /// Filesystem errors are retained as explorer status for backwards
     /// compatibility. Use [`Self::try_build`] when the host needs typed errors.
+    #[must_use]
     pub fn build(self) -> FileExplorer {
         let mut explorer = self.build_unloaded();
         explorer.reload();
@@ -177,17 +239,19 @@ impl FileExplorerBuilder {
             search_query: String::new(),
             search_active: false,
             marked: HashSet::new(),
-            mkdir_active: false,
-            mkdir_input: String::new(),
-            touch_active: false,
-            touch_input: String::new(),
-            rename_active: false,
-            rename_input: String::new(),
+            prompt: None,
+            keymap: self.keymap,
             theme_name: String::new(),
             editor_name: String::new(),
             disk_usage: None,
+            bg: Default::default(),
+            show_git: self.show_git,
+            async_loading: self.async_loading,
+            git: None,
+            link_cache: std::collections::HashMap::new(),
             dir_size_cache: std::collections::HashMap::new(),
             show_sizes: self.show_sizes,
+            show_dir_sizes: self.show_dir_sizes,
         }
     }
 }

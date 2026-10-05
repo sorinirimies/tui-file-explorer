@@ -7,6 +7,18 @@ use super::*;
 /// The modal clears whatever is behind it, draws a double-border box with a
 /// title, a body message, and a key-hint footer.
 pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme) {
+    render_modal_for(frame, area, modal, theme, false);
+}
+
+/// Like [`render_modal`], but words delete confirmations as "move to trash"
+/// when `to_trash` is set (see [`crate::AppOptions::use_trash`]).
+pub fn render_modal_for(
+    frame: &mut Frame,
+    area: Rect,
+    modal: &Modal,
+    theme: &Theme,
+    to_trash: bool,
+) {
     if area.is_empty() {
         return;
     }
@@ -24,13 +36,13 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
             .map(|p| p.file_name().unwrap_or_default().to_string_lossy().len())
             .max()
             .unwrap_or(0);
-        let w = (max_name_len as u16 + 8)
+        let w = (crate::to_u16(max_name_len) + 8)
             .max(44)
             .min(area.width.saturating_sub(4).max(1));
         // Height: header line + one row per shown entry + optional overflow line
         //         + blank gap + hint line + 2 border rows.
         let list_rows = shown.len() + if remainder > 0 { 1 } else { 0 };
-        let h = (list_rows as u16 + 5).min(area.height.saturating_sub(2).max(1));
+        let h = (crate::to_u16(list_rows) + 5).min(area.height.saturating_sub(2).max(1));
         let x = area.x + (area.width.saturating_sub(w)) / 2;
         let y = area.y + (area.height.saturating_sub(h)) / 2;
         let modal_area = Rect::new(x, y, w, h);
@@ -39,7 +51,11 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
 
         let outer = Block::default()
             .title(Span::styled(
-                " Confirm Multi-Delete ",
+                if to_trash {
+                    " Move to Trash "
+                } else {
+                    " Confirm Multi-Delete "
+                },
                 Style::default()
                     .fg(theme.brand)
                     .add_modifier(Modifier::BOLD),
@@ -62,7 +78,11 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
 
         // Summary line.
         let summary = Paragraph::new(Span::styled(
-            format!("Delete {count} item(s)?"),
+            if to_trash {
+                format!("Move {count} item(s) to trash?")
+            } else {
+                format!("Delete {count} item(s)?")
+            },
             Style::default().fg(theme.fg).add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center);
@@ -113,13 +133,14 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
 
     // ── Single-item modals (Delete / Overwrite) ───────────────────────────────
     let (title, body) = match modal {
-        Modal::Delete { path } => (
-            " Confirm Delete ",
-            format!(
-                "Delete '{}' ?",
-                path.file_name().unwrap_or_default().to_string_lossy()
-            ),
-        ),
+        Modal::Delete { path } => {
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            if to_trash {
+                (" Move to Trash ", format!("Move '{name}' to trash?"))
+            } else {
+                (" Confirm Delete ", format!("Delete '{name}' ?"))
+            }
+        }
         Modal::Overwrite { dst, .. } => (
             " Confirm Overwrite ",
             format!(
@@ -131,7 +152,7 @@ pub fn render_modal(frame: &mut Frame, area: Rect, modal: &Modal, theme: &Theme)
         Modal::MultiDelete { .. } => unreachable!(),
     };
 
-    let w = (body.len() as u16 + 6)
+    let w = (crate::to_u16(body.len()) + 6)
         .max(40)
         .min(area.width.saturating_sub(4).max(1));
     let h = 7u16.min(area.height);

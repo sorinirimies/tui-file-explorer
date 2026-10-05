@@ -188,16 +188,19 @@ pub fn execute_operation_with(
 }
 
 /// Execute an operation synchronously without progress callbacks.
+#[must_use]
 pub fn execute_operation(request: &OperationRequest) -> OperationResult {
     execute_operation_with_progress(request, |_| {})
 }
 
 impl App {
+    #[must_use]
     pub fn operation_mode(&self) -> OperationMode {
         self.operation_mode
     }
 
     /// Filesystem backend associated with the active operation destination.
+    #[must_use]
     pub fn operation_filesystem(&self) -> crate::SharedFileSystem {
         self.active_pane().filesystem().clone()
     }
@@ -227,6 +230,7 @@ impl App {
         self.queued_operation.take()
     }
 
+    #[must_use]
     pub fn pending_operation(&self) -> Option<&OperationRequest> {
         self.pending_operation.as_ref()
     }

@@ -99,6 +99,22 @@ pub struct AppState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_sizes: Option<bool>,
 
+    /// Whether recursive folder sizes were computed (`false` = item counts only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_dir_sizes: Option<bool>,
+
+    /// Whether deletions go to the OS trash (needs the `trash` feature).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_trash: Option<bool>,
+
+    /// Whether git change markers were shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_git: Option<bool>,
+
+    /// Bookmarked folders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bookmarks: Option<Vec<PathBuf>>,
+
     /// Whether single-pane mode was active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub single_pane: Option<bool>,
@@ -145,7 +161,7 @@ pub struct AppState {
 /// Returns the `tfe` config directory, following XDG conventions.
 ///
 /// Priority: `$XDG_CONFIG_HOME/tfe` → `$HOME/.config/tfe` → `None`.
-fn config_dir() -> Option<PathBuf> {
+pub(crate) fn config_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
@@ -153,6 +169,7 @@ fn config_dir() -> Option<PathBuf> {
 }
 
 /// Path of the JSON state file (`$XDG_CONFIG_HOME/tfe/settings.json`).
+#[must_use]
 pub fn state_path() -> Option<PathBuf> {
     config_dir().map(|d| d.join("settings.json"))
 }
@@ -187,6 +204,7 @@ fn sort_mode_from_key(s: &str) -> Option<SortMode> {
 ///
 /// Returns a default empty state if the file does not exist or cannot be
 /// parsed. Directory fields are validated: stale paths are set to `None`.
+#[must_use]
 pub fn load_state_from(path: &Path) -> AppState {
     try_load_state_from(path).unwrap_or_default()
 }
@@ -239,6 +257,7 @@ pub fn save_state_to(path: &Path, state: &AppState) -> io::Result<()> {
 ///
 /// Never returns an error — any I/O problem simply yields an empty state so
 /// that the app can always start with sensible defaults.
+#[must_use]
 pub fn load_state() -> AppState {
     let Some(json_path) = state_path() else {
         return AppState::default();
@@ -251,8 +270,21 @@ pub fn load_state() -> AppState {
 /// Errors are silently discarded — persistence is best-effort and must never
 /// cause the application to crash or block.
 pub fn save_state(state: &AppState) {
-    if let Some(path) = state_path() {
-        let _ = save_state_to(&path, state);
+    let _ = try_save_state(state);
+}
+
+/// Persist `state` like [`save_state`], but report failures.
+///
+/// Returns `Ok(())` when there is no config directory to write to (nothing
+/// to persist is not an error).
+///
+/// # Errors
+///
+/// Returns the underlying [`io::Error`] when the state file cannot be written.
+pub fn try_save_state(state: &AppState) -> io::Result<()> {
+    match state_path() {
+        Some(path) => save_state_to(&path, state),
+        None => Ok(()),
     }
 }
 
@@ -265,6 +297,7 @@ pub fn save_state(state: &AppState) {
 ///
 /// Returns `0` (the built-in default theme) when no match is found, and
 /// prints a hint to stderr suggesting `--list-themes`.
+#[must_use]
 pub fn resolve_theme_idx(name: &str, themes: &[(&str, &str, Theme)]) -> usize {
     let key = name.to_lowercase().replace('-', " ");
     for (i, (n, _, _)) in themes.iter().enumerate() {
@@ -273,9 +306,8 @@ pub fn resolve_theme_idx(name: &str, themes: &[(&str, &str, Theme)]) -> usize {
         }
     }
     eprintln!(
-        "tfe: unknown theme {:?} — falling back to default. \
-         Run `tfe --list-themes` to see available options.",
-        name
+        "tfe: unknown theme {name:?} — falling back to default. \
+         Run `tfe --list-themes` to see available options."
     );
     0
 }

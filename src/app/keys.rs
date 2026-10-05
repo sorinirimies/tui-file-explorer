@@ -40,9 +40,7 @@ impl App {
         // on release — which silently clobbers multi-item clipboard state
         // (the release re-runs yank after marks have been cleared, falling
         // back to the single cursor entry).
-        if key.kind != crossterm::event::KeyEventKind::Press {
-            return Ok(false);
-        }
+        press_only!(key, Ok(false));
 
         // ── Inline editor intercepts all input ───────────────────────────────
         if let Some(ref mut editor) = self.inline_editor {
@@ -57,7 +55,7 @@ impl App {
                         .to_string();
                     self.notify(format!("Saved '{fname}'"));
                     // Reload panes to reflect any on-disk changes.
-                    for p in self.panes.iter_mut() {
+                    for p in &mut self.panes {
                         p.reload();
                         p.clear_dir_size_cache();
                     }
@@ -65,9 +63,13 @@ impl App {
                     return Ok(false);
                 }
                 EditorAction::Exit => {
+                    let edited = editor.path().to_path_buf();
                     self.inline_editor = None;
+                    // A bulk rename edited with the built-in editor applies
+                    // when that editor closes.
+                    self.editor_finished(&edited);
                     // Reload panes in case the file was changed externally.
-                    for p in self.panes.iter_mut() {
+                    for p in &mut self.panes {
                         p.reload();
                     }
                     self.preview_state.invalidate();
@@ -85,21 +87,21 @@ impl App {
         if let Some(modal) = self.modal.take() {
             match &modal {
                 Modal::Delete { path } => match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    KeyCode::Char('y' | 'Y') => {
                         let p = path.clone();
                         self.confirm_delete(&p);
                     }
                     _ => self.status_msg = "Delete cancelled.".into(),
                 },
                 Modal::MultiDelete { paths } => match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    KeyCode::Char('y' | 'Y') => {
                         let ps = paths.clone();
                         self.confirm_delete_many(&ps);
                     }
                     _ => self.status_msg = "Multi-delete cancelled.".into(),
                 },
                 Modal::Overwrite { src, dst, is_cut } => match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    KeyCode::Char('y' | 'Y') => {
                         let (s, d, cut) = (src.clone(), dst.clone(), *is_cut);
                         self.do_paste(&s, &d, cut);
                     }
@@ -109,13 +111,17 @@ impl App {
             return Ok(false);
         }
 
+        // The picker overlay (bookmarks / fuzzy finder) owns the keyboard.
+        if self.picker.is_some() {
+            self.handle_picker_key(key);
+            return Ok(false);
+        }
+
         // Active text modes consume printable keys before global shortcuts.
         // This prevents names/search queries containing `p`, `d`, `t`, etc.
         // from triggering application-level commands.
-        let pane_captures_text = self.active_pane().is_searching()
-            || self.active_pane().is_mkdir_active()
-            || self.active_pane().is_touch_active()
-            || self.active_pane().is_rename_active();
+        let pane_captures_text =
+            self.active_pane().is_searching() || self.active_pane().has_prompt();
         if pane_captures_text {
             let outcome = self.active_pane_mut().handle_key(key);
             return self.apply_explorer_outcome(outcome);
@@ -294,6 +300,46 @@ impl App {
                 return Ok(false);
             }
 
+            // Undo the last reversible action / redo it again
+            KeyCode::Char('u') if key.modifiers.is_empty() => {
+                self.undo();
+                return Ok(false);
+            }
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.redo();
+                return Ok(false);
+            }
+            // Bulk rename in an editor
+            KeyCode::Char('R') => {
+                self.start_bulk_rename();
+                return Ok(false);
+            }
+            // Bookmark the current folder / open the bookmark list
+            KeyCode::Char('b') if key.modifiers.is_empty() => {
+                self.toggle_bookmark();
+                return Ok(false);
+            }
+            KeyCode::Char('B') => {
+                self.open_bookmarks();
+                return Ok(false);
+            }
+            // Recursive fuzzy finder
+            KeyCode::Char('f') if key.modifiers.is_empty() => {
+                self.open_fuzzy_find();
+                return Ok(false);
+            }
+            // Toggle git change markers
+            KeyCode::Char('v') if key.modifiers.is_empty() => {
+                self.toggle_git();
+                return Ok(false);
+            }
+            // Extract the highlighted archive
+            #[cfg(feature = "archive")]
+            KeyCode::Char('X') => {
+                self.extract_current_archive();
+                return Ok(false);
+            }
+
             // Cut
             KeyCode::Char('x') if key.modifiers.is_empty() => {
                 self.yank(ClipOp::Cut);
@@ -349,16 +395,28 @@ impl App {
             }
             ExplorerOutcome::Dismissed => Ok(true),
             ExplorerOutcome::MkdirCreated(path) => {
+                self.record_undo(UndoEntry::Create {
+                    path: path.clone(),
+                    is_dir: true,
+                });
                 self.reload_and_notify(&path, "Created folder");
                 self.preview_state.invalidate();
                 Ok(false)
             }
             ExplorerOutcome::TouchCreated(path) => {
+                self.record_undo(UndoEntry::Create {
+                    path: path.clone(),
+                    is_dir: false,
+                });
                 self.reload_and_notify(&path, "Created file");
                 self.preview_state.invalidate();
                 Ok(false)
             }
-            ExplorerOutcome::RenameCompleted(path) => {
+            ExplorerOutcome::RenameCompleted { from, to: path } => {
+                self.record_undo(UndoEntry::Rename {
+                    from,
+                    to: path.clone(),
+                });
                 self.reload_and_notify(&path, "Renamed to");
                 self.preview_state.invalidate();
                 Ok(false)
@@ -390,7 +448,24 @@ impl App {
     /// keyboard-driven.
     pub fn handle_raw_event(&mut self, event: Event) -> io::Result<bool> {
         match event {
-            Event::Key(key) => self.handle_key(key),
+            Event::Key(key) => {
+                // Custom `[app]` bindings (keymap.toml / KeyBindings) apply
+                // everywhere except while text input owns the keyboard.
+                let text_input = self.inline_editor.is_some()
+                    || self.modal.is_some()
+                    || self.active_pane().is_searching()
+                    || self.active_pane().has_prompt()
+                    || self.picker.is_some();
+                let key = if text_input || self.key_bindings.is_empty() {
+                    Some(key)
+                } else {
+                    self.key_bindings.translate(key)
+                };
+                match key {
+                    Some(key) => self.handle_key(key),
+                    None => Ok(false),
+                }
+            }
             // Mouse, Resize, FocusGained, FocusLost, Paste — consume and
             // discard.  Resize is handled automatically by ratatui's
             // `Terminal::draw` which queries the terminal size each frame.
@@ -407,6 +482,12 @@ impl App {
     /// Returns `true` when the event loop should exit (user confirmed a
     /// selection or dismissed the explorer).
     pub fn handle_event(&mut self) -> io::Result<bool> {
+        // While background work is running, wake up regularly so finished
+        // results get drawn even without user input.
+        if self.has_background_work() && !event::poll(Duration::from_millis(60))? {
+            self.poll_background();
+            return Ok(false);
+        }
         self.handle_raw_event(event::read()?)
     }
 }

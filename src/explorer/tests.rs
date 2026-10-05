@@ -438,33 +438,82 @@ fn builder_show_sizes_false_disables_sizes() {
 }
 
 #[test]
-fn ensure_dir_size_before_computes_and_caches_within_budget() {
+fn load_leaves_item_counts_lazy_then_fills_visible_rows() {
     let tmp = temp_dir_with_files();
-    let subdir = tmp.path().join("subdir");
+    fs::write(tmp.path().join("subdir").join("a.txt"), b"x").unwrap();
     let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
-    let (bytes, partial) = explorer.ensure_dir_size_before(&subdir, Some(1), Some(deadline));
-    assert!(!partial);
-    assert!(explorer.dir_size_cache.contains_key(&subdir));
-    // A second call with an already-passed deadline should still hit the
-    // (now warm) cache instead of skipping.
-    let past_deadline = std::time::Instant::now();
-    let (cached_bytes, _) = explorer.ensure_dir_size_before(&subdir, Some(1), Some(past_deadline));
-    assert_eq!(bytes, cached_bytes);
+    let idx = explorer
+        .entries
+        .iter()
+        .position(|e| e.name == "subdir")
+        .unwrap();
+    assert_eq!(
+        explorer.entries[idx].item_count, None,
+        "read_dir must stay cheap"
+    );
+
+    explorer.fill_item_counts(0..explorer.entries.len());
+    assert_eq!(explorer.entries[idx].item_count, Some(1));
 }
 
 #[test]
-fn ensure_dir_size_before_skips_uncached_walk_past_deadline() {
+fn item_counts_outside_the_requested_range_are_not_read() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+    explorer.fill_item_counts(0..0);
+    assert!(explorer.entries.iter().all(|e| e.item_count.is_none()));
+}
+
+#[test]
+fn request_dir_sizes_computes_in_background_and_caches() {
+    let tmp = temp_dir_with_files();
+    fs::write(tmp.path().join("subdir").join("a.txt"), vec![0u8; 100]).unwrap();
+    let subdir = tmp.path().join("subdir");
+    let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+    let n = explorer.entries.len();
+    explorer.fill_item_counts(0..n);
+    explorer.request_dir_sizes(0..n);
+    assert!(explorer.has_pending_work() || explorer.dir_size_cache.contains_key(&subdir));
+    explorer.wait_for_background(std::time::Duration::from_secs(5));
+    let &(bytes, partial, count) = explorer.dir_size_cache.get(&subdir).expect("cached");
+    assert_eq!((bytes, partial, count), (100, false, 1));
+    assert!(!explorer.has_pending_work());
+}
+
+#[test]
+fn request_dir_sizes_skips_fresh_cache_entries() {
     let tmp = temp_dir_with_files();
     let subdir = tmp.path().join("subdir");
     let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
-    // Deadline already in the past: an uncached directory must not be
-    // walked, and no cache entry should be inserted.
-    let past_deadline = std::time::Instant::now();
-    let (bytes, partial) = explorer.ensure_dir_size_before(&subdir, Some(1), Some(past_deadline));
-    assert_eq!(bytes, 0);
-    assert!(!partial);
-    assert!(!explorer.dir_size_cache.contains_key(&subdir));
+    let n = explorer.entries.len();
+    explorer.fill_item_counts(0..n);
+    explorer.dir_size_cache.insert(subdir, (7, false, 0));
+    explorer.request_dir_sizes(0..n);
+    assert!(
+        !explorer.has_pending_work(),
+        "fresh cache entry must not respawn"
+    );
+}
+
+#[test]
+fn request_dir_sizes_requires_a_known_item_count() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+    let n = explorer.entries.len();
+    explorer.request_dir_sizes(0..n);
+    assert!(!explorer.has_pending_work());
+}
+
+#[test]
+fn clear_dir_size_cache_drops_inflight_jobs() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+    let n = explorer.entries.len();
+    explorer.fill_item_counts(0..n);
+    explorer.request_dir_sizes(0..n);
+    explorer.clear_dir_size_cache();
+    assert!(!explorer.has_pending_work());
+    assert!(explorer.dir_size_cache.is_empty());
 }
 
 #[test]
@@ -1716,7 +1765,7 @@ fn rename_mode_enter_renames_file_and_returns_rename_completed() {
         "old name must be gone"
     );
     assert!(
-        matches!(outcome, ExplorerOutcome::RenameCompleted(p) if p.file_name().unwrap() == "notes.txt")
+        matches!(outcome, ExplorerOutcome::RenameCompleted { ref to, .. } if to.file_name().unwrap() == "notes.txt")
     );
 }
 
@@ -1798,7 +1847,7 @@ fn rename_mode_can_rename_directory() {
 
     assert!(tmp.path().join("renamed_dir").exists());
     assert!(!tmp.path().join("subdir").exists());
-    assert!(matches!(outcome, ExplorerOutcome::RenameCompleted(_)));
+    assert!(matches!(outcome, ExplorerOutcome::RenameCompleted { .. }));
 }
 
 #[test]
@@ -1838,40 +1887,46 @@ fn rename_input_empty_by_default() {
 fn mkdir_mode_char_pushes_to_input_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.mkdir_active = true;
-    explorer.mkdir_input.clear();
+    explorer.open_prompt(PromptKind::Mkdir, "");
+    explorer.open_prompt(PromptKind::Mkdir, "");
 
     let outcome = explorer.handle_key(key(KeyCode::Char('a')));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert_eq!(explorer.mkdir_input, "a");
-    assert!(explorer.mkdir_active, "mode must remain active after Char");
+    assert_eq!(explorer.mkdir_input(), "a");
+    assert!(
+        explorer.is_mkdir_active(),
+        "mode must remain active after Char"
+    );
 }
 
 #[test]
 fn mkdir_mode_backspace_pops_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.mkdir_active = true;
-    explorer.mkdir_input = "ab".to_string();
+    explorer.open_prompt(PromptKind::Mkdir, "");
+    explorer.open_prompt(PromptKind::Mkdir, "ab");
 
     let outcome = explorer.handle_key(key(KeyCode::Backspace));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert_eq!(explorer.mkdir_input, "a");
-    assert!(explorer.mkdir_active);
+    assert_eq!(explorer.mkdir_input(), "a");
+    assert!(explorer.is_mkdir_active());
 }
 
 #[test]
 fn mkdir_mode_esc_cancels_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.mkdir_active = true;
-    explorer.mkdir_input = "half".to_string();
+    explorer.open_prompt(PromptKind::Mkdir, "");
+    explorer.open_prompt(PromptKind::Mkdir, "half");
 
     let outcome = explorer.handle_key(key(KeyCode::Esc));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert!(!explorer.mkdir_active, "mode must be deactivated by Esc");
     assert!(
-        explorer.mkdir_input.is_empty(),
+        !explorer.is_mkdir_active(),
+        "mode must be deactivated by Esc"
+    );
+    assert!(
+        explorer.mkdir_input().is_empty(),
         "input must be cleared by Esc"
     );
 }
@@ -1880,14 +1935,14 @@ fn mkdir_mode_esc_cancels_via_macro() {
 fn mkdir_mode_unknown_key_returns_pending_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.mkdir_active = true;
-    explorer.mkdir_input = "foo".to_string();
+    explorer.open_prompt(PromptKind::Mkdir, "");
+    explorer.open_prompt(PromptKind::Mkdir, "foo");
 
     let outcome = explorer.handle_key(key(KeyCode::F(2)));
     assert_eq!(outcome, ExplorerOutcome::Pending);
     // Mode and input must be unchanged.
-    assert!(explorer.mkdir_active);
-    assert_eq!(explorer.mkdir_input, "foo");
+    assert!(explorer.is_mkdir_active());
+    assert_eq!(explorer.mkdir_input(), "foo");
 }
 
 // ── touch_mode via macro ──────────────────────────────────────────────────
@@ -1896,52 +1951,52 @@ fn mkdir_mode_unknown_key_returns_pending_via_macro() {
 fn touch_mode_char_pushes_to_input_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.touch_active = true;
-    explorer.touch_input.clear();
+    explorer.open_prompt(PromptKind::Touch, "");
+    explorer.open_prompt(PromptKind::Touch, "");
 
     let outcome = explorer.handle_key(key(KeyCode::Char('z')));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert_eq!(explorer.touch_input, "z");
-    assert!(explorer.touch_active);
+    assert_eq!(explorer.touch_input(), "z");
+    assert!(explorer.is_touch_active());
 }
 
 #[test]
 fn touch_mode_backspace_pops_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.touch_active = true;
-    explorer.touch_input = "xy".to_string();
+    explorer.open_prompt(PromptKind::Touch, "");
+    explorer.open_prompt(PromptKind::Touch, "xy");
 
     let outcome = explorer.handle_key(key(KeyCode::Backspace));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert_eq!(explorer.touch_input, "x");
-    assert!(explorer.touch_active);
+    assert_eq!(explorer.touch_input(), "x");
+    assert!(explorer.is_touch_active());
 }
 
 #[test]
 fn touch_mode_esc_cancels_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.touch_active = true;
-    explorer.touch_input = "half".to_string();
+    explorer.open_prompt(PromptKind::Touch, "");
+    explorer.open_prompt(PromptKind::Touch, "half");
 
     let outcome = explorer.handle_key(key(KeyCode::Esc));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert!(!explorer.touch_active);
-    assert!(explorer.touch_input.is_empty());
+    assert!(!explorer.is_touch_active());
+    assert!(explorer.touch_input().is_empty());
 }
 
 #[test]
 fn touch_mode_unknown_key_returns_pending_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.touch_active = true;
-    explorer.touch_input = "bar".to_string();
+    explorer.open_prompt(PromptKind::Touch, "");
+    explorer.open_prompt(PromptKind::Touch, "bar");
 
     let outcome = explorer.handle_key(key(KeyCode::F(3)));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert!(explorer.touch_active);
-    assert_eq!(explorer.touch_input, "bar");
+    assert!(explorer.is_touch_active());
+    assert_eq!(explorer.touch_input(), "bar");
 }
 
 // ── rename_mode via macro ─────────────────────────────────────────────────
@@ -1950,55 +2005,55 @@ fn touch_mode_unknown_key_returns_pending_via_macro() {
 fn rename_mode_char_pushes_to_input_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.rename_active = true;
-    explorer.rename_input.clear();
+    explorer.open_prompt(PromptKind::Rename, "");
+    explorer.open_prompt(PromptKind::Rename, "");
 
     let outcome = explorer.handle_key(key(KeyCode::Char('r')));
     // NOTE: 'r' is normally the "activate rename" key, but because
     // rename_active is already true the mode interception runs first and
     // pushes 'r' to the input — it never reaches the normal key dispatch.
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert_eq!(explorer.rename_input, "r");
-    assert!(explorer.rename_active);
+    assert_eq!(explorer.rename_input(), "r");
+    assert!(explorer.is_rename_active());
 }
 
 #[test]
 fn rename_mode_backspace_pops_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.rename_active = true;
-    explorer.rename_input = "cd".to_string();
+    explorer.open_prompt(PromptKind::Rename, "");
+    explorer.open_prompt(PromptKind::Rename, "cd");
 
     let outcome = explorer.handle_key(key(KeyCode::Backspace));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert_eq!(explorer.rename_input, "c");
-    assert!(explorer.rename_active);
+    assert_eq!(explorer.rename_input(), "c");
+    assert!(explorer.is_rename_active());
 }
 
 #[test]
 fn rename_mode_esc_cancels_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.rename_active = true;
-    explorer.rename_input = "draft".to_string();
+    explorer.open_prompt(PromptKind::Rename, "");
+    explorer.open_prompt(PromptKind::Rename, "draft");
 
     let outcome = explorer.handle_key(key(KeyCode::Esc));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert!(!explorer.rename_active);
-    assert!(explorer.rename_input.is_empty());
+    assert!(!explorer.is_rename_active());
+    assert!(explorer.rename_input().is_empty());
 }
 
 #[test]
 fn rename_mode_unknown_key_returns_pending_via_macro() {
     let dir = tempdir().expect("tempdir");
     let mut explorer = FileExplorer::new(dir.path().to_path_buf(), vec![]);
-    explorer.rename_active = true;
-    explorer.rename_input = "baz".to_string();
+    explorer.open_prompt(PromptKind::Rename, "");
+    explorer.open_prompt(PromptKind::Rename, "baz");
 
     let outcome = explorer.handle_key(key(KeyCode::F(4)));
     assert_eq!(outcome, ExplorerOutcome::Pending);
-    assert!(explorer.rename_active);
-    assert_eq!(explorer.rename_input, "baz");
+    assert!(explorer.is_rename_active());
+    assert_eq!(explorer.rename_input(), "baz");
 }
 
 #[test]
@@ -2037,4 +2092,345 @@ fn try_build_returns_typed_error_for_missing_directory() {
     let error = result.unwrap_err();
     assert_eq!(error.path, path);
     assert_eq!(error.source.kind(), std::io::ErrorKind::NotFound);
+}
+
+// ── Size toggles ──────────────────────────────────────────────────────────
+
+#[test]
+fn shift_z_toggles_dir_sizes_and_leaves_file_sizes_alone() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+    assert!(explorer.show_sizes && explorer.show_dir_sizes);
+
+    let shift_z = KeyEvent::new(KeyCode::Char('Z'), KeyModifiers::SHIFT);
+    assert_eq!(explorer.handle_key(shift_z), ExplorerOutcome::Pending);
+    assert!(!explorer.show_dir_sizes);
+    assert!(explorer.show_sizes, "Z must not touch file sizes");
+
+    // Also reachable without the SHIFT modifier (legacy terminals).
+    explorer.handle_key(key(KeyCode::Char('Z')));
+    assert!(explorer.show_dir_sizes);
+}
+
+#[test]
+fn toggle_dir_sizes_command_matches_key() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+    explorer.handle_command(ExplorerCommand::ToggleDirSizes);
+    assert!(!explorer.show_dir_sizes);
+}
+
+#[test]
+fn builder_show_dir_sizes_false_is_respected() {
+    let tmp = temp_dir_with_files();
+    let explorer = FileExplorer::builder(tmp.path().to_path_buf())
+        .show_dir_sizes(false)
+        .build();
+    assert!(!explorer.show_dir_sizes);
+    assert!(explorer.show_sizes);
+}
+
+// ── Keymap ────────────────────────────────────────────────────────────────
+
+#[test]
+fn every_command_has_a_canonical_key_that_maps_back() {
+    use ExplorerCommand as C;
+    for command in [
+        C::MoveUp,
+        C::MoveDown,
+        C::PageUp,
+        C::PageDown,
+        C::Top,
+        C::Bottom,
+        C::Ascend,
+        C::Navigate,
+        C::Confirm,
+        C::ToggleHidden,
+        C::ToggleSizes,
+        C::ToggleDirSizes,
+        C::Search,
+        C::CycleSort,
+        C::ToggleMark,
+        C::NewDirectory,
+        C::NewFile,
+        C::Rename,
+        C::Dismiss,
+    ] {
+        assert_eq!(
+            ExplorerCommand::from_key(Keymap::builtin().canonical_key(command)),
+            Some(command),
+            "{command:?} must round-trip through the keymap"
+        );
+    }
+}
+
+#[test]
+fn plain_bindings_ignore_ctrl_chords() {
+    let ctrl_s = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL);
+    assert_eq!(ExplorerCommand::from_key(ctrl_s), None);
+}
+
+#[test]
+fn key_aliases_resolve_to_same_command() {
+    for code in [KeyCode::Left, KeyCode::Backspace, KeyCode::Char('h')] {
+        assert_eq!(
+            ExplorerCommand::from_key(key(code)),
+            Some(ExplorerCommand::Ascend)
+        );
+    }
+}
+
+#[test]
+fn release_events_are_ignored() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+    let mut ev = key(KeyCode::Char('z'));
+    ev.kind = crossterm::event::KeyEventKind::Release;
+    explorer.handle_key(ev);
+    assert!(explorer.show_sizes, "release must not toggle");
+}
+
+// ── Asynchronous directory loading ────────────────────────────────────────
+
+use std::sync::{Arc, Condvar, Mutex};
+
+/// A local filesystem whose `read_dir` blocks until the test opens the gate.
+#[derive(Debug, Clone)]
+struct GatedFs {
+    gate: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl GatedFs {
+    fn closed() -> Self {
+        Self {
+            gate: Arc::new((Mutex::new(false), Condvar::new())),
+        }
+    }
+    fn open(&self) {
+        *self.gate.0.lock().unwrap() = true;
+        self.gate.1.notify_all();
+    }
+}
+
+impl crate::FileSystem for GatedFs {
+    fn read_dir(&self, path: &Path) -> std::io::Result<Vec<FsEntry>> {
+        let mut open = self.gate.0.lock().unwrap();
+        while !*open {
+            open = self.gate.1.wait(open).unwrap();
+        }
+        drop(open);
+        crate::StdFileSystem.read_dir(path)
+    }
+    fn create_dir_all(&self, p: &Path) -> std::io::Result<()> {
+        crate::StdFileSystem.create_dir_all(p)
+    }
+    fn create_file(&self, p: &Path) -> std::io::Result<()> {
+        crate::StdFileSystem.create_file(p)
+    }
+    fn rename(&self, a: &Path, b: &Path) -> std::io::Result<()> {
+        crate::StdFileSystem.rename(a, b)
+    }
+    fn copy_file(&self, a: &Path, b: &Path) -> std::io::Result<()> {
+        crate::StdFileSystem.copy_file(a, b)
+    }
+    fn copy_dir(&self, a: &Path, b: &Path) -> std::io::Result<()> {
+        crate::StdFileSystem.copy_dir(a, b)
+    }
+    fn remove_file(&self, p: &Path) -> std::io::Result<()> {
+        crate::StdFileSystem.remove_file(p)
+    }
+    fn remove_dir_all(&self, p: &Path) -> std::io::Result<()> {
+        crate::StdFileSystem.remove_dir_all(p)
+    }
+    fn exists(&self, p: &Path) -> bool {
+        p.exists()
+    }
+    fn is_dir(&self, p: &Path) -> bool {
+        p.is_dir()
+    }
+    fn disk_usage(&self, _: &Path) -> Option<DiskUsage> {
+        None
+    }
+    fn dir_size(&self, p: &Path) -> (u64, bool) {
+        crate::StdFileSystem.dir_size(p)
+    }
+}
+
+/// An async explorer over `dir` whose first (blocked) load is still pending.
+fn slow_explorer(dir: &Path) -> (FileExplorer, GatedFs) {
+    let fs = GatedFs::closed();
+    let explorer = FileExplorer::builder(dir.to_path_buf())
+        .filesystem(Arc::new(fs.clone()))
+        .async_loading(true)
+        .build();
+    (explorer, fs)
+}
+
+fn settle(explorer: &mut FileExplorer) {
+    explorer.wait_for_background(std::time::Duration::from_secs(5));
+}
+
+#[test]
+fn async_reload_of_a_fast_directory_completes_synchronously() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::builder(tmp.path().to_path_buf())
+        .async_loading(true)
+        .build();
+    assert!(!explorer.is_loading());
+    assert!(explorer.entries.iter().any(|e| e.name == "readme.txt"));
+    explorer.reload();
+    assert!(!explorer.is_loading());
+}
+
+#[test]
+fn slow_load_shows_loading_then_fills_in() {
+    let tmp = temp_dir_with_files();
+    let (mut explorer, fs) = slow_explorer(tmp.path());
+    assert!(
+        explorer.is_loading(),
+        "read is blocked: must not wait for it"
+    );
+    assert!(explorer.entries.is_empty());
+    assert!(explorer.has_pending_work());
+
+    fs.open();
+    settle(&mut explorer);
+    assert!(!explorer.is_loading());
+    assert!(explorer.entries.iter().any(|e| e.name == "readme.txt"));
+}
+
+#[test]
+fn keys_do_nothing_while_the_list_is_loading() {
+    let tmp = temp_dir_with_files();
+    let (mut explorer, fs) = slow_explorer(tmp.path());
+    assert_eq!(
+        explorer.handle_key(key(KeyCode::Enter)),
+        ExplorerOutcome::Pending
+    );
+    assert_eq!(
+        explorer.handle_key(key(KeyCode::Down)),
+        ExplorerOutcome::Pending
+    );
+    fs.open();
+    settle(&mut explorer);
+}
+
+#[test]
+fn go_to_a_file_selects_it_once_the_slow_load_finishes() {
+    let tmp = temp_dir_with_files();
+    let (mut explorer, fs) = slow_explorer(tmp.path());
+    explorer.go_to(&tmp.path().join("ubuntu.iso"));
+    assert!(explorer.is_loading());
+    fs.open();
+    settle(&mut explorer);
+    assert_eq!(explorer.current_entry().unwrap().name, "ubuntu.iso");
+}
+
+#[test]
+fn ascend_lands_on_the_directory_we_came_from_after_a_slow_load() {
+    let tmp = temp_dir_with_files();
+    let sub = tmp.path().join("subdir");
+    let (mut explorer, fs) = slow_explorer(&sub);
+    explorer.handle_key(key(KeyCode::Left));
+    assert_eq!(explorer.current_dir, tmp.path());
+    assert!(explorer.is_loading());
+    fs.open();
+    settle(&mut explorer);
+    assert_eq!(explorer.current_entry().unwrap().name, "subdir");
+}
+
+#[test]
+fn cursor_row_survives_a_slow_reload() {
+    let tmp = temp_dir_with_files();
+    let (mut explorer, fs) = slow_explorer(tmp.path());
+    fs.open();
+    settle(&mut explorer);
+    explorer.cursor = 2;
+
+    // Close the gate again by swapping in a fresh blocked filesystem.
+    let blocked = GatedFs::closed();
+    explorer.filesystem = Arc::new(blocked.clone());
+    explorer.reload();
+    assert!(explorer.is_loading());
+    assert_eq!(explorer.cursor, 2, "cursor untouched while loading");
+    blocked.open();
+    settle(&mut explorer);
+    assert_eq!(explorer.cursor, 2);
+}
+
+#[test]
+fn a_newer_reload_supersedes_an_older_slow_one() {
+    let tmp = temp_dir_with_files();
+    let other = tempdir().unwrap();
+    fs::write(other.path().join("only-here.txt"), "x").unwrap();
+
+    let (mut explorer, fs) = slow_explorer(tmp.path());
+    explorer.current_dir = other.path().to_path_buf();
+    explorer.reload();
+    fs.open();
+    settle(&mut explorer);
+    let names: Vec<_> = explorer.entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["only-here.txt"],
+        "stale listing must not overwrite the new one"
+    );
+}
+
+#[test]
+fn async_load_error_sets_status_and_clears_entries() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::builder(tmp.path().to_path_buf())
+        .async_loading(true)
+        .build();
+    explorer.current_dir = tmp.path().join("does-not-exist");
+    explorer.reload();
+    settle(&mut explorer);
+    assert!(explorer.entries.is_empty());
+    assert!(
+        explorer.status.contains("does-not-exist"),
+        "{}",
+        explorer.status
+    );
+}
+
+#[test]
+fn try_reload_supersedes_a_pending_background_read() {
+    let tmp = temp_dir_with_files();
+    let (mut explorer, fs) = slow_explorer(tmp.path());
+    assert!(explorer.is_loading());
+    explorer.filesystem = Arc::new(crate::StdFileSystem);
+    explorer.try_reload().unwrap();
+    assert!(!explorer.is_loading());
+    assert!(!explorer.entries.is_empty());
+    fs.open();
+}
+
+#[test]
+fn title_says_loading_while_a_read_is_pending() {
+    use ratatui::{backend::TestBackend, Terminal};
+    let tmp = temp_dir_with_files();
+    let (mut explorer, fs) = slow_explorer(tmp.path());
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|f| crate::render(&mut explorer, f, f.area()))
+        .unwrap();
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|c| c.symbol())
+        .collect();
+    assert!(text.contains("loading"), "{text}");
+    fs.open();
+    settle(&mut explorer);
+}
+
+#[test]
+fn synchronous_mode_is_unchanged_by_default() {
+    let tmp = temp_dir_with_files();
+    let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec![]);
+    assert!(!explorer.async_loading);
+    assert!(!explorer.is_loading());
 }

@@ -27,8 +27,32 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 
 <img src="examples/vhs/generated/theme_switcher.gif" alt="Theme switcher demo" width="800" height="450"/>
 
+### Fuzzy finder
+
+<img src="examples/vhs/generated/fuzzy_find.gif" alt="Recursive fuzzy finder jumping to a deeply nested file" width="800" height="450"/>
+
+### Undo and redo
+
+<img src="examples/vhs/generated/undo_redo.gif" alt="Creating a folder and file, undoing both, then redoing them" width="800" height="450"/>
+
+### Size info on and off
+
+<img src="examples/vhs/generated/sizes.gif" alt="Toggling all sizes with z and recursive folder sizes with Shift+Z" width="800" height="450"/>
+
 <details>
 <summary><strong>More previews</strong></summary>
+
+### Bulk rename
+<img src="examples/vhs/generated/bulk_rename.gif" alt="Marking three files and renaming them all at once in the editor" width="800" height="450"/>
+
+### Bookmarks
+<img src="examples/vhs/generated/bookmarks.gif" alt="Bookmarking two folders and jumping between them" width="800" height="450"/>
+
+### Git change markers
+<img src="examples/vhs/generated/git_status.gif" alt="Git status markers next to modified, added and untracked entries" width="800" height="450"/>
+
+### Archive preview and extract
+<img src="examples/vhs/generated/archives.gif" alt="Previewing zip and tar.gz contents, extracting a zip, and undoing it" width="800" height="450"/>
 
 ### Preview and inline editor
 <img src="examples/vhs/generated/preview.gif" alt="Preview and inline editor demo" width="800" height="450"/>
@@ -70,6 +94,10 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 - **Dynamic multi-pane layout** — `Tab`/`Shift+Tab` cycle focus, `Ctrl+T` opens a pane, `Ctrl+W` closes one, and `w` toggles focused single-pane mode.
 - **File operations** — mark multiple entries, copy, move, recursively delete, create, rename, and confirm overwrites.
 - **Fast navigation** — arrows, Vim keys, paging, top/bottom jumps, incremental search, extension filters, and three sort modes.
+- **Find, bookmark, undo** — recursive fuzzy finder (`f`), bookmarks (`b`/`Shift+B`), undo/redo (`u`/`Ctrl+R`), and bulk rename (`Shift+R`).
+- **Git and archives** — change markers next to entries (`v`), archive listings in the preview, and one-key extraction (`Shift+X`).
+- **Never blocks** — previews, folder sizes, git status, searches and slow directory reads run on background threads.
+- **Configurable** — every key can be rebound in `keymap.toml`; size info, trash and git markers are switchable via keys, flags and settings.
 - **Preview and editing** — text with line numbers, images, binary hex dumps, directory summaries, external editors, and a built-in editor.
 - **Terminal-native images** — Kitty, Sixel, iTerm2, and halfblock fallback through [`ratatui-image`](https://github.com/ratatui/ratatui-image).
 - **43 themes** — live theme picker plus fully customizable `Theme` values.
@@ -83,7 +111,7 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 
 ```toml
 [dependencies]
-tui-file-explorer = "2"
+tui-file-explorer = "3"
 ratatui = "0.30"
 ```
 
@@ -92,16 +120,18 @@ Choose only the layers your application needs:
 ```toml
 [dependencies]
 # Lightweight FileExplorer + DualPane widgets
-tui-file-explorer = { version = "2", default-features = false }
+tui-file-explorer = { version = "3", default-features = false }
 
 # Full embeddable App, without the tfe binary or Clap
-tui-file-explorer = { version = "2", default-features = false, features = ["full-app"] }
+tui-file-explorer = { version = "3", default-features = false, features = ["full-app"] }
 ```
 
 | Feature | Adds |
 |---|---|
-| `preview` | Image/text/binary/directory preview support |
-| `persistence` | Serde-backed `AppState` loading and saving |
+| `preview` | Image/text/binary/directory/archive preview (loaded on a background thread); implies `archive` |
+| `archive` | `.zip` / `.tar` / `.tar.gz` listing and path-traversal-safe extraction |
+| `persistence` | Serde-backed `AppState` loading and saving, `keymap.toml` parsing |
+| `trash` | `TrashFileSystem` + `AppOptions::use_trash`: deletions go to the OS trash / recycle bin |
 | `full-app` | Complete `App`, panels, operations, preview, and persistence |
 | `cli` (default) | `tfe` binary and Clap argument parsing |
 
@@ -174,7 +204,8 @@ let mut explorer = FileExplorer::builder(std::env::current_dir()?)
     .allow_extension("rs")
     .allow_extension("toml")
     .show_hidden(false)
-    .show_sizes(true)
+    .show_sizes(true)      // file + folder size column
+    .show_dir_sizes(false) // folders show item counts, no recursive walk
     .sort_mode(SortMode::Name)
     .build();
 
@@ -234,10 +265,16 @@ See [`examples/`](examples/) and the complete API on [docs.rs](https://docs.rs/t
 | Panes | `Ctrl+T`/`Ctrl+W` | Open/close pane |
 | Panes | `w` | Toggle focused single-pane/multi-pane layout |
 | Search | `/`, `Backspace`, `Esc` | Start, edit, or cancel incremental search |
-| View | `s`, `.`, `z` | Cycle sort, toggle hidden entries, toggle sizes |
+| View | `s`, `.`, `z`, `Shift+Z` | Cycle sort, toggle hidden entries, toggle all size info, toggle recursive folder sizes (off = item counts, no directory walk) |
 | Selection | `Space` | Mark/unmark current entry |
 | File operations | `x`, `p`, `d` | Cut, paste, delete |
 | File operations | `n`, `N`, `r` | New directory, new file, rename |
+| File operations | `Shift+R` | Bulk rename: edit all (or marked) names in your editor, one per line |
+| File operations | `u`, `Ctrl+R` | Undo / redo the last rename / create / move / copy / bulk rename / extract (and trash-deletes where the OS trash can restore) |
+| Find | `f` | Recursive fuzzy finder; `Enter` jumps to the match |
+| Bookmarks | `b`, `Shift+B` | Bookmark the current folder; open the bookmark list (`Del` removes one) |
+| Git | `v` | Toggle git change markers (`M` `A` `?` `D` `R` `U`; folders show their children's state) |
+| Archives | `Shift+X` | Extract the highlighted `.zip` / `.tar` / `.tar.gz` / `.tgz` into a sibling folder; the preview lists archive contents |
 | Preview | `P`, `Ctrl+J`/`Ctrl+K` | Toggle and scroll preview |
 | Editors | `e`, `i`, `Shift+E` | External editor, inline editor, editor picker |
 | Panels | `T`, `Shift+O` | Theme picker, options panel |
@@ -263,6 +300,11 @@ Common options:
 | `--list-themes` | Print all theme names |
 | `--show-themes` | Open theme picker at startup |
 | `--single-pane` | Start with only focused pane visible |
+| `--sizes` / `--no-sizes` | Show / hide all file and folder size info (persisted) |
+| `--trash` / `--no-trash` | Send deletions to the OS trash (default) or delete permanently (persisted) |
+| `--git` / `--no-git` | Show / hide git change markers (persisted) |
+| `--dump-keymap` | Print a complete `keymap.toml` with the built-in bindings |
+| `--dir-sizes` / `--no-dir-sizes` | Compute / skip recursive folder sizes; off shows item counts (persisted) |
 | `--editor <EDITOR>` | Select external editor or command |
 | `--cd` / `--no-cd` | Enable/disable persisted cd-on-exit |
 | `--init <SHELL>` | Install shell wrapper |
@@ -272,6 +314,25 @@ Common options:
 | `-v, --verbose` | Enable startup logs, log file, and debug panel |
 
 Run `tfe --help` for full option documentation.
+
+### Custom key bindings
+
+Every binding can be changed in `keymap.toml` (next to `settings.json`; `tfe --info` shows the directory). Start from `tfe --dump-keymap > keymap.toml`:
+
+```toml
+[explorer]                 # per-pane navigation
+move_up  = ["up", "k"]
+dismiss  = ["esc"]         # drops the default `q`
+
+[app]                      # app-wide commands
+undo     = ["u", "ctrl+z"]
+redo     = ["ctrl+r"]
+cut      = ["m"]           # `x` stops cutting
+```
+
+A command listed in the file **replaces all of its default keys**; commands you do not list keep theirs. Keys are single characters or `esc enter tab backspace up down left right home end pageup pagedown space f1…f24` with `ctrl+`, `alt+` or `shift+` prefixes. Mistakes (unknown command, bad key) are reported on stderr and skipped — they never stop `tfe` from starting.
+
+Embedding apps get the same machinery through `Keymap` / `FileExplorerBuilder::keymap(..)` and `KeyBindings::remap(..)`, or `App::apply_keymap_config(..)`.
 
 ### Shell integration
 
@@ -391,7 +452,7 @@ Use `command tfe` when diagnostics or pipelines must bypass installed shell wrap
 
 ## Development
 
-Requires Rust 1.88 or newer. Optional tooling: [`just`](https://github.com/casey/just), [`git-cliff`](https://github.com/orhun/git-cliff), and [`vhs`](https://github.com/charmbracelet/vhs).
+Requires Rust 1.90 or newer. Optional tooling: [`just`](https://github.com/casey/just), [`git-cliff`](https://github.com/orhun/git-cliff), and [`vhs`](https://github.com/charmbracelet/vhs).
 
 ```bash
 just check-all   # format check, clippy with denied warnings, tests

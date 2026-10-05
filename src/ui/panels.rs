@@ -148,8 +148,8 @@ pub fn render_editor_panel(frame: &mut Frame, area: Rect, app: &App) {
     //   [7]  gap                           — 1 row
     //   [8]  footer                        — 3 rows
     //   [9]  remainder
-    let terminal_cell_h = terminal_editors.len() as u16 + 2;
-    let ide_cell_h = ide_editors.len() as u16 + 2;
+    let terminal_cell_h = crate::to_u16(terminal_editors.len()) + 2;
+    let ide_cell_h = crate::to_u16(ide_editors.len()) + 2;
 
     let slots = Layout::default()
         .direction(Direction::Vertical)
@@ -304,7 +304,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
     //   [0]  hints header box         — 2 rows  (top border: title, bottom border: hints)
     //   [1]  gap                      — 1 row
     //   [2]  "Toggles" section title  — 1 row
-    //   [3]  Toggles group cell       — 6 rows  (border + 4 rows + border)
+    //   [3]  Toggles group cell       — 8 rows  (border + 6 rows + border)
     //   [4]  gap                      — 1 row
     //   [5]  "Editor" section title   — 1 row
     //   [6]  Editor group cell        — 3 rows  (border + 1 row + border)
@@ -318,7 +318,7 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(2), // [0] hints header (border-only, no body)
             Constraint::Length(1), // [1] gap
             Constraint::Length(1), // [2] "Toggles" title
-            Constraint::Length(6), // [3] Toggles group (4 option rows)
+            Constraint::Length(8), // [3] Toggles group (6 option rows)
             Constraint::Length(1), // [4] gap
             Constraint::Length(1), // [5] "Editor" title
             Constraint::Length(3), // [6] Editor group (1 option row)
@@ -381,6 +381,12 @@ pub fn render_options_panel(frame: &mut Frame, area: Rect, app: &App) {
         option_row("w", "single pane", bool_span(app.single_pane)),
         option_row("Shift + T", "theme panel", bool_span(app.show_theme_panel)),
         option_row("z", "show sizes", bool_span(app.active_pane().show_sizes)),
+        option_row(
+            "Shift + Z",
+            "folder sizes",
+            bool_span(app.active_pane().show_dir_sizes),
+        ),
+        option_row("v", "git markers", bool_span(app.active_pane().show_git)),
     ];
     let toggles_cell = Paragraph::new(toggles_rows).block(
         Block::default()
