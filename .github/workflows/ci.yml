@@ -89,6 +89,12 @@ jobs:
         run: cargo check --locked --no-default-features --features preview --lib
       - name: Check full embeddable app
         run: cargo check --locked --no-default-features --features full-app --all-targets
+      - name: Check trash support
+        run: cargo check --locked --no-default-features --features trash --all-targets
+      - name: Check archive support
+        run: cargo check --locked --no-default-features --features archive --all-targets
+      - name: Check persistence (settings + keymap parsing)
+        run: cargo check --locked --no-default-features --features persistence --all-targets
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
@@ -108,3 +114,41 @@ jobs:
         run: cargo install nu --locked
       - name: Run Nu script tests
         run: nu scripts/tests/run_all.nu
+
+  # Declared `rust-version` must keep compiling — a dependency bump that
+  # needs a newer compiler should fail here, not at a user's machine.
+  msrv:
+    runs-on: ubuntu-latest
+    name: msrv
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read rust-version from Cargo.toml
+        id: msrv
+        run: |
+          v=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Install Rust ${{ steps.msrv.outputs.version }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: cargo check (MSRV)
+        run: cargo check --locked --all-features --all-targets
+
+  # Known-vulnerability scan of Cargo.lock. Advisory-only so a fresh advisory
+  # on an unrelated crate cannot block unrelated work.
+  audit:
+    runs-on: ubuntu-latest
+    name: audit
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit
+        run: cargo audit

@@ -1,8 +1,9 @@
 name: Nightly Dependency Update
 
 on:
-  schedule:
-    - cron: "0 0 * * *" # Every night at 00:00 UTC (01:00 CET)
+  # Schedule intentionally disabled: the Gitea nightly workflow is the single
+  # source of truth (it bumps + tags + mirrors here). A second nightly updater
+  # would make GitHub main diverge and break the mirror push.
   workflow_dispatch:
 
 env:

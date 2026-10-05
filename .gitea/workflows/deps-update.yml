@@ -1,16 +1,25 @@
 name: Nightly Dependency Update
 
+# Nightly: run `cargo update` against the CURRENT tip of main. Only when
+# Cargo.lock really changes AND tests + clippy pass do we:
+#   1. commit the lockfile to main,
+#   2. bump the patch version (Cargo.toml, README badge, CHANGELOG.md),
+#   3. tag vX.Y.Z and push main + tag (tag push triggers release.yml),
+#   4. mirror main + tag to GitHub (if GITHUB_REMOTE_URL secret is set).
+# No changes => no commit, no tag, no release.
+
 on:
   schedule:
-    - cron: "30 0 * * *" # Every night at 00:30 UTC — offset from GitHub
+    - cron: "30 0 * * *" # Every night at 00:30 UTC
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
 
+# Never cancel mid-run: a half-finished push/tag would leave main inconsistent.
 concurrency:
   group: deps-update
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update-deps:
@@ -21,13 +30,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: main
           token: ${{ secrets.GITEA_TOKEN || github.token }}
           fetch-depth: 0
+
+      # Scheduled runs can start from a stale commit. Always rebase the working
+      # tree onto the real tip of main, otherwise `cargo update` is diffed
+      # against an old Cargo.lock (false "changes", unmergeable branches).
+      - name: Sync to latest main
+        run: |
+          git fetch --tags --force origin main
+          git checkout -B main origin/main
+          git reset --hard origin/main
+          git log -1 --oneline
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -38,12 +58,13 @@ jobs:
       - name: Check for changes
         id: check
         run: |
-          if git diff --quiet Cargo.lock; then
+          if git diff --quiet -- Cargo.lock; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No dependency changes detected."
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Dependency changes detected."
+            echo "Dependency changes detected:"
+            git diff -U0 -- Cargo.lock | grep -E '^[-+](name|version) ' || true
           fi
 
       - name: Run tests
@@ -52,89 +73,39 @@ jobs:
 
       - name: Run clippy
         if: steps.check.outputs.changed == 'true'
-        run: cargo clippy -- -D warnings -A deprecated
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings -A deprecated
 
-      # ── Push upgrade branch + create PR + auto-merge ─────────────────────────
-      - name: Create and auto-merge Pull Request
+      # A dependency bump that needs a newer compiler than our declared
+      # `rust-version` must not be released.
+      - name: Check MSRV still builds
         if: steps.check.outputs.changed == 'true'
-        env:
-          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN || github.token }}
         run: |
-          BRANCH="deps/nightly-cargo-update"
-          DATE=$(date -u '+%Y-%m-%d')
-          API="${GITHUB_SERVER_URL}/api/v1"
-          REPO="${GITHUB_REPOSITORY}"
+          msrv=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          rustup toolchain install "$msrv" --profile minimal
+          cargo +"$msrv" check --locked --all-features --all-targets
 
+      - name: Install release tooling (nushell, git-cliff)
+        if: steps.check.outputs.changed == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nushell,git-cliff
+
+      # Fallback when prebuilt binaries are unavailable.
+      - name: Ensure nu + git-cliff are installed
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          command -v nu       >/dev/null || cargo install nu --locked
+          command -v git-cliff >/dev/null || cargo install git-cliff --locked
+          nu --version
+          git-cliff --version
+
+      - name: Commit updated Cargo.lock
+        if: steps.check.outputs.changed == 'true'
+        run: |
           git config user.name  "gitea-actions[bot]"
           git config user.email "gitea-actions[bot]@noreply.gitea"
-
-          # Force-create or update the branch
-          git checkout -B "$BRANCH"
           git add Cargo.lock
-          git commit -m "chore(deps): nightly cargo update $DATE"
-          git push --force origin "$BRANCH"
-
-          echo "✅ Branch '$BRANCH' pushed."
-
-          # ── Create the PR ────────────────────────────────────────────────────
-          echo "Creating PR on ${REPO}..."
-          PR_RESPONSE=$(curl -s -X POST \
-            -H "Authorization: token ${GITEA_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "${API}/repos/${REPO}/pulls" \
-            -d "{
-              \"title\": \"chore(deps): nightly cargo update ${DATE}\",
-              \"head\": \"${BRANCH}\",
-              \"base\": \"main\",
-              \"body\": \"## Automated Nightly Dependency Update\n\nAll quality checks passed: **tests**, **clippy**.\n\nCreated by the Nightly Dependency Update workflow.\"
-            }")
-
-          PR_NUMBER=$(echo "$PR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('number',''))" 2>/dev/null || true)
-
-          if [ -z "$PR_NUMBER" ]; then
-            echo "⚠️  Could not create PR (branch may already have an open PR)."
-            # Try to find the existing open PR for this branch
-            PR_NUMBER=$(curl -s \
-              -H "Authorization: token ${GITEA_TOKEN}" \
-              "${API}/repos/${REPO}/pulls?state=open&head=${BRANCH}" \
-              | python3 -c "import sys,json; prs=json.load(sys.stdin); print(prs[0]['number'] if prs else '')" 2>/dev/null || true)
-          fi
-
-          if [ -z "$PR_NUMBER" ]; then
-            echo "❌ Could not create or find PR. Skipping auto-merge."
-            exit 0
-          fi
-
-          echo "✅ PR #${PR_NUMBER} ready."
-
-          # ── Merge the PR ─────────────────────────────────────────────────────
-          echo "Merging PR #${PR_NUMBER}..."
-          curl -s -X POST \
-            -H "Authorization: token ${GITEA_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "${API}/repos/${REPO}/pulls/${PR_NUMBER}/merge" \
-            -d "{
-              \"Do\": \"merge\",
-              \"delete_branch_after_merge\": true
-            }"
-
-          echo "✅ PR #${PR_NUMBER} merged and branch deleted."
-
-      # ── Bump patch version, tag, and push to Gitea + GitHub ─────────────────
-      # A fresh tag push triggers release.yml (on: push: tags: v*) on both.
-      - name: Sync local main after PR merge
-        if: steps.check.outputs.changed == 'true'
-        run: |
-          git checkout main
-          git pull origin main
-
-      - name: Install Nushell (bump_version.nu needs it)
-        if: steps.check.outputs.changed == 'true'
-        run: cargo install nu --locked
-
-      - name: Install git-cliff (bump_version.nu uses it for CHANGELOG.md)
-        if: steps.check.outputs.changed == 'true'
-        run: cargo install git-cliff --locked
+          git commit -m "chore(deps): nightly cargo update $(date -u '+%Y-%m-%d')"
 
       - name: Compute next patch version
         if: steps.check.outputs.changed == 'true'
@@ -143,13 +114,20 @@ jobs:
           current=$(grep -m1 '^version' Cargo.toml | sed -E 's/version[[:space:]]*=[[:space:]]*"(.*)"/\1/')
           IFS='.' read -r major minor patch <<< "$current"
           next="$major.$minor.$((patch + 1))"
+          # Never collide with an existing tag.
+          while git rev-parse -q --verify "refs/tags/v$next" >/dev/null; do
+            patch=$((patch + 1))
+            next="$major.$minor.$((patch + 1))"
+          done
           echo "current=$current" >> "$GITHUB_OUTPUT"
           echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "Releasing $current -> $next"
 
       - name: Bump version, changelog, commit and tag
         if: steps.check.outputs.changed == 'true'
         run: nu scripts/bump_version.nu --yes ${{ steps.version.outputs.next }}
 
+      # Fail loudly (no `|| true`): a failed push must show as a failed run.
       - name: Push release commit and tag to Gitea
         if: steps.check.outputs.changed == 'true'
         run: |
@@ -157,14 +135,18 @@ jobs:
           git push origin "v${{ steps.version.outputs.next }}"
 
       - name: Push release commit and tag to GitHub mirror
-        if: steps.check.outputs.changed == 'true' && env.GITHUB_REMOTE_URL != ''
+        if: steps.check.outputs.changed == 'true'
         env:
           GITHUB_REMOTE_URL: ${{ secrets.GITHUB_REMOTE_URL }}
         run: |
+          if [ -z "$GITHUB_REMOTE_URL" ]; then
+            echo "GITHUB_REMOTE_URL not set — skipping GitHub mirror."
+            exit 0
+          fi
           git remote add github-ci "$GITHUB_REMOTE_URL"
           git push github-ci HEAD:main
           git push github-ci "v${{ steps.version.outputs.next }}"
 
       - name: Nothing to update
         if: steps.check.outputs.changed == 'false'
-        run: echo "✅ All dependencies already up to date — nothing to update."
+        run: echo "✅ All dependencies already up to date — no commit, no release."
