@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [3.0.1] - 2026-10-06
+
+### Bug Fixes
+- Repaint the whole UI after an external editor exits
+
 ## [3.0.0] - 2026-10-05
 
 ### Documentation
@@ -18,6 +23,7 @@ All notable changes to this project will be documented in this file.
 - Nightly cargo update 2026-09-14
 - Nightly cargo update 2026-09-16
 - Nightly cargo update 2026-09-18
+- Bump version to 3.0.0
 
 ### Ci
 - Make the nightly dependency update robust and add MSRV, audit and feature checks

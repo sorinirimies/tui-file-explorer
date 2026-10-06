@@ -2685,7 +2685,7 @@ dependencies = [
 
 [[package]]
 name = "tui-file-explorer"
-version = "3.0.0"
+version = "3.0.1"
 dependencies = [
  "clap",
  "crossterm",
