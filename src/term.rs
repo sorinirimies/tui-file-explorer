@@ -67,7 +67,32 @@ impl TerminalGuard {
         // The child may have enabled mouse tracking — switch it off so stray
         // events don't flood the event loop.
         let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);
-        let _ = self.terminal.clear();
+        self.force_full_redraw();
+    }
+
+    /// Wipe the screen and make the next frame repaint every cell.
+    ///
+    /// Deliberately **not** `Terminal::clear()`: in current ratatui that first
+    /// asks the terminal for the cursor position (`CSI 6n`) and returns early
+    /// on any error — without clearing and without resetting the diff
+    /// buffer. After a full-screen child such as Helix has run, that reply
+    /// can be lost or late (it timed out here), so the screen kept the
+    /// child's leftovers and only the few cells that changed were redrawn:
+    /// a broken layout. A fresh `Terminal` has empty buffers, so the next
+    /// draw repaints everything, and no cursor query is involved.
+    fn force_full_redraw(&mut self) {
+        use crossterm::{
+            cursor::MoveTo,
+            terminal::{Clear, ClearType},
+        };
+        let _ = execute!(
+            self.terminal.backend_mut(),
+            Clear(ClearType::All),
+            MoveTo(0, 0)
+        );
+        if let Ok(fresh) = Terminal::new(CrosstermBackend::new(io::stderr())) {
+            self.terminal = fresh;
+        }
     }
 
     /// Restore the terminal now (idempotent; also run on drop).
