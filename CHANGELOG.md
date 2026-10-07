@@ -1,13 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [3.0.1] - 2026-10-06
+## [3.0.2] - 2026-10-07
 
 ### Bug Fixes
 - Repaint the whole UI after an external editor exits
 
 ### Miscellaneous
 - Bump version to 3.0.1
+- Bump version to 3.0.2
 
 ## [3.0.0] - 2026-10-05
 
@@ -41,6 +42,9 @@ All notable changes to this project will be documented in this file.
 
 ## [2.2.0] - 2026-09-11
 
+### Features
+- Add adaptive action hint layouts
+
 ### Miscellaneous
 - Release v2.1.0
 - Release v2.1.0
@@ -54,9 +58,6 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 - Correct justfile remote names (gitea-microlab/starscream -> gitea/gitea_starscream)
-
-### Features
-- Add adaptive action hint layouts
 
 ### Miscellaneous
 - Bump version to 2.1.0
@@ -130,18 +131,12 @@ All notable changes to this project will be documented in this file.
 ## [1.1.9] - 2026-07-10
 
 ### Bug Fixes
+- Skip from_query_stdio on Apple Terminal and non-tty stdout
 - Restore lost demo GIF LFS objects and regenerate picture_preview
 
 ### Miscellaneous
-- Bump version to 1.1.9
-
-## [1.1.4] - 2026-06-26
-
-### Bug Fixes
-- Skip from_query_stdio on Apple Terminal and non-tty stdout
-
-### Miscellaneous
 - Bump version to 1.1.4
+- Bump version to 1.1.9
 
 ## [1.1.3] - 2026-05-05
 
