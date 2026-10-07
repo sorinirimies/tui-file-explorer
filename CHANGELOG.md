@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 - Repaint the whole UI after an external editor exits
 
+### Miscellaneous
+- Bump version to 3.0.1
+
 ## [3.0.0] - 2026-10-05
 
 ### Documentation
