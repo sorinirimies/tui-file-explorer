@@ -407,3 +407,7 @@ info:
 # View changelog
 view-changelog:
     @cat CHANGELOG.md
+
+# Security: dependency vulnerability scan (needs `cargo install cargo-audit`)
+audit:
+    cargo audit
