@@ -328,7 +328,11 @@ fn render_header(explorer: &FileExplorer, frame: &mut Frame, area: Rect, theme: 
     // Truncate from the left when the path exceeds available width.
     let inner_width = area.width.saturating_sub(4) as usize;
     let display_path = if path_str.len() > inner_width && inner_width > 3 {
-        let skip = path_str.len() - inner_width + 1;
+        let mut skip = path_str.len() - inner_width + 1;
+        // Never slice inside a multi-byte character.
+        while !path_str.is_char_boundary(skip) {
+            skip += 1;
+        }
         format!("\u{2026}{}", &path_str[skip..])
     } else {
         path_str.to_string()
