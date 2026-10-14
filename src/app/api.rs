@@ -849,6 +849,7 @@ impl App {
     }
 }
 
+#[cfg(feature = "theme")]
 impl crate::nuances::Themed for AppBuilder {
     fn apply_theme(self, theme: &crate::nuances::NuancesTheme) -> Self {
         self.theme(theme)

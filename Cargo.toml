@@ -41,13 +41,15 @@ full-app = ["preview", "persistence", "dep:tui-slider"]
 cli = ["full-app", "trash", "dep:clap"]
 # Send deleted entries to the OS trash / recycle bin instead of unlinking.
 trash = ["dep:trash"]
+# Shared tui-nuances theming (NuancesTheme, ThemeBuilder, Themed, ...). Off by default.
+theme = ["dep:tui-nuances"]
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 
 [dependencies]
 ratatui    = "0.30"
 # Shared theme crate. TODO: switch to the crates.io version after publish.
-tui-nuances = { version = "0.1", git = "https://github.com/sorinirimies/tui-nuances" }
+tui-nuances = { version = "0.1", git = "https://github.com/sorinirimies/tui-nuances", optional = true }
 crossterm  = "0.29"
 clap       = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
 tui-slider = { version = "0.3.4", optional = true }
@@ -86,6 +88,7 @@ path = "examples/basic.rs"
 [[example]]
 name = "theme_switcher"
 path = "examples/theme_switcher.rs"
+required-features = ["theme"]
 
 [[example]]
 name = "dual_pane"

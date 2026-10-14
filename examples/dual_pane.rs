@@ -57,8 +57,10 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame, Terminal,
 };
+#[cfg(feature = "theme")]
+use tui_file_explorer::NuancesSwitcher;
 use tui_file_explorer::{
-    render_dual_pane_themed, DualPane, DualPaneActive, DualPaneOutcome, NuancesSwitcher, Theme,
+    render_dual_pane_themed, DualPane, DualPaneActive, DualPaneOutcome, Theme,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -84,6 +86,7 @@ fn main() {
 struct App {
     dual: DualPane,
     theme: Theme,
+    #[cfg(feature = "theme")]
     shared: NuancesSwitcher,
     status: String,
 }
@@ -100,6 +103,7 @@ impl App {
         Self {
             dual: builder.build(),
             theme: Theme::default(),
+            #[cfg(feature = "theme")]
             shared: NuancesSwitcher::new(),
             status: String::from("Tab — switch pane   w — toggle single/dual   q — quit"),
         }
@@ -172,6 +176,7 @@ fn event_loop(
         }
 
         // `t` / `T` — cycle shared tui-nuances themes (not while typing).
+        #[cfg(feature = "theme")]
         if !app.dual.left.search_active
             && !app.dual.right.search_active
             && app.dual.left.prompt.is_none()

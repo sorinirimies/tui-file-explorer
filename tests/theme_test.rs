@@ -1,4 +1,5 @@
 //! Integration tests for shared `tui-nuances` theming.
+#![cfg(feature = "theme")]
 use ratatui::{backend::TestBackend, style::Color, Terminal};
 use tui_file_explorer::{
     render_dual_pane_nuanced, render_dual_pane_themed, render_nuanced, render_themed, DualPane,

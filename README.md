@@ -103,6 +103,7 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 - **43 themes** — live theme picker plus fully customizable `Theme` values.
 - **Persistent CLI state** — pane directories, active pane, theme, sort mode, visibility settings, editor, and cd-on-exit.
 - **Cross-platform shell integration** — bash, zsh, fish, PowerShell, and Nushell on macOS, Linux, and Windows.
+- **Optional shared theming** — enable the `theme` feature for [`tui-nuances`](https://github.com/sorinirimies/tui-nuances) integration (off by default).
 - **Three library tiers** — `FileExplorer`, `DualPane`, or full `App`.
 
 ## Installation
@@ -256,11 +257,18 @@ See [`examples/`](examples/) and the complete API on [docs.rs](https://docs.rs/t
 
 Theming is shared with the other components by the same author through
 [`tui-nuances`](https://github.com/sorinirimies/tui-nuances) (git dependency
-until it is published). The explorer keeps its own nine-colour `Theme` as the
+until it is published). This is **optional** and requires the `theme` feature
+(not enabled by default, so no extra dependency otherwise):
+
+```toml
+tui-file-explorer = { version = "3", features = ["theme"] }
+```
+
+The explorer keeps its own nine-colour `Theme` as the
 style type; it maps from a shared `NuancesTheme` (re-exported
 `tui_nuances::Theme`). Without a theme the default look is unchanged.
 
-```rust
+```rust,ignore
 use ratatui::style::Color;
 use tui_file_explorer::{render_nuanced, NuancesTheme, Theme, ThemeBuilder};
 
@@ -277,7 +285,7 @@ Role mapping: `brand`←`title`, `accent`←`accent`, `success`/`match_file`←`
 `bg`←`background`. To pass your app's theme, implement `ThemeProvider`
 (`Theme::from_provider(&app_theme)`) or `impl From<&AppTheme> for NuancesTheme`.
 `AppBuilder::theme` accepts anything `Into<Theme>`, including `&NuancesTheme`.
-The `basic`, `dual_pane` and `theme_switcher` examples cycle shared themes with `t` / `T`.
+With `--features theme`, the `basic`, `dual_pane` and `theme_switcher` examples cycle shared themes with `t` / `T` (`theme_switcher` requires it).
 
 ## Keyboard controls
 

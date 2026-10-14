@@ -52,7 +52,7 @@ fmt-check:
 
 # Run clippy
 clippy:
-    cargo clippy -- -D warnings
+    cargo clippy --all-features -- -D warnings
 
 # Run all quality checks (fmt, clippy, test)
 check-all: fmt-check clippy test
@@ -219,7 +219,7 @@ vhs name:
 vhs-all:
     @command -v vhs >/dev/null 2>&1 || { echo "❌ vhs not found. Install: brew install vhs"; exit 1; }
     @echo "Building examples..."
-    cargo build --example basic --example theme_switcher --example dual_pane --example options --example editor_picker --bin tfe
+    cargo build --features theme --example basic --example theme_switcher --example dual_pane --example options --example editor_picker --bin tfe
     @echo "Recording all tapes..."
     vhs examples/vhs/basic.tape
     vhs examples/vhs/search.tape

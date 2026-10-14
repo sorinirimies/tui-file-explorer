@@ -6,7 +6,7 @@
 //! - [`FileExplorer::builder`] with an optional extension filter
 //! - [`render_themed`] with a custom [`Theme`]
 //! - All four [`ExplorerOutcome`] variants
-//! - `t` / `T` cycle the shared `tui-nuances` themes (next / previous)
+//! - `t` / `T` cycle the shared `tui-nuances` themes (needs `--features theme`)
 //! - Incremental search (`/`), sort cycling (`s`), hidden-file toggle (`.`)
 //!
 //! ## Usage
@@ -28,15 +28,17 @@ use std::{
     process,
 };
 
+#[cfg(feature = "theme")]
+use crossterm::event::KeyCode;
 use crossterm::{
-    event::{self, DisableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use tui_file_explorer::{
-    render_nuanced, render_themed, ExplorerOutcome, FileExplorer, NuancesSwitcher, Theme,
-};
+#[cfg(feature = "theme")]
+use tui_file_explorer::{render_nuanced, NuancesSwitcher};
+use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, Theme};
 
 fn main() {
     // Collect optional extension-filter args (e.g. `-- rs toml`).
@@ -95,21 +97,25 @@ fn event_loop(
     theme: &Theme,
 ) -> io::Result<Option<PathBuf>> {
     // `None` = the example's own theme; `t` / `T` switch to shared themes.
+    #[cfg(feature = "theme")]
     let mut shared = NuancesSwitcher::new();
+    #[cfg(feature = "theme")]
     let mut use_shared = false;
     loop {
         terminal.draw(|frame| {
+            #[cfg(feature = "theme")]
             if use_shared {
                 render_nuanced(explorer, frame, frame.area(), shared.current());
-            } else {
-                render_themed(explorer, frame, frame.area(), theme);
+                return;
             }
+            render_themed(explorer, frame, frame.area(), theme);
         })?;
 
         let Event::Key(key) = event::read()? else {
             continue;
         };
 
+        #[cfg(feature = "theme")]
         if !explorer.search_active && explorer.prompt.is_none() {
             match key.code {
                 KeyCode::Char('t') => {
