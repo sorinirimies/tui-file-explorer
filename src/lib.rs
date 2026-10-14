@@ -316,6 +316,7 @@ pub mod filesystem;
 pub mod git;
 pub mod inline_editor;
 pub mod keymap;
+pub mod nuances;
 pub mod palette;
 pub mod picker;
 #[cfg(feature = "preview")]
@@ -346,11 +347,16 @@ pub use filesystem::{
     local_filesystem, std_filesystem, FileSystem, SharedFileSystem, StdFileSystem, VirtualEntry,
     TRASH_SUPPORTED,
 };
+pub use nuances::{
+    render_dual_pane_nuanced, render_nuanced, NuancesSwitcher, NuancesTheme, ThemeBuilder,
+    ThemeProvider, Themed,
+};
 pub use palette::Theme;
 pub use render::{
     render, render_dual_pane, render_dual_pane_themed, render_themed, FOOTER_HEIGHT, HEADER_HEIGHT,
     MARK_INDICATOR, SCROLLBAR_CHAR,
 };
+pub use tui_nuances;
 pub use types::{
     DiskUsage, ExplorerCommand, ExplorerOutcome, FsEntry, Prompt, PromptKind, SelectionMode,
     SortMode,

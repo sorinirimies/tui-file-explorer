@@ -252,6 +252,33 @@ Host-owned persistence uses `app.snapshot()`, `app.restore(...)`, `load_state_fr
 
 See [`examples/`](examples/) and the complete API on [docs.rs](https://docs.rs/tui-file-explorer).
 
+## Theming
+
+Theming is shared with the other components by the same author through
+[`tui-nuances`](https://github.com/sorinirimies/tui-nuances) (git dependency
+until it is published). The explorer keeps its own nine-colour `Theme` as the
+style type; it maps from a shared `NuancesTheme` (re-exported
+`tui_nuances::Theme`). Without a theme the default look is unchanged.
+
+```rust
+use ratatui::style::Color;
+use tui_file_explorer::{render_nuanced, NuancesTheme, Theme, ThemeBuilder};
+
+let shared = NuancesTheme::by_name("tokyo-night").unwrap_or_default();
+
+// terminal.draw(|f| render_nuanced(&mut explorer, f, f.area(), &shared));
+let theme: Theme = (&shared).into();                       // From<&NuancesTheme>
+// Explicit colours win over the theme, in any call order:
+let tuned = ThemeBuilder::new().theme(&shared).brand(Color::Magenta).build();
+```
+
+Role mapping: `brand`←`title`, `accent`←`accent`, `success`/`match_file`←`success`,
+`dim`←`muted`, `fg`←`foreground`, `sel_bg`←`selection_bg`, `dir`←`primary`,
+`bg`←`background`. To pass your app's theme, implement `ThemeProvider`
+(`Theme::from_provider(&app_theme)`) or `impl From<&AppTheme> for NuancesTheme`.
+`AppBuilder::theme` accepts anything `Into<Theme>`, including `&NuancesTheme`.
+The `basic`, `dual_pane` and `theme_switcher` examples cycle shared themes with `t` / `T`.
+
 ## Keyboard controls
 
 | Area | Keys | Action |

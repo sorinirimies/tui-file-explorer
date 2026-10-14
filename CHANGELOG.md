@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+- Shared theming via tui-nuances (`NuancesTheme`, `ThemeBuilder`, `render_nuanced`, `render_dual_pane_nuanced`, `Themed`, `ThemeProvider`); `t`/`T` theme keys in examples
+
 ## [3.0.2] - 2026-10-07
 
 ### Bug Fixes

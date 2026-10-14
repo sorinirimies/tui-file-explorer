@@ -141,7 +141,7 @@ pub struct FileExplorer {
     /// heuristic that invalidates the cache when files are added, removed, or
     /// renamed directly inside that directory, without requiring a full
     /// recursive re-walk on every render or keystroke. See
-    /// [`Self::ensure_dir_size_before`] / [`Self::clear_dir_size_cache`].
+    /// [`Self::clear_dir_size_cache`].
     /// Lazily resolved symlink targets for visible rows (`None` = not a link).
     /// Cleared on every reload.
     /// Read directories on a worker thread instead of blocking the caller.

@@ -6,6 +6,7 @@
 //! - [`FileExplorer::builder`] with an optional extension filter
 //! - [`render_themed`] with a custom [`Theme`]
 //! - All four [`ExplorerOutcome`] variants
+//! - `t` / `T` cycle the shared `tui-nuances` themes (next / previous)
 //! - Incremental search (`/`), sort cycling (`s`), hidden-file toggle (`.`)
 //!
 //! ## Usage
@@ -28,12 +29,14 @@ use std::{
 };
 
 use crossterm::{
-    event::{self, DisableMouseCapture, Event},
+    event::{self, DisableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, Theme};
+use tui_file_explorer::{
+    render_nuanced, render_themed, ExplorerOutcome, FileExplorer, NuancesSwitcher, Theme,
+};
 
 fn main() {
     // Collect optional extension-filter args (e.g. `-- rs toml`).
@@ -91,14 +94,37 @@ fn event_loop(
     explorer: &mut FileExplorer,
     theme: &Theme,
 ) -> io::Result<Option<PathBuf>> {
+    // `None` = the example's own theme; `t` / `T` switch to shared themes.
+    let mut shared = NuancesSwitcher::new();
+    let mut use_shared = false;
     loop {
         terminal.draw(|frame| {
-            render_themed(explorer, frame, frame.area(), theme);
+            if use_shared {
+                render_nuanced(explorer, frame, frame.area(), shared.current());
+            } else {
+                render_themed(explorer, frame, frame.area(), theme);
+            }
         })?;
 
         let Event::Key(key) = event::read()? else {
             continue;
         };
+
+        if !explorer.search_active && explorer.prompt.is_none() {
+            match key.code {
+                KeyCode::Char('t') => {
+                    shared.next();
+                    use_shared = true;
+                    continue;
+                }
+                KeyCode::Char('T') => {
+                    shared.prev();
+                    use_shared = true;
+                    continue;
+                }
+                _ => {}
+            }
+        }
 
         match explorer.handle_key(key) {
             ExplorerOutcome::Selected(path) => return Ok(Some(path)),

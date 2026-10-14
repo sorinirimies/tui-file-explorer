@@ -58,7 +58,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use tui_file_explorer::{
-    render_dual_pane_themed, DualPane, DualPaneActive, DualPaneOutcome, Theme,
+    render_dual_pane_themed, DualPane, DualPaneActive, DualPaneOutcome, NuancesSwitcher, Theme,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -84,6 +84,7 @@ fn main() {
 struct App {
     dual: DualPane,
     theme: Theme,
+    shared: NuancesSwitcher,
     status: String,
 }
 
@@ -99,6 +100,7 @@ impl App {
         Self {
             dual: builder.build(),
             theme: Theme::default(),
+            shared: NuancesSwitcher::new(),
             status: String::from("Tab — switch pane   w — toggle single/dual   q — quit"),
         }
     }
@@ -167,6 +169,25 @@ fn event_loop(
         // Ctrl-C — hard exit.
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             return Ok(None);
+        }
+
+        // `t` / `T` — cycle shared tui-nuances themes (not while typing).
+        if !app.dual.left.search_active
+            && !app.dual.right.search_active
+            && app.dual.left.prompt.is_none()
+            && app.dual.right.prompt.is_none()
+        {
+            match key.code {
+                KeyCode::Char('t') => {
+                    app.theme = Theme::from_nuances(app.shared.next());
+                    continue;
+                }
+                KeyCode::Char('T') => {
+                    app.theme = Theme::from_nuances(app.shared.prev());
+                    continue;
+                }
+                _ => {}
+            }
         }
 
         match app.dual.handle_key(key) {

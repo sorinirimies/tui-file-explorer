@@ -455,8 +455,8 @@ impl AppBuilder {
 
     /// Replace the selected preset's palette with a host-defined theme.
     #[must_use]
-    pub fn theme(mut self, theme: Theme) -> Self {
-        self.theme_override = Some(theme);
+    pub fn theme(mut self, theme: impl Into<Theme>) -> Self {
+        self.theme_override = Some(theme.into());
         self
     }
 
@@ -846,6 +846,12 @@ impl App {
         if let Some(editor) = state.editor.as_deref().and_then(Editor::from_key) {
             self.editor = editor;
         }
+    }
+}
+
+impl crate::nuances::Themed for AppBuilder {
+    fn apply_theme(self, theme: &crate::nuances::NuancesTheme) -> Self {
+        self.theme(theme)
     }
 }
 

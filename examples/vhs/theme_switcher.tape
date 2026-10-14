@@ -246,6 +246,14 @@ Sleep 200ms
 Down
 Sleep 200ms
 
+# Shared tui-nuances themes: t = next, T = previous
+Type "t"
+Sleep 500ms
+Type "t"
+Sleep 500ms
+Type "T"
+Sleep 500ms
+
 # Back and dismiss
 Backspace
 Sleep 500ms

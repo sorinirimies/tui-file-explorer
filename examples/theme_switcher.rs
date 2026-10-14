@@ -17,6 +17,7 @@
 //! |-----|--------|
 //! | `Tab` | Next theme |
 //! | `Shift+Tab` | Previous theme |
+//! | `t` / `T` | Next / previous shared `tui-nuances` theme |
 //! | `↑` / `k` | Move cursor up |
 //! | `↓` / `j` | Move cursor down |
 //! | `Enter` / `→` / `l` | Descend into directory or confirm selection |
@@ -48,7 +49,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
-use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, Theme};
+use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, NuancesSwitcher, Theme};
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,8 @@ struct ThemeSwitcher {
     explorer: FileExplorer,
     themes: Vec<(&'static str, &'static str, Theme)>,
     theme_idx: usize,
+    shared: NuancesSwitcher,
+    shared_theme: Option<Theme>,
 }
 
 impl ThemeSwitcher {
@@ -67,18 +70,24 @@ impl ThemeSwitcher {
             explorer,
             themes,
             theme_idx: 0,
+            shared: NuancesSwitcher::new(),
+            shared_theme: None,
         }
     }
 
     fn theme(&self) -> &Theme {
-        &self.themes[self.theme_idx].2
+        self.shared_theme
+            .as_ref()
+            .unwrap_or(&self.themes[self.theme_idx].2)
     }
 
     fn next_theme(&mut self) {
+        self.shared_theme = None;
         self.theme_idx = (self.theme_idx + 1) % self.themes.len();
     }
 
     fn prev_theme(&mut self) {
+        self.shared_theme = None;
         self.theme_idx = self
             .theme_idx
             .checked_sub(1)
@@ -149,6 +158,15 @@ fn event_loop(
             // Tab — next theme.
             KeyCode::Tab if key.modifiers.is_empty() => {
                 app.next_theme();
+                continue;
+            }
+            // t / T — shared tui-nuances themes (not while typing).
+            KeyCode::Char('t') if !app.explorer.search_active && app.explorer.prompt.is_none() => {
+                app.shared_theme = Some(Theme::from_nuances(app.shared.next()));
+                continue;
+            }
+            KeyCode::Char('T') if !app.explorer.search_active && app.explorer.prompt.is_none() => {
+                app.shared_theme = Some(Theme::from_nuances(app.shared.prev()));
                 continue;
             }
             // Shift+Tab — previous theme.
