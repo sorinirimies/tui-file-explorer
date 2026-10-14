@@ -50,7 +50,7 @@ theme = ["dep:tui-nuances"]
 [dependencies]
 ratatui    = "0.30"
 # Shared theme crate. TODO: switch to the crates.io version after publish.
-tui-nuances = { version = "0.1.4", git = "https://github.com/sorinirimies/tui-nuances", optional = true }
+tui-nuances = { version = "0.1.5", git = "https://github.com/sorinirimies/tui-nuances", optional = true }
 crossterm  = "0.29"
 clap       = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
 tui-slider = { version = "0.3.4", optional = true }
