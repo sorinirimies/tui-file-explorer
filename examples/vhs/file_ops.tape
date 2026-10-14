@@ -13,9 +13,9 @@ Hide
 Type "cargo build --bin tfe 2>/dev/null"
 Enter
 Sleep 10s
-Type "cargo run --bin tfe"
+Type "clear && cargo run --bin tfe"
 Enter
-Sleep 4s
+Sleep 8s
 Show
 
 # Left pane is active — navigate down to a file
