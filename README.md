@@ -496,6 +496,13 @@ just doc         # build and open API docs
 just --list      # all project tasks
 ```
 
+Fuzzing (requires nightly and `cargo install cargo-fuzz`):
+
+```bash
+cargo +nightly fuzz list
+cargo +nightly fuzz run explorer_render
+```
+
 Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License

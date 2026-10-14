@@ -1,0 +1,48 @@
+[package]
+name = "tui-file-explorer-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+crossterm = "0.29"
+ratatui = { version = "0.30", default-features = false }
+tui-file-explorer = { path = "..", default-features = false }
+
+# Not part of the main crate (needs nightly).
+[workspace]
+
+[[bin]]
+name = "keymap_parse"
+path = "fuzz_targets/keymap_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "bulk_rename_plan"
+path = "fuzz_targets/bulk_rename_plan.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "explorer_render"
+path = "fuzz_targets/explorer_render.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "dual_pane_render"
+path = "fuzz_targets/dual_pane_render.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "inline_editor"
+path = "fuzz_targets/inline_editor.rs"
+test = false
+doc = false

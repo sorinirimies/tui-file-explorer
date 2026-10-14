@@ -194,8 +194,8 @@ impl FileExplorer {
             C::Dismiss => return ExplorerOutcome::Dismissed,
             C::MoveUp => self.move_up(),
             C::MoveDown => self.move_down(),
-            C::PageUp => (0..self.page_size).for_each(|_| self.move_up()),
-            C::PageDown => (0..self.page_size).for_each(|_| self.move_down()),
+            C::PageUp => (0..self.page_size.min(self.entries.len())).for_each(|_| self.move_up()),
+            C::PageDown => (0..self.page_size.min(self.entries.len())).for_each(|_| self.move_down()),
             C::Top => {
                 self.cursor = 0;
                 self.scroll_offset = 0;

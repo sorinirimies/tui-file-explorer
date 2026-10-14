@@ -175,3 +175,8 @@ temp/
 
 # Leftover swap file from a previous editing session in this repo
 .is.swp
+
+# cargo-fuzz
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/target/

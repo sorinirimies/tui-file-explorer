@@ -411,3 +411,15 @@ view-changelog:
 # Security: dependency vulnerability scan (needs `cargo install cargo-audit`)
 audit:
     cargo audit
+
+# Licenses/advisories/bans/sources (needs `cargo install cargo-deny --locked`)
+deny:
+    cargo deny check
+
+# List fuzz targets (needs cargo-fuzz + nightly)
+fuzz-list:
+    cargo +nightly fuzz list
+
+# Run one fuzz target: `just fuzz explorer_render` (60s)
+fuzz target="explorer_render" secs="60":
+    cargo +nightly fuzz run {{target}} -- -max_total_time={{secs}}

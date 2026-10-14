@@ -2434,3 +2434,16 @@ fn synchronous_mode_is_unchanged_by_default() {
     assert!(!explorer.async_loading);
     assert!(!explorer.is_loading());
 }
+
+#[test]
+fn huge_page_size_page_down_terminates_and_clamps() {
+    let tmp = temp_dir_with_files();
+    let mut explorer = FileExplorer::builder(tmp.path().to_path_buf())
+        .page_size(usize::MAX)
+        .build();
+    let last = explorer.entries.len() - 1;
+    explorer.handle_command(crate::ExplorerCommand::PageDown);
+    assert_eq!(explorer.cursor, last);
+    explorer.handle_command(crate::ExplorerCommand::PageUp);
+    assert_eq!(explorer.cursor, 0);
+}
