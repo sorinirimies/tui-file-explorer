@@ -2,9 +2,10 @@ name: Nightly Dependency Update
 
 # Nightly: run `cargo update` against the CURRENT tip of main. Only when
 # Cargo.lock really changes AND tests + clippy pass do we:
-#   1. commit the lockfile to main,
-#   2. mirror main to GitHub (if GITHUB_REMOTE_URL secret is set).
-# The version is NOT bumped and nothing is tagged or released.
+#   1. commit + push to main (and mirror to GitHub if GITHUB_REMOTE_URL is set),
+#   2. ONLY if a Cargo.toml dependency requirement changed (`cargo upgrade`): also
+#      bump the patch version and tag vX.Y.Z (tag push triggers release.yml).
+# A lockfile-only change is merged WITHOUT a version bump, tag or release.
 
 on:
   schedule:
@@ -50,8 +51,22 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Run cargo update
-        run: cargo update
+      # A patch release is cut ONLY when `cargo upgrade` really changed a dependency
+      # requirement in a Cargo.toml (compared as data: cargo-edit also reformats
+      # manifests, which must not count). A lockfile-only change is still merged,
+      # but without a version bump, tag or release.
+      - name: Install cargo-edit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
+
+      - name: Snapshot dependency requirements (before)
+        run: cargo metadata --no-deps --format-version 1 | jq -S -c '[.packages[].dependencies[] | {name,req,kind,features,optional,target,uses_default_features}] | sort_by(.name,.kind,.target)' > "${{ runner.temp }}/reqs-before.json"
+
+      - name: Run cargo upgrade + cargo update
+        run: |
+          cargo upgrade
+          cargo update
 
       - name: Check for changes
         id: check
@@ -63,6 +78,17 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Dependency changes detected:"
             git diff -U0 -- Cargo.lock | grep -E '^[-+](name|version) ' || true
+          fi
+
+      - name: Check for dependency requirement changes
+        id: reqs
+        run: |
+          cargo metadata --no-deps --format-version 1 | jq -S -c '[.packages[].dependencies[] | {name,req,kind,features,optional,target,uses_default_features}] | sort_by(.name,.kind,.target)' > "${{ runner.temp }}/reqs-after.json"
+          if cmp -s "${{ runner.temp }}/reqs-before.json" "${{ runner.temp }}/reqs-after.json"; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "Cargo.toml dependency requirements changed -> patch release."
           fi
 
       - name: Run tests
@@ -82,21 +108,64 @@ jobs:
           rustup toolchain install "$msrv" --profile minimal
           cargo +"$msrv" check --locked --all-features --all-targets
 
-      - name: Commit updated Cargo.lock
+      - name: Install release tooling (nushell, git-cliff)
+        if: steps.check.outputs.changed == 'true' && steps.reqs.outputs.release == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nushell,git-cliff
+
+      # Fallback when prebuilt binaries are unavailable.
+      - name: Ensure nu + git-cliff are installed
+        if: steps.check.outputs.changed == 'true' && steps.reqs.outputs.release == 'true'
+        run: |
+          command -v nu       >/dev/null || cargo install nu --locked
+          command -v git-cliff >/dev/null || cargo install git-cliff --locked
+          nu --version
+          git-cliff --version
+
+      - name: Commit dependency update
         if: steps.check.outputs.changed == 'true'
         run: |
           git config user.name  "gitea-actions[bot]"
           git config user.email "gitea-actions[bot]@noreply.gitea"
-          git add Cargo.lock
+          if [ "${{ steps.reqs.outputs.release }}" = "true" ]; then
+            git add Cargo.lock $(git ls-files -m -- '*Cargo.toml')
+          else
+            git ls-files -m -- '*Cargo.toml' | xargs -r git checkout --
+            git add Cargo.lock
+          fi
           git commit -m "chore(deps): nightly cargo update $(date -u '+%Y-%m-%d')"
 
+      - name: Compute next patch version
+        if: steps.check.outputs.changed == 'true' && steps.reqs.outputs.release == 'true'
+        id: version
+        run: |
+          current=$(grep -m1 '^version' Cargo.toml | sed -E 's/version[[:space:]]*=[[:space:]]*"(.*)"/\1/')
+          IFS='.' read -r major minor patch <<< "$current"
+          next="$major.$minor.$((patch + 1))"
+          # Never collide with an existing tag.
+          while git rev-parse -q --verify "refs/tags/v$next" >/dev/null; do
+            patch=$((patch + 1))
+            next="$major.$minor.$((patch + 1))"
+          done
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "Releasing $current -> $next"
+
+      - name: Bump version, changelog, commit and tag
+        if: steps.check.outputs.changed == 'true' && steps.reqs.outputs.release == 'true'
+        run: nu scripts/bump_version.nu --yes ${{ steps.version.outputs.next }}
+
       # Fail loudly (no `|| true`): a failed push must show as a failed run.
-      - name: Push lockfile update to Gitea (no version bump or tag)
+      - name: Push to Gitea
         if: steps.check.outputs.changed == 'true'
         run: |
           git push origin HEAD:main
+          if [ "${{ steps.reqs.outputs.release }}" = "true" ]; then
+            git push origin "v${{ steps.version.outputs.next }}"
+          fi
 
-      - name: Push lockfile update to GitHub mirror
+      - name: Push to GitHub mirror
         if: steps.check.outputs.changed == 'true'
         env:
           GITHUB_REMOTE_URL: ${{ secrets.GITHUB_REMOTE_URL }}
@@ -107,7 +176,10 @@ jobs:
           fi
           git remote add github-ci "$GITHUB_REMOTE_URL"
           git push github-ci HEAD:main
+          if [ "${{ steps.reqs.outputs.release }}" = "true" ]; then
+            git push github-ci "v${{ steps.version.outputs.next }}"
+          fi
 
       - name: Nothing to update
         if: steps.check.outputs.changed == 'false'
-        run: echo "✅ All dependencies already up to date — no commit."
+        run: echo "✅ All dependencies already up to date — no commit, no release."
