@@ -3,10 +3,8 @@ name: Nightly Dependency Update
 # Nightly: run `cargo update` against the CURRENT tip of main. Only when
 # Cargo.lock really changes AND tests + clippy pass do we:
 #   1. commit the lockfile to main,
-#   2. bump the patch version (Cargo.toml, README badge, CHANGELOG.md),
-#   3. tag vX.Y.Z and push main + tag (tag push triggers release.yml),
-#   4. mirror main + tag to GitHub (if GITHUB_REMOTE_URL secret is set).
-# No changes => no commit, no tag, no release.
+#   2. mirror main to GitHub (if GITHUB_REMOTE_URL secret is set).
+# The version is NOT bumped and nothing is tagged or released.
 
 on:
   schedule:
@@ -84,21 +82,6 @@ jobs:
           rustup toolchain install "$msrv" --profile minimal
           cargo +"$msrv" check --locked --all-features --all-targets
 
-      - name: Install release tooling (nushell, git-cliff)
-        if: steps.check.outputs.changed == 'true'
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nushell,git-cliff
-
-      # Fallback when prebuilt binaries are unavailable.
-      - name: Ensure nu + git-cliff are installed
-        if: steps.check.outputs.changed == 'true'
-        run: |
-          command -v nu       >/dev/null || cargo install nu --locked
-          command -v git-cliff >/dev/null || cargo install git-cliff --locked
-          nu --version
-          git-cliff --version
-
       - name: Commit updated Cargo.lock
         if: steps.check.outputs.changed == 'true'
         run: |
@@ -107,34 +90,13 @@ jobs:
           git add Cargo.lock
           git commit -m "chore(deps): nightly cargo update $(date -u '+%Y-%m-%d')"
 
-      - name: Compute next patch version
-        if: steps.check.outputs.changed == 'true'
-        id: version
-        run: |
-          current=$(grep -m1 '^version' Cargo.toml | sed -E 's/version[[:space:]]*=[[:space:]]*"(.*)"/\1/')
-          IFS='.' read -r major minor patch <<< "$current"
-          next="$major.$minor.$((patch + 1))"
-          # Never collide with an existing tag.
-          while git rev-parse -q --verify "refs/tags/v$next" >/dev/null; do
-            patch=$((patch + 1))
-            next="$major.$minor.$((patch + 1))"
-          done
-          echo "current=$current" >> "$GITHUB_OUTPUT"
-          echo "next=$next" >> "$GITHUB_OUTPUT"
-          echo "Releasing $current -> $next"
-
-      - name: Bump version, changelog, commit and tag
-        if: steps.check.outputs.changed == 'true'
-        run: nu scripts/bump_version.nu --yes ${{ steps.version.outputs.next }}
-
       # Fail loudly (no `|| true`): a failed push must show as a failed run.
-      - name: Push release commit and tag to Gitea
+      - name: Push lockfile update to Gitea (no version bump or tag)
         if: steps.check.outputs.changed == 'true'
         run: |
           git push origin HEAD:main
-          git push origin "v${{ steps.version.outputs.next }}"
 
-      - name: Push release commit and tag to GitHub mirror
+      - name: Push lockfile update to GitHub mirror
         if: steps.check.outputs.changed == 'true'
         env:
           GITHUB_REMOTE_URL: ${{ secrets.GITHUB_REMOTE_URL }}
@@ -145,8 +107,7 @@ jobs:
           fi
           git remote add github-ci "$GITHUB_REMOTE_URL"
           git push github-ci HEAD:main
-          git push github-ci "v${{ steps.version.outputs.next }}"
 
       - name: Nothing to update
         if: steps.check.outputs.changed == 'false'
-        run: echo "✅ All dependencies already up to date — no commit, no release."
+        run: echo "✅ All dependencies already up to date — no commit."
