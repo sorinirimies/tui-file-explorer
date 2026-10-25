@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - Skip unconfigured remotes in *-all recipes
 - Push/pull current branch instead of hardcoded main
 - Bump tui-nuances to 0.1.7
+- Bump version to 3.1.1
 
 ### Ci
 - Nightly dependency update pushes lockfile only, no version bump or release
@@ -30,47 +31,20 @@ All notable changes to this project will be documented in this file.
 
 ## [3.1.0] - 2026-10-14
 
-### Documentation
-- Re-record demos showing results only; reference tui-nuances version
-
-### Features
-- Shared theming via tui-nuances
-- Make theming an optional "theme" feature
-
-### Miscellaneous
-- Release v3.0.2
-- Depend on tui-nuances 0.1.5
-- Depend on tui-nuances 0.1.6
-- Depend on tui-nuances 0.1.6 from crates.io
-- Bump version to 3.1.0
-
-### Ci
-- Add cargo-audit workflow and just audit recipe
-- Prebuilt Nushell, cargo-deny + cargo-audit security, cargo-fuzz targets; tui-nuances 0.1.4; fix PageDown huge page_size hang
-
-## [3.0.2] - 2026-10-07
-
-### Miscellaneous
-- Bump version to 3.0.2
-
-## [3.0.1] - 2026-10-06
-
 ### Bug Fixes
 - Repaint the whole UI after an external editor exits
-
-### Miscellaneous
-- Bump version to 3.0.1
-
-## [3.0.0] - 2026-10-05
 
 ### Documentation
 - Regenerate CHANGELOG.md now that v2.2.0/v2.3.0 tags exist on origin
 - Regenerate CHANGELOG.md after merging Gitea reconciliation
 - Add VHS tapes for sizes, fuzzy finder, bookmarks, undo/redo, bulk rename, git and archives
 - Add generated GIFs for the new feature tapes
+- Re-record demos showing results only; reference tui-nuances version
 
 ### Features
 - Fuzzy finder, bookmarks, undo/redo, bulk rename, git markers, archives, keymap.toml, async loading
+- Shared theming via tui-nuances
+- Make theming an optional "theme" feature
 
 ### Miscellaneous
 - Release v2.3.0
@@ -79,9 +53,18 @@ All notable changes to this project will be documented in this file.
 - Nightly cargo update 2026-09-16
 - Nightly cargo update 2026-09-18
 - Bump version to 3.0.0
+- Bump version to 3.0.1
+- Bump version to 3.0.2
+- Release v3.0.2
+- Depend on tui-nuances 0.1.5
+- Depend on tui-nuances 0.1.6
+- Depend on tui-nuances 0.1.6 from crates.io
+- Bump version to 3.1.0
 
 ### Ci
 - Make the nightly dependency update robust and add MSRV, audit and feature checks
+- Add cargo-audit workflow and just audit recipe
+- Prebuilt Nushell, cargo-deny + cargo-audit security, cargo-fuzz targets; tui-nuances 0.1.4; fix PageDown huge page_size hang
 
 ### Merge
 - Reconcile Gitea nightly-deps + v2.3.0 release with local changelog fix
@@ -92,6 +75,9 @@ All notable changes to this project will be documented in this file.
 - Bump version to 2.3.0
 
 ## [2.2.0] - 2026-09-11
+
+### Features
+- Add adaptive action hint layouts
 
 ### Miscellaneous
 - Release v2.1.0
@@ -106,9 +92,6 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 - Correct justfile remote names (gitea-microlab/starscream -> gitea/gitea_starscream)
-
-### Features
-- Add adaptive action hint layouts
 
 ### Miscellaneous
 - Bump version to 2.1.0
