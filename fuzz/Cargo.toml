@@ -12,7 +12,7 @@ libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
 crossterm = "0.29"
 ratatui = { version = "0.30", default-features = false }
-tui-file-explorer = { path = "..", default-features = false }
+tui-file-explorer = { path = "..", default-features = false, features = ["archive"] }
 
 # Not part of the main crate (needs nightly).
 [workspace]
@@ -44,5 +44,11 @@ doc = false
 [[bin]]
 name = "inline_editor"
 path = "fuzz_targets/inline_editor.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "archive_list"
+path = "fuzz_targets/archive_list.rs"
 test = false
 doc = false

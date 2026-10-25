@@ -101,8 +101,8 @@ pub fn list(path: &Path) -> io::Result<ArchiveListing> {
         total_size: 0,
     };
     let mut push = |name: String, size: u64, is_dir: bool| {
-        listing.total_entries += 1;
-        listing.total_size += size;
+        listing.total_entries = listing.total_entries.saturating_add(1);
+        listing.total_size = listing.total_size.saturating_add(size);
         if listing.entries.len() < MAX_LISTED {
             listing.entries.push(ArchiveEntry { name, size, is_dir });
         }
@@ -114,7 +114,7 @@ pub fn list(path: &Path) -> io::Result<ArchiveListing> {
                 zip::ZipArchive::new(BufReader::new(File::open(path)?)).map_err(zip_err)?;
             for i in 0..zip.len() {
                 let f = zip.by_index_raw(i).map_err(zip_err)?;
-                push(f.name().to_string(), f.size(), f.is_dir());
+                push(f.name().map_err(zip_err)?.to_string(), f.size(), f.is_dir());
             }
         }
         ArchiveFormat::Tar | ArchiveFormat::TarGz => {
@@ -149,31 +149,72 @@ pub fn default_destination(path: &Path) -> PathBuf {
     path.with_file_name(stem)
 }
 
+/// Maximum number of members [`extract`] will unpack (zip-bomb guard).
+pub const MAX_EXTRACT_ENTRIES: usize = 100_000;
+/// Maximum total uncompressed bytes [`extract`] will unpack (zip-bomb guard).
+pub const MAX_EXTRACT_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+fn too_big(what: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("archive exceeds extraction limit ({what})"),
+    )
+}
+
 /// Extract the archive at `path` into `dest` (created if missing).
 ///
-/// Returns the number of members extracted.
+/// Returns the number of members extracted. When extraction fails and `dest`
+/// did not exist beforehand, the partially written `dest` is removed.
 ///
 /// # Errors
 ///
-/// Fails on unreadable/corrupt archives, or when a member would escape
-/// `dest`.
+/// Fails on unreadable/corrupt archives, when a member would escape `dest`,
+/// or when the archive exceeds [`MAX_EXTRACT_ENTRIES`] / [`MAX_EXTRACT_BYTES`].
 pub fn extract(path: &Path, dest: &Path) -> io::Result<usize> {
+    let existed = dest.exists();
+    let result = extract_inner(path, dest);
+    if result.is_err() && !existed {
+        let _ = std::fs::remove_dir_all(dest);
+    }
+    result
+}
+
+fn extract_inner(path: &Path, dest: &Path) -> io::Result<usize> {
     let format = ArchiveFormat::detect(path)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "not a supported archive"))?;
-    std::fs::create_dir_all(dest)?;
     match format {
         ArchiveFormat::Zip => {
             let mut zip =
                 zip::ZipArchive::new(BufReader::new(File::open(path)?)).map_err(zip_err)?;
             let n = zip.len();
+            if n > MAX_EXTRACT_ENTRIES {
+                return Err(too_big("entries"));
+            }
+            let mut total = 0u64;
+            for i in 0..n {
+                total = total.saturating_add(zip.by_index_raw(i).map_err(zip_err)?.size());
+            }
+            if total > MAX_EXTRACT_BYTES {
+                return Err(too_big("bytes"));
+            }
+            std::fs::create_dir_all(dest)?;
             zip.extract(dest).map_err(zip_err)?;
             Ok(n)
         }
         ArchiveFormat::Tar | ArchiveFormat::TarGz => {
+            std::fs::create_dir_all(dest)?;
             let mut tar = open_tar(path, format == ArchiveFormat::TarGz)?;
             let mut n = 0;
+            let mut total = 0u64;
             for entry in tar.entries()? {
                 let mut entry = entry?;
+                total = total.saturating_add(entry.size());
+                if n >= MAX_EXTRACT_ENTRIES {
+                    return Err(too_big("entries"));
+                }
+                if total > MAX_EXTRACT_BYTES {
+                    return Err(too_big("bytes"));
+                }
                 // `unpack_in` refuses paths that escape `dest`.
                 if !entry.unpack_in(dest)? {
                     return Err(io::Error::new(

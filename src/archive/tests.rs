@@ -154,3 +154,50 @@ fn tar_path_traversal_is_refused() {
     assert!(extract(&p, &out).is_err());
     assert!(!tmp.path().join("escaped.txt").exists());
 }
+
+#[test]
+fn zip_path_traversal_does_not_escape() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("evil.zip");
+    {
+        let mut w = zip::ZipWriter::new(File::create(&p).unwrap());
+        let opts = zip::write::SimpleFileOptions::default();
+        w.start_file("../escaped.txt", opts).unwrap();
+        w.write_all(b"pwn").unwrap();
+        w.finish().unwrap();
+    }
+    let out = tmp.path().join("out");
+    let _ = extract(&p, &out);
+    assert!(!tmp.path().join("escaped.txt").exists());
+}
+
+#[test]
+fn zip_listing_reports_sizes_and_dirs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("a.zip");
+    make_zip(&p);
+    let l = list(&p).unwrap();
+    assert_eq!(l.total_entries, 3);
+    assert_eq!(l.total_size, 10);
+}
+
+#[test]
+fn failed_extraction_removes_new_destination() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("bad.zip");
+    std::fs::write(&p, b"not a zip").unwrap();
+    let out = tmp.path().join("out");
+    assert!(extract(&p, &out).is_err());
+    assert!(!out.exists());
+}
+
+#[test]
+fn failed_extraction_keeps_existing_destination() {
+    let tmp = tempfile::tempdir().unwrap();
+    let p = tmp.path().join("bad.zip");
+    std::fs::write(&p, b"not a zip").unwrap();
+    let out = tmp.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    assert!(extract(&p, &out).is_err());
+    assert!(out.exists());
+}

@@ -60,7 +60,7 @@ image         = { version = "0.25", default-features = false, features = ["png",
 ratatui-image = { version = "11.0", default-features = false, features = ["crossterm", "image-defaults"], optional = true }
 trash         = { version = "5.2.9", optional = true }
 toml          = { version = "1.1.6", default-features = false, features = ["parse", "serde"], optional = true }
-zip           = { version = "8.6.0", default-features = false, features = ["deflate"], optional = true }
+zip           = { version = "9", default-features = false, features = ["deflate"], optional = true }
 tar           = { version = "0.4.46", default-features = false, optional = true }
 flate2        = { version = "1.1.10", optional = true }
 
