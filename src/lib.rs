@@ -316,7 +316,6 @@ pub mod filesystem;
 pub mod git;
 pub mod inline_editor;
 pub mod keymap;
-#[cfg(feature = "theme")]
 pub mod nuances;
 pub mod palette;
 pub mod picker;
@@ -348,7 +347,6 @@ pub use filesystem::{
     local_filesystem, std_filesystem, FileSystem, SharedFileSystem, StdFileSystem, VirtualEntry,
     TRASH_SUPPORTED,
 };
-#[cfg(feature = "theme")]
 pub use nuances::{
     render_dual_pane_nuanced, render_nuanced, NuancesSwitcher, NuancesTheme, ThemeBuilder,
     ThemeProvider, Themed,
@@ -358,7 +356,6 @@ pub use render::{
     render, render_dual_pane, render_dual_pane_themed, render_themed, FOOTER_HEIGHT, HEADER_HEIGHT,
     MARK_INDICATOR, SCROLLBAR_CHAR,
 };
-#[cfg(feature = "theme")]
 pub use tui_nuances;
 pub use types::{
     DiskUsage, ExplorerCommand, ExplorerOutcome, FsEntry, Prompt, PromptKind, SelectionMode,

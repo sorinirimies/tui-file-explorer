@@ -229,3 +229,34 @@ fn theme_partial_eq_reflexive() {
     let t = Theme::catppuccin_mocha();
     assert_eq!(t, t.clone());
 }
+
+#[test]
+fn every_preset_is_sourced_from_shared_nuances_and_readable() {
+    // Presets (other than the explorer-only Default/Mono) come from tui-nuances,
+    // so each must round-trip through the shared mapping.
+    for (name, _, t) in Theme::all_presets() {
+        if name == "Default" || name == "Mono" {
+            continue;
+        }
+        assert_ne!(t.fg, t.sel_bg, "{name}: fg equals selection bg");
+        assert_ne!(t.brand, t.bg, "{name}: brand invisible on bg");
+    }
+}
+
+#[test]
+fn dark_presets_keep_terminal_background_and_light_ones_paint() {
+    assert_eq!(Theme::dracula().bg, Color::Reset);
+    assert_eq!(Theme::catppuccin_mocha().bg, Color::Reset);
+    assert!(matches!(Theme::solarized_light().bg, Color::Rgb(..)));
+    assert!(matches!(Theme::gruvbox_light().bg, Color::Rgb(..)));
+}
+
+#[test]
+fn preset_roles_match_previous_look() {
+    // Pinned values from before the move to tui-nuances.
+    let d = Theme::dracula();
+    assert_eq!(d.brand, Color::Rgb(255, 121, 198));
+    assert_eq!(d.dir, Color::Rgb(241, 250, 140));
+    assert_eq!(d.accent, Color::Rgb(139, 233, 253));
+    assert_eq!(d.sel_bg, Color::Rgb(68, 71, 90));
+}

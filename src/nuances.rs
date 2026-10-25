@@ -20,8 +20,9 @@
 //! | explorer | shared |
 //! |---|---|
 //! | `brand` | `title` |
-//! | `accent` | `accent` |
-//! | `success`, `match_file` | `success` |
+//! | `accent` | `border_focused` |
+//! | `success` | `success` |
+//! | `match_file` | `highlight` |
 //! | `dim` | `muted` |
 //! | `fg` | `foreground` |
 //! | `sel_bg` | `selection_bg` |
@@ -47,13 +48,13 @@ impl Theme {
     pub fn from_nuances(t: &NuancesTheme) -> Self {
         Self {
             brand: t.title,
-            accent: t.accent,
+            accent: t.border_focused,
             success: t.success,
             dim: t.muted,
             fg: t.foreground,
             sel_bg: t.selection_bg,
             dir: t.primary,
-            match_file: t.success,
+            match_file: t.highlight,
             bg: t.background.unwrap_or(Color::Reset),
         }
     }
@@ -195,7 +196,7 @@ mod tests {
         let b = ThemeBuilder::new().theme(&n).brand(Color::Red).build();
         assert_eq!(a, b);
         assert_eq!(a.brand, Color::Red);
-        assert_eq!(a.accent, n.accent);
+        assert_eq!(a.accent, n.border_focused);
     }
 
     #[test]
