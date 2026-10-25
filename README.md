@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/tui-file-explorer/badge.svg)](https://docs.rs/tui-file-explorer)
 [![CI](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/ci.yml)
 [![Release](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/release.yml/badge.svg)](https://github.com/sorinirimies/tui-file-explorer/actions/workflows/release.yml)
-[![Downloads](https://img.shields.io/crates/d/tui-file-explorer)](https://crates.io/crates/tui-file-explorer)
+[![tui-file-explorer installs](https://img.shields.io/crates/d/tui-file-explorer?label=tui-file-explorer%20installs&logo=rust&color=orange)](https://crates.io/crates/tui-file-explorer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Install the standalone `tfe` CLI, or embed `FileExplorer`, `DualPane`, or the complete `App` in an existing Ratatui event loop. See [Library quick start](#library-quick-start).
