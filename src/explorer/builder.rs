@@ -8,7 +8,7 @@ use super::*;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use tui_file_explorer::{FileExplorer, SortMode};
 ///
 /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -64,7 +64,7 @@ impl FileExplorerBuilder {
     ///
     /// Replaces any extensions added with [`allow_extension`](Self::allow_extension).
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -81,7 +81,7 @@ impl FileExplorerBuilder {
     ///
     /// Call multiple times to build up the filter:
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -97,7 +97,7 @@ impl FileExplorerBuilder {
 
     /// Set whether hidden (dot-file) entries are shown on startup.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -116,7 +116,7 @@ impl FileExplorerBuilder {
     /// browsing of huge directory trees, since it skips the recursive
     /// directory-size walk entirely.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -136,7 +136,7 @@ impl FileExplorerBuilder {
     /// recursive walk is skipped. Has no effect when
     /// [`show_sizes`](Self::show_sizes) is `false`.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -175,7 +175,7 @@ impl FileExplorerBuilder {
 
     /// Set the initial sort mode.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::{FileExplorer, SortMode};
     ///
     /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())

@@ -11,7 +11,7 @@
 //! A collection of well-known editor / terminal themes is available as
 //! associated constructors on [`Theme`]:
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::Theme;
 //!
 //! let t = Theme::grape();
@@ -59,7 +59,7 @@ pub const C_BG: Color = Color::Reset;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use tui_file_explorer::{render_themed, Theme};
 /// use ratatui::style::Color;
 ///

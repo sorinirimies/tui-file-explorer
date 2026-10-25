@@ -324,11 +324,15 @@ fn which_on_path(name: &str) -> bool {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
+/// use tui_file_explorer::{App, AppOptions};
+///
+/// let dir = std::env::temp_dir();
 /// let app = App::new(AppOptions {
-///     pane_dirs: vec![PathBuf::from("/home/user"), PathBuf::from("/tmp")],
+///     pane_dirs: vec![dir.clone(), dir],
 ///     ..AppOptions::default()
 /// });
+/// # drop(app);
 /// ```
 #[derive(Debug, Clone)]
 pub struct AppOptions {

@@ -52,15 +52,17 @@ mod sort_mode_serde {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use crate::persistence::{AppState, load_state, save_state};
+/// ```
+/// use tui_file_explorer::persistence::{load_state_from, save_state_to, AppState};
 /// use tui_file_explorer::SortMode;
 ///
-/// let mut state = load_state();
-/// state.theme      = Some("nord".into());
-/// state.sort_mode  = Some(SortMode::SizeDesc);
+/// let path = tempfile::tempdir().unwrap().path().join("state.toml");
+/// let mut state = load_state_from(&path); // missing file → defaults
+/// state.theme       = Some("nord".into());
+/// state.sort_mode   = Some(SortMode::SizeDesc);
 /// state.show_hidden = Some(true);
-/// save_state(&state);
+/// save_state_to(&path, &state).unwrap();
+/// assert_eq!(load_state_from(&path), state);
 /// ```
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]

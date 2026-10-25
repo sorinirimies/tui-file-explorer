@@ -31,7 +31,7 @@
 //!
 //! ## Quick start
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::{FileExplorer, ExplorerOutcome, SortMode, render};
 //! use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 //! # use ratatui::{Terminal, backend::TestBackend};
@@ -60,7 +60,7 @@
 //!
 //! Use [`FileExplorer::builder`] for a more ergonomic construction API:
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::{FileExplorer, SortMode};
 //!
 //! let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -82,7 +82,7 @@
 //!
 //! Search state is also accessible programmatically:
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::FileExplorer;
 //!
 //! let explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
@@ -94,7 +94,7 @@
 //!
 //! Press `s` to cycle through the three sort modes, or set one directly:
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::{FileExplorer, SortMode};
 //!
 //! let mut explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
@@ -107,7 +107,7 @@
 //!
 //! Every colour is customisable via [`Theme`] and [`render_themed`]:
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::{FileExplorer, Theme, render_themed};
 //! use ratatui::style::Color;
 //!
@@ -172,7 +172,7 @@
 //!
 //! ## Dual-pane quick start
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::{DualPane, DualPaneOutcome, render_dual_pane_themed, Theme};
 //! use crossterm::event::{Event, KeyCode, KeyModifiers, self};
 //! # use ratatui::{Terminal, backend::TestBackend};
@@ -191,7 +191,7 @@
 //! // }).unwrap();
 //!
 //! // 3. In your event loop:
-//! # let Event::Key(key) = event::read().unwrap() else { return; };
+//! # let key = crossterm::event::KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
 //! match dual.handle_key(key) {
 //!     DualPaneOutcome::Selected(path) => println!("chosen: {}", path.display()),
 //!     DualPaneOutcome::Dismissed      => { /* close the overlay */ }
@@ -231,7 +231,7 @@
 //!
 //! Both modes are also accessible programmatically:
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::FileExplorer;
 //!
 //! let explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);

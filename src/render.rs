@@ -166,7 +166,7 @@ fn render_input_footer(
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// # use tui_file_explorer::{FileExplorer, render};
 /// # use ratatui::{Terminal, backend::TestBackend};
 /// # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
@@ -190,7 +190,7 @@ pub fn render(explorer: &mut FileExplorer, frame: &mut Frame, area: Rect) {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// # use tui_file_explorer::{DualPane, render_dual_pane};
 /// # use ratatui::{Terminal, backend::TestBackend};
 /// # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
@@ -210,7 +210,7 @@ pub fn render_dual_pane(dual: &mut DualPane, frame: &mut Frame, area: Rect) {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// # use tui_file_explorer::{DualPane, render_dual_pane_themed, Theme};
 /// # use ratatui::{Terminal, backend::TestBackend};
 /// # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
@@ -291,7 +291,7 @@ fn render_pane(
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// # use tui_file_explorer::{FileExplorer, render_themed, Theme};
 /// # use ratatui::{Terminal, backend::TestBackend, style::Color};
 /// # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();

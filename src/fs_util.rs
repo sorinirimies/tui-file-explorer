@@ -30,7 +30,7 @@ use crate::types::DiskUsage;
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// # use std::path::Path;
 /// # use std::fs;
 /// # let src = Path::new("/tmp/src");

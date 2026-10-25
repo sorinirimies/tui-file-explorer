@@ -5,7 +5,7 @@
 //! Beyond [`FileExplorer::handle_key`] and [`FileExplorer::reload`], several
 //! small helpers make common patterns more ergonomic:
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::{FileExplorer, SortMode};
 //!
 //! let mut explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -75,7 +75,7 @@ impl std::error::Error for ExplorerError {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use tui_file_explorer::{FileExplorer, ExplorerOutcome};
 /// use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 ///
@@ -215,7 +215,7 @@ impl FileExplorer {
     ///
     /// # Example
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::{FileExplorer, SortMode};
     ///
     /// let explorer = FileExplorer::builder(std::env::current_dir().unwrap())
@@ -240,7 +240,7 @@ impl FileExplorer {
     /// Accepts anything that converts into a [`PathBuf`] — a [`PathBuf`],
     /// `&Path`, `&str`, or `String` all work.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let mut explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
@@ -386,7 +386,7 @@ impl FileExplorer {
     /// Returns `true` when the explorer is at the filesystem root and cannot
     /// ascend any further.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let mut explorer = FileExplorer::new(std::path::PathBuf::from("/"), vec![]);
@@ -475,7 +475,7 @@ impl FileExplorer {
     ///
     /// The user can also toggle this at runtime with the `.` key.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let mut explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
@@ -493,7 +493,7 @@ impl FileExplorer {
     /// Accepts any iterable of values that convert to [`String`] — plain
     /// `&str` slices, `String` values, and arrays all work:
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::FileExplorer;
     ///
     /// let mut explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);
@@ -520,7 +520,7 @@ impl FileExplorer {
     ///
     /// The user can also cycle through modes at runtime with the `s` key.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::{FileExplorer, SortMode};
     ///
     /// let mut explorer = FileExplorer::new(std::env::current_dir().unwrap(), vec![]);

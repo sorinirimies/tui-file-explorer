@@ -21,15 +21,17 @@ impl App {
     ///
     /// # Example
     ///
-    /// ```no_run
-    /// use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+    /// ```
+    /// use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
     /// use tui_file_explorer::{App, AppOptions};
     ///
     /// let mut app = App::new(AppOptions::default());
     ///
-    /// // Read the event yourself and forward only key events.
-    /// if let Event::Key(key) = event::read().unwrap() {
+    /// // Normally `event` comes from `crossterm::event::read()`.
+    /// let event = Event::Key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    /// if let Event::Key(key) = event {
     ///     let should_exit = app.handle_key(key).unwrap();
+    ///     assert!(!should_exit);
     /// }
     /// ```
     pub fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> io::Result<bool> {

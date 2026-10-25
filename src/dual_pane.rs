@@ -7,7 +7,7 @@
 //!
 //! ## Quick start
 //!
-//! ```no_run
+//! ```
 //! use tui_file_explorer::{DualPane, DualPaneOutcome, render_dual_pane_themed, Theme};
 //! use crossterm::event::{Event, KeyCode, KeyModifiers, self};
 //! # use ratatui::{Terminal, backend::TestBackend};
@@ -22,7 +22,7 @@
 //! // }).unwrap();
 //!
 //! // Inside your event loop:
-//! # let Event::Key(key) = event::read().unwrap() else { return; };
+//! # let key = crossterm::event::KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
 //! match dual.handle_key(key) {
 //!     DualPaneOutcome::Selected(path) => println!("chosen: {}", path.display()),
 //!     DualPaneOutcome::Dismissed      => { /* close the overlay */ }
@@ -146,7 +146,7 @@ pub enum DualPaneCommand {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use tui_file_explorer::{DualPane, SortMode};
 ///
 /// let mut dual = DualPane::builder(std::env::current_dir().unwrap())
@@ -180,7 +180,7 @@ impl DualPane {
     /// The right pane mirrors `left_dir` unless you call
     /// [`DualPaneBuilder::right_dir`].
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::DualPane;
     ///
     /// let dual = DualPane::builder(std::env::current_dir().unwrap()).build();
@@ -248,7 +248,7 @@ impl DualPane {
     /// `DualPane` intercepts `Tab` (switch pane) and `w` (toggle single/dual
     /// mode) before forwarding everything else to the active [`FileExplorer`].
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::{DualPane, DualPaneOutcome};
     /// use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     ///
@@ -315,7 +315,7 @@ impl DualPane {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```
 /// use tui_file_explorer::{DualPane, SortMode};
 /// use std::path::PathBuf;
 ///
@@ -368,7 +368,7 @@ impl DualPaneBuilder {
     ///
     /// If not called, the right pane starts in the same directory as the left.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::DualPane;
     /// use std::path::PathBuf;
     ///
@@ -390,7 +390,7 @@ impl DualPaneBuilder {
     /// are always navigable.  An empty list means all files are selectable
     /// (the default).
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::DualPane;
     ///
     /// let dual = DualPane::builder(std::env::current_dir().unwrap())
@@ -405,7 +405,7 @@ impl DualPaneBuilder {
 
     /// Append a single allowed extension (can be called multiple times).
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::DualPane;
     ///
     /// let dual = DualPane::builder(std::env::current_dir().unwrap())
@@ -422,7 +422,7 @@ impl DualPaneBuilder {
     /// Set whether hidden (dot-file) entries are visible on startup in both
     /// panes.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::DualPane;
     ///
     /// let dual = DualPane::builder(std::env::current_dir().unwrap())
@@ -475,7 +475,7 @@ impl DualPaneBuilder {
 
     /// Set the initial sort mode for both panes.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::{DualPane, SortMode};
     ///
     /// let dual = DualPane::builder(std::env::current_dir().unwrap())
@@ -496,7 +496,7 @@ impl DualPaneBuilder {
     /// When `true`, only the active pane is rendered.  The `w` key toggles
     /// this at runtime.
     ///
-    /// ```no_run
+    /// ```
     /// use tui_file_explorer::DualPane;
     ///
     /// let dual = DualPane::builder(std::env::current_dir().unwrap())
