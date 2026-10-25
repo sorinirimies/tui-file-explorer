@@ -90,7 +90,7 @@ jobs:
       - name: Create Pull Request
         if: steps.check.outputs.has_changes == 'true'
         id: create-pr
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: "chore(deps): nightly cargo update"
           title: "chore(deps): nightly cargo update"
