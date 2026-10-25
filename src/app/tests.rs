@@ -3137,3 +3137,231 @@ fn handle_raw_event_mouse_does_not_switch_pane() {
     app.handle_raw_event(event).unwrap();
     assert!(app.active_idx == 0, "mouse must not switch pane");
 }
+
+// ── Key dispatch: panels, editor, debug scroll, inline editor ─────────────
+
+fn press(app: &mut App, code: KeyCode) -> bool {
+    app.handle_key(KeyEvent::new(code, KeyModifiers::NONE))
+        .unwrap()
+}
+
+fn press_mod(app: &mut App, code: KeyCode, m: KeyModifiers) -> bool {
+    app.handle_key(KeyEvent::new(code, m)).unwrap()
+}
+
+#[test]
+fn panel_toggles_are_mutually_exclusive() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    app.show_theme_panel = false;
+    app.show_options_panel = false;
+    app.show_editor_panel = false;
+
+    press(&mut app, KeyCode::Char('T'));
+    assert!(app.show_theme_panel && !app.show_options_panel && !app.show_editor_panel);
+    press(&mut app, KeyCode::Char('O'));
+    assert!(app.show_options_panel && !app.show_theme_panel && !app.show_editor_panel);
+    press(&mut app, KeyCode::Char('E'));
+    assert!(app.show_editor_panel && !app.show_theme_panel && !app.show_options_panel);
+    press(&mut app, KeyCode::Char('E'));
+    assert!(!app.show_editor_panel);
+    press(&mut app, KeyCode::Char('T'));
+    press(&mut app, KeyCode::Char('T'));
+    assert!(!app.show_theme_panel);
+    press(&mut app, KeyCode::Char('O'));
+    press(&mut app, KeyCode::Char('O'));
+    assert!(!app.show_options_panel);
+}
+
+#[test]
+fn editor_panel_navigation_wraps_selects_and_escapes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    let n = App::all_editors().len();
+    app.show_editor_panel = true;
+    app.editor_panel_idx = 0;
+
+    press(&mut app, KeyCode::Up);
+    assert_eq!(app.editor_panel_idx, n - 1);
+    press(&mut app, KeyCode::Down);
+    assert_eq!(app.editor_panel_idx, 0);
+    press(&mut app, KeyCode::Char('j'));
+    assert_eq!(app.editor_panel_idx, 1 % n);
+    press(&mut app, KeyCode::Char('k'));
+    assert_eq!(app.editor_panel_idx, 0);
+
+    press(&mut app, KeyCode::Down);
+    let expected = App::all_editors()[app.editor_panel_idx].clone();
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(app.editor, expected);
+    assert!(!app.show_editor_panel);
+
+    app.show_editor_panel = true;
+    press(&mut app, KeyCode::Esc);
+    assert!(!app.show_editor_panel);
+}
+
+#[test]
+fn theme_panel_arrows_change_theme() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    app.show_theme_panel = true;
+    let start = app.theme_idx;
+    press(&mut app, KeyCode::Down);
+    assert_ne!(app.theme_idx, start);
+    press(&mut app, KeyCode::Up);
+    assert_eq!(app.theme_idx, start);
+    press(&mut app, KeyCode::Char('j'));
+    press(&mut app, KeyCode::Char('k'));
+    assert_eq!(app.theme_idx, start);
+}
+
+#[test]
+fn bracket_and_t_cycle_theme() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    let start = app.theme_idx;
+    press(&mut app, KeyCode::Char('t'));
+    assert_ne!(app.theme_idx, start);
+    press(&mut app, KeyCode::Char('['));
+    assert_eq!(app.theme_idx, start);
+}
+
+#[test]
+fn shift_c_toggles_cd_on_exit_with_status() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    let before = app.cd_on_exit;
+    press(&mut app, KeyCode::Char('C'));
+    assert_ne!(app.cd_on_exit, before);
+    assert!(app.status_msg.starts_with("cd-on-exit: "));
+}
+
+#[test]
+fn shift_p_toggles_preview() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    let before = app.show_preview;
+    press(&mut app, KeyCode::Char('P'));
+    assert_ne!(app.show_preview, before);
+    press(&mut app, KeyCode::Char('P'));
+    assert_eq!(app.show_preview, before);
+}
+
+#[test]
+fn w_toggles_single_pane() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    let before = app.single_pane;
+    press(&mut app, KeyCode::Char('w'));
+    assert_ne!(app.single_pane, before);
+}
+
+#[test]
+fn ctrl_c_exits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    assert!(press_mod(
+        &mut app,
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL
+    ));
+}
+
+#[test]
+fn tab_and_backtab_cycle_panes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    let start = app.active_idx;
+    press(&mut app, KeyCode::Tab);
+    assert_ne!(app.active_idx, start);
+    press(&mut app, KeyCode::BackTab);
+    assert_eq!(app.active_idx, start);
+}
+
+#[test]
+fn ctrl_t_and_ctrl_w_add_and_close_pane() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    let n = app.panes.len();
+    press_mod(&mut app, KeyCode::Char('t'), KeyModifiers::CONTROL);
+    assert_eq!(app.panes.len(), n + 1);
+    press_mod(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL);
+    assert_eq!(app.panes.len(), n);
+}
+
+#[test]
+fn debug_scroll_is_clamped() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    app.verbose = true;
+    app.debug_log = vec!["a".into(), "b".into(), "c".into()];
+    app.debug_scroll = 0;
+    for _ in 0..10 {
+        press_mod(&mut app, KeyCode::Up, KeyModifiers::CONTROL);
+    }
+    assert_eq!(app.debug_scroll, 2);
+    for _ in 0..10 {
+        press_mod(&mut app, KeyCode::Down, KeyModifiers::CONTROL);
+    }
+    assert_eq!(app.debug_scroll, 0);
+}
+
+#[test]
+fn e_without_editor_shows_error_and_with_editor_opens_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("a.txt"), "x").unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    app.editor = Editor::None;
+    press(&mut app, KeyCode::Char('e'));
+    assert!(app
+        .snackbar
+        .as_ref()
+        .is_some_and(|s| s.is_error && s.message.contains("No editor set")));
+    assert!(app.open_with_editor.is_none());
+
+    app.editor = App::all_editors()
+        .into_iter()
+        .find(|e| *e != Editor::None)
+        .unwrap();
+    press(&mut app, KeyCode::Char('e'));
+    assert_eq!(app.open_with_editor, Some(tmp.path().join("a.txt")));
+}
+
+#[test]
+fn i_opens_inline_editor_for_files_and_esc_closes_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("a.txt"), "hello").unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    press(&mut app, KeyCode::Char('i'));
+    assert!(app.inline_editor.is_some());
+    // Editor swallows keys: 'T' must not toggle the theme panel.
+    let before = app.show_theme_panel;
+    press(&mut app, KeyCode::Char('T'));
+    assert_eq!(app.show_theme_panel, before);
+    press(&mut app, KeyCode::Esc);
+    assert!(app.inline_editor.is_none());
+}
+
+#[test]
+fn i_on_directory_does_nothing() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(tmp.path().join("sub")).unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    press(&mut app, KeyCode::Char('i'));
+    assert!(app.inline_editor.is_none());
+}
+
+#[test]
+fn delete_modal_cancels_on_other_key() {
+    let tmp = tempfile::tempdir().unwrap();
+    let f = tmp.path().join("a.txt");
+    std::fs::write(&f, "x").unwrap();
+    let mut app = make_app(tmp.path().to_path_buf());
+    press(&mut app, KeyCode::Char('d'));
+    assert!(app.modal.is_some());
+    press(&mut app, KeyCode::Char('n'));
+    assert!(app.modal.is_none());
+    assert_eq!(app.status_msg, "Delete cancelled.");
+    assert!(f.exists());
+}
