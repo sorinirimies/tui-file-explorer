@@ -1,6 +1,33 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [3.1.1] - 2026-10-25
+
+### Bug Fixes
+- Cargo fmt; avoid char-boundary panic when truncating header path
+
+### Features
+- Extraction limits, cleanup on failure, zip 9, archive_list fuzz target
+
+### Miscellaneous
+- Skip unconfigured remotes in *-all recipes
+- Push/pull current branch instead of hardcoded main
+- Bump tui-nuances to 0.1.7
+
+### Ci
+- Nightly dependency update pushes lockfile only, no version bump or release
+- Nightly merges lockfile-only updates; bump + release only when a Cargo.toml requirement changes
+- Automerge green PRs (workflow_run) + dependabot for actions
+- Automerge major dependabot bumps too
+- Nightly workflow-action bumps
+- Bump softprops/action-gh-release from 1 to 3 (#3)
+- Bump peter-evans/create-pull-request from 6 to 8 (#5)
+- Bump clechasseur/rs-clippy-check from 4 to 5 (#4)
+- Bump actions/checkout from 4 to 7 (#6)
+
+### Test
+- Smoke tests for theme/editor/options panels
+
 ## [3.1.0] - 2026-10-14
 
 ### Documentation
@@ -15,6 +42,7 @@ All notable changes to this project will be documented in this file.
 - Depend on tui-nuances 0.1.5
 - Depend on tui-nuances 0.1.6
 - Depend on tui-nuances 0.1.6 from crates.io
+- Bump version to 3.1.0
 
 ### Ci
 - Add cargo-audit workflow and just audit recipe
