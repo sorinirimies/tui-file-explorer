@@ -61,7 +61,30 @@ jobs:
 
       - name: Run clippy
         if: steps.check.outputs.has_changes == 'true'
-        run: cargo clippy -- -D warnings -A deprecated
+        run: cargo clippy --all-features --all-targets -- -D warnings -A deprecated
+
+      - name: Security audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+
+      # Project health report: surfaced in the PR body so each dependency
+      # bump also prompts a look at bugs, missing tests and refactoring.
+      - name: Project health report
+        if: steps.check.outputs.has_changes == 'true'
+        id: health
+        run: |
+          {
+            echo 'report<<EOF'
+            echo "- Pedantic clippy findings: $(cargo clippy --all-features -- -W clippy::pedantic 2>&1 | grep -c '^warning' || true)"
+            echo "- unwrap()/expect() outside tests: $(grep -rnE 'unwrap\(\)|expect\(' src --include='*.rs' --exclude='*tests*' | wc -l | tr -d ' ')"
+            echo "- TODO/FIXME markers: $(grep -rnE 'TODO|FIXME' src | wc -l | tr -d ' ')"
+            echo "- Source files without a tests module:"
+            for f in $(find src -name '*.rs' ! -name '*tests*' ! -name 'main.rs'); do
+              grep -q 'cfg(test)' "$f" || echo "  - $f"
+            done
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       # ── Create Pull Request ──────────────────────────────────────────────────
       - name: Create Pull Request
@@ -83,6 +106,10 @@ jobs:
             The following changes were made to `Cargo.lock`:
 
             ${{ steps.summary.outputs.diff }}
+
+            ### Project health (bugs / missing tests / refactor candidates)
+
+            ${{ steps.health.outputs.report }}
 
             ---
 
