@@ -317,13 +317,13 @@ fn editor_round_trips() {
 
 #[test]
 fn resolve_theme_idx_finds_default_theme_at_zero() {
-    let themes = Theme::all_presets();
+    let themes = Theme::presets();
     assert_eq!(resolve_theme_idx("default", &themes), 0);
 }
 
 #[test]
 fn resolve_theme_idx_finds_named_theme() {
-    let themes = Theme::all_presets();
+    let themes = Theme::presets();
     let idx = resolve_theme_idx("grape", &themes);
     assert_ne!(idx, 0, "grape must not collide with the default index");
     assert_eq!(themes[idx].0.to_lowercase(), "grape");
@@ -331,7 +331,7 @@ fn resolve_theme_idx_finds_named_theme() {
 
 #[test]
 fn resolve_theme_idx_is_case_insensitive() {
-    let themes = Theme::all_presets();
+    let themes = Theme::presets();
     let lower = resolve_theme_idx("grape", &themes);
     let upper = resolve_theme_idx("GRAPE", &themes);
     let mixed = resolve_theme_idx("Grape", &themes);
@@ -341,7 +341,7 @@ fn resolve_theme_idx_is_case_insensitive() {
 
 #[test]
 fn resolve_theme_idx_normalises_hyphens_to_spaces() {
-    let themes = Theme::all_presets();
+    let themes = Theme::presets();
     let spaced = resolve_theme_idx("catppuccin mocha", &themes);
     let hyphen = resolve_theme_idx("catppuccin-mocha", &themes);
     assert_eq!(spaced, hyphen);
@@ -349,13 +349,13 @@ fn resolve_theme_idx_normalises_hyphens_to_spaces() {
 
 #[test]
 fn resolve_theme_idx_unknown_name_returns_zero() {
-    let themes = Theme::all_presets();
+    let themes = Theme::presets();
     assert_eq!(resolve_theme_idx("this-theme-does-not-exist", &themes), 0);
 }
 
 #[test]
 fn resolve_theme_idx_persisted_name_survives_round_trip() {
-    let themes = Theme::all_presets();
+    let themes = Theme::presets();
     let (_dir, path) = tmp_state_path();
 
     let original_idx = resolve_theme_idx("nord", &themes);
@@ -378,8 +378,8 @@ fn resolve_theme_idx_persisted_name_survives_round_trip() {
 
 #[test]
 fn resolve_theme_idx_all_presets_are_found() {
-    let themes = Theme::all_presets();
-    for (i, (name, _, _)) in themes.iter().enumerate() {
+    let themes = Theme::presets();
+    for (i, (name, _)) in themes.iter().enumerate() {
         let resolved = resolve_theme_idx(name, &themes);
         assert_eq!(
             resolved, i,

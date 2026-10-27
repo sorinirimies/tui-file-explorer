@@ -93,7 +93,7 @@ fn run() -> io::Result<()> {
     let auto_install_outcome = shell_init::auto_install();
     vlog!(log, "auto_install outcome: {auto_install_outcome:?}");
 
-    let themes = Theme::all_presets();
+    let themes = Theme::presets();
     vlog!(log, "loaded {} themes", themes.len());
 
     if cli.list_themes {
@@ -229,12 +229,9 @@ fn run_utility_command(cli: &Cli, log: &mut Logger) -> bool {
     true
 }
 
-fn print_themes(themes: &[(&'static str, &'static str, Theme)]) {
-    let max = themes.iter().map(|(n, _, _)| n.len()).max().unwrap_or(0);
-    println!("{:<width$}  DESCRIPTION", "THEME", width = max);
-    println!("{}", "\u{2500}".repeat(max + 52));
-    for (name, desc, _) in themes {
-        println!("{name:<max$}  {desc}");
+fn print_themes(themes: &[(&'static str, Theme)]) {
+    for (name, _) in themes {
+        println!("{name}");
     }
 }
 
@@ -246,7 +243,7 @@ fn print_themes(themes: &[(&'static str, &'static str, Theme)]) {
 fn resolve_options(
     cli: &Cli,
     saved: &AppState,
-    themes: &[(&'static str, &'static str, Theme)],
+    themes: &[(&'static str, Theme)],
     log: &mut Logger,
 ) -> io::Result<Option<AppOptions>> {
     let theme_name = cli

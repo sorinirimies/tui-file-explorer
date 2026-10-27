@@ -184,7 +184,7 @@ impl Editor {
 
 struct App {
     explorer: FileExplorer,
-    themes: Vec<(&'static str, &'static str, Theme)>,
+    themes: Vec<(&'static str, Theme)>,
     theme_idx: usize,
     editor: Editor,
     show_panel: bool,
@@ -197,7 +197,7 @@ impl App {
         let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         Self {
             explorer: FileExplorer::builder(start).build(),
-            themes: Theme::all_presets(),
+            themes: Theme::presets(),
             theme_idx: 0,
             editor: Editor::default(),
             show_panel: true, // open on launch so the panel is visible immediately
@@ -207,7 +207,7 @@ impl App {
     }
 
     fn theme(&self) -> &Theme {
-        &self.themes[self.theme_idx].2
+        &self.themes[self.theme_idx].1
     }
 
     fn open_panel(&mut self) {

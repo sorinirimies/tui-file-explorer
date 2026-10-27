@@ -123,31 +123,27 @@
 //!
 //! ## Named presets
 //!
-//! 43 well-known editor / terminal colour schemes are available as
-//! associated constructors on [`Theme`]:
+//! All 90 `tui-nuances` built-in themes are available as
+//! shared themes, converted with `Theme::from`:
 //!
 //! ```
 //! use tui_file_explorer::Theme;
 //!
-//! let t = Theme::dracula();
-//! let t = Theme::nord();
-//! let t = Theme::catppuccin_mocha();
-//! let t = Theme::tokyo_night();
-//! let t = Theme::gruvbox_dark();
-//! let t = Theme::kanagawa_wave();
-//! let t = Theme::oxocarbon();
+//! let t = Theme::from(&tui_nuances::Theme::dracula());
+//! let t = Theme::from(&tui_nuances::Theme::nord());
+//! let t = Theme::from(&tui_nuances::Theme::catppuccin_mocha());
+//! let t = Theme::from(&tui_nuances::Theme::tokyo_night());
+//! let t = Theme::from(&tui_nuances::Theme::gruvbox());
+//! let t = Theme::from(&tui_nuances::Theme::kanagawa_wave());
+//! let t = Theme::from(&tui_nuances::Theme::oxocarbon());
 //!
-//! // Iterate the full catalogue (name, description, theme):
-//! for (name, desc, _theme) in Theme::all_presets() {
-//!     println!("{name} — {desc}");
+//! // Iterate the full catalogue (name, theme):
+//! for (name, _theme) in Theme::presets() {
+//!     println!("{name}");
 //! }
 //! ```
 //!
-//! The complete list: `Default`, `Dracula`, `Nord`, `Solarized Dark`,
-//! `Solarized Light`, `Gruvbox Dark`, `Gruvbox Light`, `Catppuccin Latte`,
-//! `Catppuccin Frappé`, `Catppuccin Macchiato`, `Catppuccin Mocha`,
-//! `Tokyo Night`, `Tokyo Night Storm`, `Tokyo Night Light`, `Kanagawa Wave`,
-//! `Kanagawa Dragon`, `Kanagawa Lotus`, `Moonfly`, `Nightfly`, `Oxocarbon`.
+//! The full list is `tui_nuances::Theme::names()` (also `tfe --list-themes`).
 //!
 //! ## Key bindings reference
 //!

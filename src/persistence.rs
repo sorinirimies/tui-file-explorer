@@ -300,9 +300,9 @@ pub fn try_save_state(state: &AppState) -> io::Result<()> {
 /// Returns `0` (the built-in default theme) when no match is found, and
 /// prints a hint to stderr suggesting `--list-themes`.
 #[must_use]
-pub fn resolve_theme_idx(name: &str, themes: &[(&str, &str, Theme)]) -> usize {
+pub fn resolve_theme_idx(name: &str, themes: &[(&str, Theme)]) -> usize {
     let key = name.to_lowercase().replace('-', " ");
-    for (i, (n, _, _)) in themes.iter().enumerate() {
+    for (i, (n, _)) in themes.iter().enumerate() {
         if n.to_lowercase().replace('-', " ") == key {
             return i;
         }

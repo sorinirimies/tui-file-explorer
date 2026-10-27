@@ -100,7 +100,7 @@ Keyboard-driven, multi-pane file manager for [Ratatui](https://ratatui.rs). Inst
 - **Configurable** — every key can be rebound in `keymap.toml`; size info, trash and git markers are switchable via keys, flags and settings.
 - **Preview and editing** — text with line numbers, images, binary hex dumps, directory summaries, external editors, and a built-in editor.
 - **Terminal-native images** — Kitty, Sixel, iTerm2, and halfblock fallback through [`ratatui-image`](https://github.com/ratatui/ratatui-image).
-- **43 themes** — live theme picker plus fully customizable `Theme` values.
+- **90 themes** (all of `tui-nuances`) — live theme picker plus fully customizable `Theme` values.
 - **Persistent CLI state** — pane directories, active pane, theme, sort mode, visibility settings, editor, and cd-on-exit.
 - **Cross-platform shell integration** — bash, zsh, fish, PowerShell, and Nushell on macOS, Linux, and Windows.
 - **Optional shared theming** — enable the `theme` feature for [`tui-nuances`](https://github.com/sorinirimies/tui-nuances) integration (off by default).

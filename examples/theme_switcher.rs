@@ -55,7 +55,7 @@ use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, NuancesSwi
 
 struct ThemeSwitcher {
     explorer: FileExplorer,
-    themes: Vec<(&'static str, &'static str, Theme)>,
+    themes: Vec<(&'static str, Theme)>,
     theme_idx: usize,
     shared: NuancesSwitcher,
     shared_theme: Option<Theme>,
@@ -65,7 +65,7 @@ impl ThemeSwitcher {
     fn new() -> Self {
         let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         let explorer = FileExplorer::builder(start).build();
-        let themes = Theme::all_presets();
+        let themes = Theme::presets();
         Self {
             explorer,
             themes,
@@ -78,7 +78,7 @@ impl ThemeSwitcher {
     fn theme(&self) -> &Theme {
         self.shared_theme
             .as_ref()
-            .unwrap_or(&self.themes[self.theme_idx].2)
+            .unwrap_or(&self.themes[self.theme_idx].1)
     }
 
     fn next_theme(&mut self) {
@@ -270,7 +270,7 @@ fn render_sidebar(
         .enumerate()
         .skip(scroll)
         .take(visible)
-        .map(|(i, (name, _, _))| {
+        .map(|(i, (name, _))| {
             let is_active = i == app.theme_idx;
             let marker = if is_active { "\u{25BA} " } else { "   " };
             let line = Line::from(vec![
@@ -308,8 +308,8 @@ fn render_sidebar(
     frame.render_stateful_widget(list, v[1], &mut list_state);
 
     // ── Description footer ────────────────────────────────────────────────────
-    let (name, desc, _) = &app.themes[app.theme_idx];
-    let desc_text = format!("{name}\n{desc}");
+    let (name, _) = &app.themes[app.theme_idx];
+    let desc_text = name.to_string();
     let desc_para = Paragraph::new(desc_text)
         .style(Style::default().fg(theme.success))
         .block(

@@ -140,123 +140,38 @@ fn builder_does_not_mutate_other_fields() {
     assert_eq!(modified.bg, original.bg);
 }
 
-// ── Named presets ─────────────────────────────────────────────────────────
+// ── Presets ───────────────────────────────────────────────────────────────
 
 #[test]
-fn all_presets_is_non_empty() {
-    assert!(!Theme::all_presets().is_empty());
-}
-
-#[test]
-fn all_presets_names_are_non_empty() {
-    for (name, _, _) in Theme::all_presets() {
-        assert!(!name.is_empty(), "preset has an empty name");
+fn presets_mirror_the_nuances_catalogue() {
+    let presets = Theme::presets();
+    let names = tui_nuances::Theme::names();
+    assert_eq!(presets.len(), names.len());
+    assert!(presets.len() >= 90);
+    for ((name, theme), want) in presets.iter().zip(names) {
+        assert_eq!(*name, want);
+        let shared = tui_nuances::Theme::by_name(want).unwrap();
+        assert_eq!(*theme, Theme::from_nuances(&shared));
     }
 }
 
 #[test]
-fn all_presets_descriptions_are_non_empty() {
-    for (name, desc, _) in Theme::all_presets() {
-        assert!(!desc.is_empty(), "preset '{name}' has an empty description");
-    }
-}
-
-#[test]
-fn all_presets_names_are_unique() {
-    let presets = Theme::all_presets();
+fn presets_names_are_unique() {
+    let presets = Theme::presets();
     let mut seen = std::collections::HashSet::new();
-    for (name, _, _) in &presets {
+    for (name, _) in &presets {
         assert!(seen.insert(*name), "duplicate preset name: '{name}'");
     }
 }
 
 #[test]
-fn all_presets_first_entry_is_default() {
-    let presets = Theme::all_presets();
-    let (name, _, theme) = &presets[0];
-    assert_eq!(*name, "Default");
-    assert_eq!(*theme, Theme::default());
-}
-
-#[test]
-fn all_presets_contains_dracula() {
-    let names: Vec<&str> = Theme::all_presets().iter().map(|(n, _, _)| *n).collect();
-    assert!(names.contains(&"Dracula"), "Dracula preset missing");
-}
-
-#[test]
-fn all_presets_contains_nord() {
-    let names: Vec<&str> = Theme::all_presets().iter().map(|(n, _, _)| *n).collect();
-    assert!(names.contains(&"Nord"), "Nord preset missing");
-}
-
-#[test]
-fn all_presets_contains_catppuccin_mocha() {
-    let names: Vec<&str> = Theme::all_presets().iter().map(|(n, _, _)| *n).collect();
-    assert!(
-        names.contains(&"Catppuccin Mocha"),
-        "Catppuccin Mocha preset missing"
-    );
-}
-
-#[test]
-fn all_presets_count_is_at_least_43() {
-    assert!(
-        Theme::all_presets().len() >= 43,
-        "expected at least 43 presets, got {}",
-        Theme::all_presets().len()
-    );
-}
-
-#[test]
-fn named_preset_dracula_differs_from_default() {
-    assert_ne!(Theme::dracula(), Theme::default());
-}
-
-#[test]
-fn named_preset_nord_differs_from_dracula() {
-    assert_ne!(Theme::nord(), Theme::dracula());
-}
-
-#[test]
 fn theme_clone_equals_original() {
-    let t = Theme::dracula();
+    let t = Theme::from(&tui_nuances::Theme::dracula());
     assert_eq!(t.clone(), t);
 }
 
 #[test]
 fn theme_partial_eq_reflexive() {
-    let t = Theme::catppuccin_mocha();
+    let t = Theme::from(&tui_nuances::Theme::catppuccin_mocha());
     assert_eq!(t, t.clone());
-}
-
-#[test]
-fn every_preset_is_sourced_from_shared_nuances_and_readable() {
-    // Presets (other than the explorer-only Default/Mono) come from tui-nuances,
-    // so each must round-trip through the shared mapping.
-    for (name, _, t) in Theme::all_presets() {
-        if name == "Default" || name == "Mono" {
-            continue;
-        }
-        assert_ne!(t.fg, t.sel_bg, "{name}: fg equals selection bg");
-        assert_ne!(t.brand, t.bg, "{name}: brand invisible on bg");
-    }
-}
-
-#[test]
-fn dark_presets_keep_terminal_background_and_light_ones_paint() {
-    assert_eq!(Theme::dracula().bg, Color::Reset);
-    assert_eq!(Theme::catppuccin_mocha().bg, Color::Reset);
-    assert!(matches!(Theme::solarized_light().bg, Color::Rgb(..)));
-    assert!(matches!(Theme::gruvbox_light().bg, Color::Rgb(..)));
-}
-
-#[test]
-fn preset_roles_match_previous_look() {
-    // Pinned values from before the move to tui-nuances.
-    let d = Theme::dracula();
-    assert_eq!(d.brand, Color::Rgb(255, 121, 198));
-    assert_eq!(d.dir, Color::Rgb(241, 250, 140));
-    assert_eq!(d.accent, Color::Rgb(139, 233, 253));
-    assert_eq!(d.sel_bg, Color::Rgb(68, 71, 90));
 }

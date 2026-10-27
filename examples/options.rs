@@ -125,7 +125,7 @@ impl Editor {
 
 struct App {
     dual: DualPane,
-    themes: Vec<(&'static str, &'static str, Theme)>,
+    themes: Vec<(&'static str, Theme)>,
     theme_idx: usize,
     show_hidden: bool,
     sort_mode: SortMode,
@@ -138,7 +138,7 @@ struct App {
 impl App {
     fn new() -> Self {
         let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
-        let themes = Theme::all_presets();
+        let themes = Theme::presets();
         Self {
             dual: DualPane::builder(start).build(),
             themes,
@@ -153,7 +153,7 @@ impl App {
     }
 
     fn theme(&self) -> &Theme {
-        &self.themes[self.theme_idx].2
+        &self.themes[self.theme_idx].1
     }
 
     fn theme_name(&self) -> &'static str {

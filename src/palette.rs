@@ -9,19 +9,19 @@
 //! ## Named presets
 //!
 //! A collection of well-known editor / terminal themes is available as
-//! associated constructors on [`Theme`]:
+//! `tui-nuances` themes, converted with `Theme::from`:
 //!
 //! ```
 //! use tui_file_explorer::Theme;
 //!
-//! let t = Theme::grape();
-//! let t = Theme::catppuccin_mocha();
-//! let t = Theme::tokyo_night();
-//! let t = Theme::gruvbox_dark();
+//! let t = Theme::from(&tui_nuances::Theme::grape());
+//! let t = Theme::from(&tui_nuances::Theme::catppuccin_mocha());
+//! let t = Theme::from(&tui_nuances::Theme::tokyo_night());
+//! let t = Theme::from(&tui_nuances::Theme::gruvbox());
 //!
-//! // Or iterate the full catalogue (name, description, theme):
-//! for (name, desc, _theme) in Theme::all_presets() {
-//!     println!("{name} — {desc}");
+//! // Or iterate the full catalogue (name, theme):
+//! for (name, _theme) in Theme::presets() {
+//!     println!("{name}");
 //! }
 //! ```
 

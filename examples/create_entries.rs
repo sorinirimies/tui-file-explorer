@@ -56,7 +56,7 @@ impl App {
         let start = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
         Self {
             explorer: FileExplorer::builder(start).build(),
-            theme: Theme::catppuccin_mocha(),
+            theme: Theme::from(&tui_nuances::Theme::catppuccin_mocha()),
             status: String::from(
                 "n  new folder    N  new file    Enter/l  confirm    Esc  cancel / dismiss",
             ),

@@ -550,37 +550,21 @@ fn theme_name_matches_preset_catalogue() {
 }
 
 #[test]
-fn theme_desc_returns_non_empty_string() {
-    let dir = tempdir().expect("tempdir");
-    let app = make_app(dir.path().to_path_buf());
-    assert!(!app.theme_desc().is_empty());
-}
-
-#[test]
-fn theme_desc_matches_preset_catalogue() {
-    let dir = tempdir().expect("tempdir");
-    let app = make_app(dir.path().to_path_buf());
-    let expected = app.themes[app.theme_idx].1;
-    assert_eq!(app.theme_desc(), expected);
-}
-
-#[test]
 fn theme_returns_correct_preset_object() {
     let dir = tempdir().expect("tempdir");
     let mut app = make_app(dir.path().to_path_buf());
     // Advance to a known non-default index so we're not just testing the default.
     app.theme_idx = 2;
-    let expected = &app.themes[2].2;
+    let expected = &app.themes[2].1;
     assert_eq!(app.theme(), expected);
 }
 
 #[test]
-fn theme_name_and_desc_change_together_with_idx() {
+fn theme_name_changes_with_idx() {
     let dir = tempdir().expect("tempdir");
     let mut app = make_app(dir.path().to_path_buf());
     app.theme_idx = 1;
     assert_eq!(app.theme_name(), app.themes[1].0);
-    assert_eq!(app.theme_desc(), app.themes[1].1);
 }
 
 #[test]

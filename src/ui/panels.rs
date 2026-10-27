@@ -57,7 +57,7 @@ pub fn render_theme_panel(frame: &mut Frame, area: Rect, app: &App) {
         .enumerate()
         .skip(scroll)
         .take(visible)
-        .map(|(i, (name, _, _))| {
+        .map(|(i, (name, _))| {
             let is_active = i == app.theme_idx;
             let marker = if is_active { "\u{25BA} " } else { "   " };
             let line = Line::from(vec![
@@ -95,7 +95,12 @@ pub fn render_theme_panel(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_stateful_widget(list, v[1], &mut list_state);
 
     // Description footer.
-    let desc_text = format!("{}\n{}", app.theme_name(), app.theme_desc());
+    let desc_text = format!(
+        "{}\n{}/{}",
+        app.theme_name(),
+        app.theme_idx + 1,
+        app.themes.len()
+    );
     let desc = Paragraph::new(desc_text)
         .style(Style::default().fg(theme.success))
         .block(

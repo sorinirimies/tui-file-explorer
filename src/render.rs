@@ -215,7 +215,7 @@ pub fn render_dual_pane(dual: &mut DualPane, frame: &mut Frame, area: Rect) {
 /// # use ratatui::{Terminal, backend::TestBackend};
 /// # let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
 /// let mut dual  = DualPane::builder(std::env::current_dir().unwrap()).build();
-/// let theme = Theme::nord();
+/// let theme = Theme::from(&tui_nuances::Theme::nord());
 /// terminal.draw(|frame| {
 ///     render_dual_pane_themed(&mut dual, frame, frame.area(), &theme);
 /// }).unwrap();

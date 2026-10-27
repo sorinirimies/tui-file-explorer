@@ -497,7 +497,7 @@ impl AppBuilder {
     }
 
     pub fn build(mut self) -> Result<App, AppBuildError> {
-        let theme_count = crate::Theme::all_presets().len();
+        let theme_count = crate::Theme::presets().len();
         if self.options.theme_idx >= theme_count {
             return Err(AppBuildError::InvalidThemeIndex {
                 index: self.options.theme_idx,
@@ -519,7 +519,7 @@ impl AppBuilder {
         app.key_bindings = self.key_bindings;
         app.operation_mode = self.operation_mode;
         if let Some(theme) = self.theme_override {
-            app.themes[app.theme_idx].2 = theme;
+            app.themes[app.theme_idx].1 = theme;
         }
         Ok(app)
     }

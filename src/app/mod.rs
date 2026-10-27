@@ -587,8 +587,8 @@ pub struct App {
     pub active_idx: usize,
     /// The most recently yanked entry, if any.
     pub clipboard: Option<ClipboardItem>,
-    /// All available themes as `(name, description, Theme)` triples.
-    pub themes: Vec<(&'static str, &'static str, Theme)>,
+    /// All available themes as `(name, Theme)` pairs (the `tui-nuances` catalogue).
+    pub themes: Vec<(&'static str, Theme)>,
     /// Index into `themes` for the currently active theme.
     pub theme_idx: usize,
     /// Whether the theme-picker side-panel is visible.
@@ -677,7 +677,7 @@ impl App {
                     .build()
             })
             .collect();
-        let themes = Theme::all_presets();
+        let themes = Theme::presets();
         let theme_idx = opts.theme_idx.min(themes.len().saturating_sub(1));
         Self {
             panes,
@@ -815,19 +815,13 @@ impl App {
     /// Return a reference to the currently selected [`Theme`].
     #[must_use]
     pub fn theme(&self) -> &Theme {
-        &self.themes[self.theme_idx].2
+        &self.themes[self.theme_idx].1
     }
 
     /// Return the name of the currently selected theme.
     #[must_use]
     pub fn theme_name(&self) -> &str {
         self.themes[self.theme_idx].0
-    }
-
-    /// Return the description of the currently selected theme.
-    #[must_use]
-    pub fn theme_desc(&self) -> &str {
-        self.themes[self.theme_idx].1
     }
 
     /// Advance to the next theme, wrapping around at the end of the list.

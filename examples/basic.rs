@@ -68,7 +68,7 @@ fn run(extensions: Vec<String>) -> io::Result<Option<PathBuf>> {
 
     // A subtle custom theme: keep the default palette but soften the brand
     // colour to violet so the example is visually distinct from the `tfe` binary.
-    let theme = Theme::grape();
+    let theme = Theme::from(&tui_nuances::Theme::grape());
 
     // ── Terminal setup ────────────────────────────────────────────────────────
     enable_raw_mode()?;
