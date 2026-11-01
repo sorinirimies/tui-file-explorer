@@ -13,7 +13,7 @@ readme       = "README.md"
 exclude      = [
     "target/",
     ".gitignore",
-    "rules.md",
+    "AGENTS.md",
     "justfile",
     "cliff.toml",
     "scripts/",
