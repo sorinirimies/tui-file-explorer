@@ -19,7 +19,12 @@ pub enum AppOutcome {
     /// User dismissed the application.
     Dismissed,
     /// Host should suspend rendering and open `path` with `editor`.
-    OpenEditor { path: PathBuf, editor: Editor },
+    OpenEditor {
+        /// The file to open.
+        path: PathBuf,
+        /// The editor to open it with.
+        editor: Editor,
+    },
     /// Host should execute a filesystem operation outside the UI thread.
     OperationRequested(OperationRequest),
 }
@@ -27,39 +32,64 @@ pub enum AppOutcome {
 /// Observable state transition emitted by host-driven dispatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppEvent {
+    /// A pane was opened.
     PaneAdded {
+        /// Number of panes after the change.
         pane_count: usize,
     },
+    /// A pane was closed.
     PaneClosed {
+        /// Number of panes after the change.
         pane_count: usize,
     },
+    /// Keyboard focus moved to another pane.
     ActivePaneChanged {
+        /// Index of the newly focused pane.
         index: usize,
     },
+    /// A pane navigated to another directory.
     DirectoryChanged {
+        /// Index of the pane that navigated.
         pane: usize,
+        /// The pane's new current directory.
         path: PathBuf,
     },
+    /// The active theme changed.
     ThemeChanged {
+        /// Index of the new theme in the theme catalogue.
         index: usize,
     },
+    /// Single-pane mode was turned on or off.
     LayoutChanged {
+        /// `true` when only the active pane is shown.
         single_pane: bool,
     },
+    /// The preview panel was shown or hidden.
     PreviewChanged {
+        /// `true` when the preview panel is shown.
         visible: bool,
     },
+    /// A running file operation made progress.
     OperationProgress {
+        /// The operation this update belongs to.
         id: super::OperationId,
+        /// Items processed so far.
         completed: usize,
+        /// Total number of items in the operation.
         total: usize,
     },
+    /// A file operation finished.
     OperationCompleted {
+        /// The operation that finished.
         id: super::OperationId,
+        /// Items processed without error.
         succeeded: usize,
+        /// Items that failed.
         failed: usize,
     },
+    /// A file operation was cancelled before it finished.
     OperationCancelled {
+        /// The operation that was cancelled.
         id: super::OperationId,
     },
 }
@@ -68,52 +98,99 @@ command_enum! {
     /// Semantic command accepted by [`App::dispatch_command`].
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum AppCommand {
+        /// Move the cursor up one row.
         MoveUp => "move_up",
+        /// Move the cursor down one row.
         MoveDown => "move_down",
+        /// Move the cursor up one page.
         PageUp => "page_up",
+        /// Move the cursor down one page.
         PageDown => "page_down",
+        /// Jump to the first entry.
         Top => "top",
+        /// Jump to the last entry.
         Bottom => "bottom",
+        /// Go to the parent directory.
         Ascend => "ascend",
+        /// Enter the directory under the cursor.
         Open => "open",
+        /// Select the entry under the cursor, or enter it when directories can't be selected.
         Confirm => "confirm",
+        /// Focus the next pane.
         NextPane => "next_pane",
+        /// Focus the previous pane.
         PreviousPane => "previous_pane",
+        /// Open a new pane.
         OpenPane => "open_pane",
+        /// Close the active pane.
         ClosePane => "close_pane",
+        /// Show only the active pane, or all panes again.
         ToggleSinglePane => "toggle_single_pane",
+        /// Start incremental search.
         Search => "search",
+        /// Switch to the next sort order.
         CycleSort => "cycle_sort",
+        /// Show or hide dotfiles.
         ToggleHidden => "toggle_hidden",
+        /// Show or hide file sizes.
         ToggleSizes => "toggle_sizes",
+        /// Show or hide directory sizes.
         ToggleDirSizes => "toggle_dir_sizes",
+        /// Mark or unmark the entry under the cursor.
         ToggleMark => "toggle_mark",
+        /// Cut the marked entries, or the one under the cursor, to the clipboard.
         Cut => "cut",
+        /// Paste the clipboard into the active pane's directory.
         Paste => "paste",
+        /// Delete the marked entries, or the one under the cursor.
         Delete => "delete",
+        /// Create a directory in the current directory.
         NewDirectory => "new_directory",
+        /// Create an empty file in the current directory.
         NewFile => "new_file",
+        /// Rename the entry under the cursor.
         Rename => "rename",
+        /// Show or hide the preview panel.
         TogglePreview => "toggle_preview",
+        /// Scroll the preview down.
         PreviewDown => "preview_down",
+        /// Scroll the preview up.
         PreviewUp => "preview_up",
+        /// Open the file under the cursor in the external editor.
         OpenExternalEditor => "open_external_editor",
+        /// Open the file under the cursor in the built-in editor.
         OpenInlineEditor => "open_inline_editor",
+        /// Show or hide the theme picker.
         ToggleThemePanel => "toggle_theme_panel",
+        /// Show or hide the options panel.
         ToggleOptionsPanel => "toggle_options_panel",
+        /// Show or hide the editor picker.
         ToggleEditorPanel => "toggle_editor_panel",
+        /// Switch to the next theme.
         NextTheme => "next_theme",
+        /// Switch to the previous theme.
         PreviousTheme => "previous_theme",
+        /// Turn cd-on-exit on or off.
         ToggleCdOnExit => "toggle_cd_on_exit",
+        /// Close the explorer without selecting anything.
         Dismiss => "dismiss",
+        /// Quit the application.
         Quit => "quit",
+        /// Undo the last file action.
         Undo => "undo",
+        /// Redo the last undone action.
         Redo => "redo",
+        /// Rename the marked entries together in a text editor.
         BulkRename => "bulk_rename",
+        /// Bookmark the current directory, or remove its bookmark.
         ToggleBookmark => "toggle_bookmark",
+        /// Show the bookmark list.
         OpenBookmarks => "open_bookmarks",
+        /// Find a file below the current directory by fuzzy name search.
         FuzzyFind => "fuzzy_find",
+        /// Show or hide git status.
         ToggleGit => "toggle_git",
+        /// Extract the archive under the cursor.
         ExtractArchive => "extract_archive",
     }
 }
@@ -178,8 +255,11 @@ impl AppCommand {
 /// One custom key-to-command mapping.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KeyBinding {
+    /// The key that triggers the command.
     pub code: KeyCode,
+    /// Modifiers that must be held with [`code`](Self::code).
     pub modifiers: KeyModifiers,
+    /// The command the key runs.
     pub command: AppCommand,
 }
 
@@ -192,6 +272,7 @@ pub struct KeyBindings {
 }
 
 impl KeyBindings {
+    /// An empty set: every command keeps its built-in key.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -210,6 +291,7 @@ impl KeyBindings {
         self
     }
 
+    /// Remove the mapping for this key, if any.
     #[must_use]
     pub fn unbind(mut self, code: KeyCode, modifiers: KeyModifiers) -> Self {
         self.bindings
@@ -263,10 +345,12 @@ impl KeyBindings {
         (!swallowed).then_some(key)
     }
 
+    /// All custom mappings, in the order they were added.
     pub fn bindings(&self) -> &[KeyBinding] {
         &self.bindings
     }
 
+    /// The command custom-bound to `key`, if any.
     #[must_use]
     pub fn resolve(&self, key: KeyEvent) -> Option<AppCommand> {
         self.bindings
@@ -275,6 +359,7 @@ impl KeyBindings {
             .map(|binding| binding.command)
     }
 
+    /// `true` when there are no custom mappings and no remapped commands.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.bindings.is_empty() && self.remapped.is_empty()
@@ -284,20 +369,33 @@ impl KeyBindings {
 /// Per-pane construction options used by [`AppBuilder`].
 #[derive(Debug, Clone)]
 pub struct PaneOptions {
+    /// Directory the pane opens in.
     pub directory: PathBuf,
+    /// Filesystem the pane browses.
     pub filesystem: crate::SharedFileSystem,
+    /// File extensions to show; empty shows every file.
     pub extensions: Vec<String>,
+    /// Show dotfiles.
     pub show_hidden: bool,
+    /// Show file sizes.
     pub show_sizes: bool,
+    /// Show directory sizes.
     pub show_dir_sizes: bool,
+    /// Navigation keys for this pane.
     pub keymap: crate::Keymap,
+    /// Read directories on a background thread.
     pub async_loading: bool,
+    /// Initial sort order.
     pub sort_mode: SortMode,
+    /// Rows moved by page up and page down.
     pub page_size: usize,
+    /// Whether the pane selects files, directories or both.
     pub selection_mode: SelectionMode,
 }
 
 impl PaneOptions {
+    /// Options for a pane in `directory`, with the defaults: real filesystem, all
+    /// files, hidden files off, sizes on, synchronous loading.
     pub fn new(directory: impl Into<PathBuf>) -> Self {
         Self {
             directory: directory.into(),
@@ -314,58 +412,68 @@ impl PaneOptions {
         }
     }
 
+    /// Browse `filesystem` instead of the real one.
     #[must_use]
     pub fn filesystem(mut self, filesystem: crate::SharedFileSystem) -> Self {
         self.filesystem = filesystem;
         self
     }
 
+    /// Also show files with this extension (without the dot).
     #[must_use]
     pub fn extension(mut self, extension: impl Into<String>) -> Self {
         self.extensions.push(extension.into());
         self
     }
 
+    /// Show or hide dotfiles.
     #[must_use]
     pub fn show_hidden(mut self, show: bool) -> Self {
         self.show_hidden = show;
         self
     }
 
+    /// Show or hide file sizes.
     #[must_use]
     pub fn show_sizes(mut self, show: bool) -> Self {
         self.show_sizes = show;
         self
     }
 
+    /// Show or hide directory sizes.
     #[must_use]
     pub fn show_dir_sizes(mut self, show: bool) -> Self {
         self.show_dir_sizes = show;
         self
     }
 
+    /// Use `keymap` for navigation in this pane.
     #[must_use]
     pub fn keymap(mut self, keymap: crate::Keymap) -> Self {
         self.keymap = keymap;
         self
     }
 
+    /// Read directories on a background thread.
     pub fn async_loading(mut self, enabled: bool) -> Self {
         self.async_loading = enabled;
         self
     }
 
+    /// Set the initial sort order.
     pub fn sort_mode(mut self, sort_mode: SortMode) -> Self {
         self.sort_mode = sort_mode;
         self
     }
 
+    /// Set how many rows page up and page down move.
     #[must_use]
     pub fn page_size(mut self, page_size: usize) -> Self {
         self.page_size = page_size.max(1);
         self
     }
 
+    /// Set whether the pane selects files, directories or both.
     #[must_use]
     pub fn selection_mode(mut self, selection_mode: SelectionMode) -> Self {
         self.selection_mode = selection_mode;
@@ -391,9 +499,22 @@ impl PaneOptions {
 /// Error returned by [`AppBuilder::build`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AppBuildError {
+    /// The application needs at least one pane.
     NoPanes,
-    InvalidThemeIndex { index: usize, theme_count: usize },
-    InvalidPaneIndex { index: usize, pane_count: usize },
+    /// The theme index is past the end of the theme catalogue.
+    InvalidThemeIndex {
+        /// The requested index.
+        index: usize,
+        /// Number of themes available.
+        theme_count: usize,
+    },
+    /// The pane index is past the last pane.
+    InvalidPaneIndex {
+        /// The requested index.
+        index: usize,
+        /// Number of panes open.
+        pane_count: usize,
+    },
 }
 
 impl fmt::Display for AppBuildError {
@@ -435,17 +556,20 @@ impl Default for AppBuilder {
 }
 
 impl AppBuilder {
+    /// A builder with default options and no panes yet.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a pane. Without any, [`build`](Self::build) adds one for `.`.
     #[must_use]
     pub fn pane(mut self, pane: PaneOptions) -> Self {
         self.panes.push(pane);
         self
     }
 
+    /// Start with the theme at `theme_index` in the theme catalogue.
     #[must_use]
     pub fn theme_index(mut self, theme_index: usize) -> Self {
         self.options.theme_idx = theme_index;
@@ -459,42 +583,53 @@ impl AppBuilder {
         self
     }
 
+    /// Editor that opens files on `e`.
     #[must_use]
     pub fn editor(mut self, editor: Editor) -> Self {
         self.options.editor = editor;
         self
     }
 
+    /// Start with only the active pane shown.
     #[must_use]
     pub fn single_pane(mut self, enabled: bool) -> Self {
         self.options.single_pane = enabled;
         self
     }
 
+    /// Print the final directory on dismiss, for the shell wrapper.
     #[must_use]
     pub fn cd_on_exit(mut self, enabled: bool) -> Self {
         self.options.cd_on_exit = enabled;
         self
     }
 
+    /// Show the debug log panel and write logs to a file.
     #[must_use]
     pub fn verbose(mut self, enabled: bool) -> Self {
         self.options.verbose = enabled;
         self
     }
 
+    /// Use custom key bindings.
     #[must_use]
     pub fn key_bindings(mut self, key_bindings: KeyBindings) -> Self {
         self.key_bindings = key_bindings;
         self
     }
 
+    /// Run file operations at once, or hand them to the host.
     #[must_use]
     pub fn operation_mode(mut self, operation_mode: super::OperationMode) -> Self {
         self.operation_mode = operation_mode;
         self
     }
 
+    /// Build the [`App`].
+    ///
+    /// # Errors
+    ///
+    /// [`AppBuildError::InvalidThemeIndex`] when the theme index is out of range.
     pub fn build(mut self) -> Result<App, AppBuildError> {
         let theme_count = crate::Theme::presets().len();
         if self.options.theme_idx >= theme_count {
@@ -525,20 +660,28 @@ impl AppBuilder {
 }
 
 impl App {
+    /// Start building an application.
     #[must_use]
     pub fn builder() -> AppBuilder {
         AppBuilder::new()
     }
 
+    /// All panes, in left-to-right order.
     #[must_use]
     pub fn panes(&self) -> &[FileExplorer] {
         &self.panes
     }
 
+    /// All panes, mutable.
     pub fn panes_mut(&mut self) -> &mut [FileExplorer] {
         &mut self.panes
     }
 
+    /// Replace every pane. The focus moves to the last pane if it was further right.
+    ///
+    /// # Errors
+    ///
+    /// [`AppBuildError::NoPanes`] when `panes` is empty.
     pub fn replace_panes(&mut self, panes: Vec<FileExplorer>) -> Result<(), AppBuildError> {
         if panes.is_empty() {
             return Err(AppBuildError::NoPanes);
@@ -548,11 +691,17 @@ impl App {
         Ok(())
     }
 
+    /// Index of the pane with keyboard focus.
     #[must_use]
     pub fn active_pane_index(&self) -> usize {
         self.active_idx
     }
 
+    /// Move keyboard focus to the pane at `index`.
+    ///
+    /// # Errors
+    ///
+    /// [`AppBuildError::InvalidPaneIndex`] when there is no such pane.
     pub fn set_active_pane_index(&mut self, index: usize) -> Result<(), AppBuildError> {
         if index >= self.panes.len() {
             return Err(AppBuildError::InvalidPaneIndex {
@@ -564,6 +713,11 @@ impl App {
         Ok(())
     }
 
+    /// Switch to the theme at `index` in the theme catalogue.
+    ///
+    /// # Errors
+    ///
+    /// [`AppBuildError::InvalidThemeIndex`] when there is no such theme.
     pub fn set_theme_index(&mut self, index: usize) -> Result<(), AppBuildError> {
         if index >= self.themes.len() {
             return Err(AppBuildError::InvalidThemeIndex {
@@ -589,11 +743,13 @@ impl App {
         self.key_bindings = config.app.clone();
     }
 
+    /// The custom key bindings in use.
     #[must_use]
     pub fn key_bindings(&self) -> &KeyBindings {
         &self.key_bindings
     }
 
+    /// Replace the custom key bindings.
     pub fn set_key_bindings(&mut self, key_bindings: KeyBindings) {
         self.key_bindings = key_bindings;
     }

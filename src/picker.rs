@@ -119,8 +119,11 @@ pub enum PickerAction {
 /// Filterable list state.
 #[derive(Debug, Clone)]
 pub struct Picker {
+    /// What the picker lists.
     pub kind: PickerKind,
+    /// Title shown above the list.
     pub title: String,
+    /// Filter text typed so far.
     pub query: String,
     items: Vec<PickerItem>,
     /// Indices into `items` that match `query`, best first, with the matched

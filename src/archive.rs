@@ -14,8 +14,11 @@ use std::{
 /// Supported container formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveFormat {
+    /// ZIP, including `.jar`.
     Zip,
+    /// Uncompressed tar.
     Tar,
+    /// Gzip-compressed tar (`.tar.gz`, `.tgz`).
     TarGz,
 }
 
@@ -49,14 +52,18 @@ impl ArchiveFormat {
 /// One member of an archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveEntry {
+    /// Path of the member inside the archive.
     pub name: String,
+    /// Uncompressed size in bytes.
     pub size: u64,
+    /// `true` for directories.
     pub is_dir: bool,
 }
 
 /// Contents of an archive (possibly truncated).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveListing {
+    /// Container format of the archive.
     pub format: ArchiveFormat,
     /// First [`MAX_LISTED`] entries.
     pub entries: Vec<ArchiveEntry>,

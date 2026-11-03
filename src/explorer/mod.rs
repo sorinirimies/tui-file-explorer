@@ -49,7 +49,9 @@ pub const PAGE_SIZE: usize = 10;
 /// Error returned by checked explorer filesystem operations.
 #[derive(Debug)]
 pub struct ExplorerError {
+    /// The path the operation failed on.
     pub path: PathBuf,
+    /// The underlying I/O error.
     pub source: io::Error,
 }
 
@@ -600,6 +602,7 @@ impl FileExplorer {
             .clone()
     }
 
+    /// Forget cached directory sizes so they are measured again.
     pub fn clear_dir_size_cache(&mut self) {
         self.dir_size_cache.clear();
         self.bg.clear_dir_sizes();

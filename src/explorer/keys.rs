@@ -142,6 +142,7 @@ impl FileExplorer {
         self.handle_key(self.keymap.canonical_key(command))
     }
 
+    /// Handle one key press and report what happened.
     pub fn handle_key(&mut self, key: KeyEvent) -> ExplorerOutcome {
         press_only!(key, ExplorerOutcome::Pending);
 

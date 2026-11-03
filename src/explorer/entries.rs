@@ -106,6 +106,7 @@ pub(crate) fn try_load_entries(
 /// Declarative icon map — maps file extensions to emoji icons.
 macro_rules! icon_map {
     ( dir => $dir_icon:expr, $( [ $( $ext:literal ),+ ] => $icon:expr, )* default => $fallback:expr $(,)? ) => {
+        /// Emoji icon for an entry, chosen by its extension.
         pub fn entry_icon(entry: &FsEntry) -> &'static str {
             if entry.is_dir {
                 return $dir_icon;

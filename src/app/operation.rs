@@ -6,63 +6,96 @@ use std::{
 use super::App;
 use crate::FileSystem;
 
+/// Identifies one file operation, so late progress and results can be matched to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct OperationId(pub u64);
 
+/// Who runs file operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OperationMode {
+    /// The app runs them itself, on the UI thread.
     #[default]
     Immediate,
+    /// The app hands them to the host as [`OperationRequest`]s.
     Deferred,
 }
 
+/// A copy, move or delete over one or more paths.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileOperation {
+    /// Copy `sources` into the `destination` directory.
     Copy {
+        /// Files and directories to copy.
         sources: Vec<PathBuf>,
+        /// Directory to copy into.
         destination: PathBuf,
+        /// Replace existing files of the same name.
         overwrite: bool,
     },
+    /// Move `sources` into the `destination` directory.
     Move {
+        /// Files and directories to move.
         sources: Vec<PathBuf>,
+        /// Directory to move into.
         destination: PathBuf,
+        /// Replace existing files of the same name.
         overwrite: bool,
     },
+    /// Delete `paths`, directories included.
     Delete {
+        /// Files and directories to delete.
         paths: Vec<PathBuf>,
     },
 }
 
+/// A file operation the host should run (see [`OperationMode::Deferred`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationRequest {
+    /// Pass this back with progress and the result.
     pub id: OperationId,
+    /// What to do.
     pub operation: FileOperation,
 }
 
+/// Progress of a running operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationProgress {
+    /// The operation this update belongs to.
     pub id: OperationId,
+    /// Items processed so far.
     pub completed: usize,
+    /// Total number of items.
     pub total: usize,
+    /// Item being processed now; `None` once all are done.
     pub current_path: Option<PathBuf>,
 }
 
+/// One item that an operation could not process.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationFailure {
+    /// The item that failed.
     pub path: PathBuf,
+    /// Why it failed.
     pub error: String,
 }
 
+/// Outcome of a finished operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationResult {
+    /// The operation that finished.
     pub id: OperationId,
+    /// Paths that were processed: new paths for copy and move, removed paths for delete.
     pub succeeded: Vec<PathBuf>,
+    /// Items that failed.
     pub failures: Vec<OperationFailure>,
 }
 
+/// Progress or a result arrived for an operation that is not the pending one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationApplyError {
+    /// The pending operation, if any.
     pub expected: Option<OperationId>,
+    /// The operation the update was for.
     pub received: OperationId,
 }
 
@@ -194,6 +227,7 @@ pub fn execute_operation(request: &OperationRequest) -> OperationResult {
 }
 
 impl App {
+    /// Who runs file operations.
     #[must_use]
     pub fn operation_mode(&self) -> OperationMode {
         self.operation_mode
@@ -205,6 +239,7 @@ impl App {
         self.active_pane().filesystem().clone()
     }
 
+    /// Set who runs file operations.
     pub fn set_operation_mode(&mut self, mode: OperationMode) {
         self.operation_mode = mode;
     }
@@ -230,6 +265,7 @@ impl App {
         self.queued_operation.take()
     }
 
+    /// The operation that is waiting for its result, if any.
     #[must_use]
     pub fn pending_operation(&self) -> Option<&OperationRequest> {
         self.pending_operation.as_ref()
@@ -254,6 +290,11 @@ impl App {
         Ok(())
     }
 
+    /// Show progress reported by the host for the pending operation.
+    ///
+    /// # Errors
+    ///
+    /// [`OperationApplyError`] when `progress` is not for the pending operation.
     pub fn apply_operation_progress(
         &mut self,
         progress: OperationProgress,
@@ -286,6 +327,12 @@ impl App {
         Ok(())
     }
 
+    /// Finish the pending operation: reload the panes and report the outcome.
+    /// Returns the paths that succeeded.
+    ///
+    /// # Errors
+    ///
+    /// [`OperationApplyError`] when `result` is not for the pending operation.
     pub fn apply_operation_result(
         &mut self,
         result: OperationResult,

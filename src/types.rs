@@ -8,24 +8,43 @@ command_enum! {
     /// Semantic command accepted by [`crate::FileExplorer::handle_command`].
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum ExplorerCommand {
+        /// Move the cursor up one row.
         MoveUp => "move_up",
+        /// Move the cursor down one row.
         MoveDown => "move_down",
+        /// Move the cursor up one page.
         PageUp => "page_up",
+        /// Move the cursor down one page.
         PageDown => "page_down",
+        /// Jump to the first entry.
         Top => "top",
+        /// Jump to the last entry.
         Bottom => "bottom",
+        /// Go to the parent directory.
         Ascend => "ascend",
+        /// Enter the directory under the cursor; on a file, move down instead.
         Navigate => "navigate",
+        /// Select the entry under the cursor, or enter it when directories can't be selected.
         Confirm => "confirm",
+        /// Show or hide dotfiles.
         ToggleHidden => "toggle_hidden",
+        /// Show or hide file sizes.
         ToggleSizes => "toggle_sizes",
+        /// Show or hide directory sizes.
         ToggleDirSizes => "toggle_dir_sizes",
+        /// Start incremental search.
         Search => "search",
+        /// Switch to the next sort order.
         CycleSort => "cycle_sort",
+        /// Mark or unmark the entry under the cursor.
         ToggleMark => "toggle_mark",
+        /// Create a directory in the current directory.
         NewDirectory => "new_directory",
+        /// Create an empty file in the current directory.
         NewFile => "new_file",
+        /// Rename the entry under the cursor.
         Rename => "rename",
+        /// Close the explorer without selecting anything.
         Dismiss => "dismiss",
     }
 }
@@ -68,7 +87,9 @@ impl PromptKind {
 /// An open text prompt: what it is for and what has been typed so far.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prompt {
+    /// What the prompt is for.
     pub kind: PromptKind,
+    /// Text typed so far.
     pub text: String,
 }
 
@@ -226,8 +247,13 @@ pub enum ExplorerOutcome {
     MkdirCreated(PathBuf),
     /// A new empty file was successfully created at the given path.
     TouchCreated(PathBuf),
-    /// An entry was successfully renamed; contains the new path.
-    RenameCompleted { from: PathBuf, to: PathBuf },
+    /// An entry was successfully renamed.
+    RenameCompleted {
+        /// The old path.
+        from: PathBuf,
+        /// The new path.
+        to: PathBuf,
+    },
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

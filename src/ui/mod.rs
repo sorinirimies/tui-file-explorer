@@ -57,6 +57,7 @@ pub enum HintLayout {
 }
 
 impl HintLayout {
+    /// Turn [`Auto`](Self::Auto) into the concrete layout for `width` columns.
     #[must_use]
     pub fn resolve(self, width: u16) -> Self {
         match self {
@@ -66,6 +67,7 @@ impl HintLayout {
         }
     }
 
+    /// Height of the action bar in rows at `width` columns.
     #[must_use]
     pub fn action_bar_rows(self, width: u16) -> u16 {
         match self.resolve(width) {
@@ -75,6 +77,7 @@ impl HintLayout {
         }
     }
 
+    /// Height of one row of hint cells at `width` columns.
     #[must_use]
     pub fn row_height(self, width: u16) -> u16 {
         self.action_bar_rows(width) / 2

@@ -416,7 +416,9 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 /// Whether the clipboard item should be copied or moved on paste.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClipOp {
+    /// Copy the entries on paste; the originals stay.
     Copy,
+    /// Move the entries on paste.
     Cut,
 }
 
@@ -578,6 +580,8 @@ impl CopyProgress {
     }
 }
 
+/// The whole `tfe` application: panes, side panels, themes, clipboard and
+/// pending file operations. Build one with [`App::builder`].
 #[derive(Debug)]
 pub struct App {
     /// All explorer panes, in left-to-right display order. Always has at

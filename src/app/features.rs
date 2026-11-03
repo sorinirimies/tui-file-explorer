@@ -23,17 +23,41 @@ const UNDO_LIMIT: usize = 100;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UndoEntry {
     /// `from` was renamed to `to`.
-    Rename { from: PathBuf, to: PathBuf },
+    Rename {
+        /// The old path.
+        from: PathBuf,
+        /// The new path.
+        to: PathBuf,
+    },
     /// A file or folder was created at `path`.
-    Create { path: PathBuf, is_dir: bool },
+    Create {
+        /// The new file or folder.
+        path: PathBuf,
+        /// `true` for a folder.
+        is_dir: bool,
+    },
     /// Items were moved: each `(from, to)`.
-    Move { pairs: Vec<(PathBuf, PathBuf)> },
+    Move {
+        /// Old and new path of each moved item.
+        pairs: Vec<(PathBuf, PathBuf)>,
+    },
     /// Items were copied: each `(source, new_copy)`.
-    Copy { pairs: Vec<(PathBuf, PathBuf)> },
+    Copy {
+        /// Source and new copy of each copied item.
+        pairs: Vec<(PathBuf, PathBuf)>,
+    },
     /// Items were deleted *to the trash* (restorable only on some platforms).
-    Delete { paths: Vec<PathBuf> },
+    Delete {
+        /// The deleted items.
+        paths: Vec<PathBuf>,
+    },
     /// `archive` was extracted into the new folder `dest`.
-    Extract { archive: PathBuf, dest: PathBuf },
+    Extract {
+        /// The archive that was extracted.
+        archive: PathBuf,
+        /// The folder it was extracted into.
+        dest: PathBuf,
+    },
     /// Several entries undone together (bulk rename).
     Batch(Vec<UndoEntry>),
 }
@@ -320,7 +344,9 @@ fn apply_redo(fs: &dyn FileSystem, entry: &UndoEntry) -> Result<Redone, String> 
 /// stands for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BulkRenameSession {
+    /// The temporary file the user edits, one name per line.
     pub file: PathBuf,
+    /// The entries being renamed, in the file's line order.
     pub sources: Vec<PathBuf>,
 }
 

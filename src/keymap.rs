@@ -30,7 +30,9 @@ pub enum ChordMods {
 /// One physical key plus a modifier rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct KeyChord {
+    /// The key.
     pub code: KeyCode,
+    /// Which modifiers must be held with it.
     pub mods: ChordMods,
 }
 
@@ -231,7 +233,9 @@ impl fmt::Display for KeyChord {
 /// A key string that could not be understood.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeymapError {
+    /// The key string as written.
     pub input: String,
+    /// Why it was rejected.
     pub reason: String,
 }
 

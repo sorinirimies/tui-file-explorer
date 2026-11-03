@@ -17,16 +17,35 @@ use crate::filesystem::FileSystem;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BulkRenameError {
     /// The number of lines changed (lines must not be added or removed).
-    LineCount { expected: usize, found: usize },
+    LineCount {
+        /// Lines written to the file.
+        expected: usize,
+        /// Lines read back.
+        found: usize,
+    },
     /// A line was blanked.
-    EmptyName { line: usize },
+    EmptyName {
+        /// 1-based line number.
+        line: usize,
+    },
     /// A name contains a path separator (moving between directories is not
     /// supported) or is `.` / `..`.
-    InvalidName { line: usize, name: String },
+    InvalidName {
+        /// 1-based line number.
+        line: usize,
+        /// The rejected name.
+        name: String,
+    },
     /// Two entries would end up with the same name.
-    Duplicate { name: String },
+    Duplicate {
+        /// The name used twice.
+        name: String,
+    },
     /// A new name is already taken by an entry that is not being renamed.
-    Exists { name: String },
+    Exists {
+        /// The name that is taken.
+        name: String,
+    },
 }
 
 impl fmt::Display for BulkRenameError {
@@ -53,7 +72,9 @@ impl std::error::Error for BulkRenameError {}
 /// One validated rename.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenameStep {
+    /// Current path.
     pub from: PathBuf,
+    /// New path.
     pub to: PathBuf,
 }
 

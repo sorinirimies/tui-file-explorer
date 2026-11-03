@@ -105,8 +105,13 @@ pub enum DualPaneOutcome {
     MkdirCreated(PathBuf),
     /// A new empty file was successfully created at the given path.
     TouchCreated(PathBuf),
-    /// An entry was successfully renamed; contains the new path.
-    RenameCompleted { from: PathBuf, to: PathBuf },
+    /// An entry was successfully renamed.
+    RenameCompleted {
+        /// The old path.
+        from: PathBuf,
+        /// The new path.
+        to: PathBuf,
+    },
 }
 
 impl From<ExplorerOutcome> for DualPaneOutcome {
@@ -128,11 +133,17 @@ impl From<ExplorerOutcome> for DualPaneOutcome {
 /// Semantic command accepted by [`DualPane::handle_command`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DualPaneCommand {
+    /// Send a command to the active pane.
     Explorer(ExplorerCommand),
+    /// Move focus to the other pane.
     NextPane,
+    /// Move focus back to the other pane.
     PreviousPane,
+    /// Focus the left pane.
     FocusLeft,
+    /// Focus the right pane.
     FocusRight,
+    /// Show only the active pane, or both panes again.
     ToggleSinglePane,
 }
 

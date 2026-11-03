@@ -1,3 +1,7 @@
+//! Filesystem backends: the [`FileSystem`] trait the explorer browses through,
+//! the local and trash-backed implementations, and [`VirtualEntry`] for
+//! virtual backends.
+
 use std::{
     fmt, fs, io,
     path::{Path, PathBuf},
@@ -11,17 +15,30 @@ use crate::{FsEntry, types::DiskUsage};
 /// Implement this trait to browse an in-memory, remote, archive, or otherwise
 /// virtual filesystem while keeping the same state machine and renderer.
 pub trait FileSystem: fmt::Debug + Send + Sync {
+    /// List the entries of the directory at `path`.
     fn read_dir(&self, path: &Path) -> io::Result<Vec<FsEntry>>;
+    /// Create the directory at `path` and any missing parents.
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
+    /// Create an empty file at `path`.
     fn create_file(&self, path: &Path) -> io::Result<()>;
+    /// Rename or move `source` to `destination`.
     fn rename(&self, source: &Path, destination: &Path) -> io::Result<()>;
+    /// Copy the file `source` to `destination`.
     fn copy_file(&self, source: &Path, destination: &Path) -> io::Result<()>;
+    /// Copy the directory `source` and everything under it to `destination`.
     fn copy_dir(&self, source: &Path, destination: &Path) -> io::Result<()>;
+    /// Remove the file at `path`.
     fn remove_file(&self, path: &Path) -> io::Result<()>;
+    /// Remove the directory at `path` and everything under it.
     fn remove_dir_all(&self, path: &Path) -> io::Result<()>;
+    /// `true` when something exists at `path`.
     fn exists(&self, path: &Path) -> bool;
+    /// `true` when `path` is a directory.
     fn is_dir(&self, path: &Path) -> bool;
+    /// Space on the volume holding `path`, or `None` when unknown.
     fn disk_usage(&self, path: &Path) -> Option<DiskUsage>;
+    /// Total size in bytes of the files under `path`, and whether the walk
+    /// stopped early (then the size is a lower bound).
     fn dir_size(&self, path: &Path) -> (u64, bool);
 
     /// Number of immediate children of the directory at `path`.
@@ -54,6 +71,7 @@ pub trait FileSystem: fmt::Debug + Send + Sync {
     }
 }
 
+/// A [`FileSystem`] shared between panes and threads.
 pub type SharedFileSystem = Arc<dyn FileSystem>;
 
 /// Native local-filesystem backend.
@@ -243,6 +261,7 @@ pub fn local_filesystem(use_trash: bool) -> SharedFileSystem {
     Arc::new(StdFileSystem)
 }
 
+/// The local filesystem; removals delete for good.
 #[must_use]
 pub fn std_filesystem() -> SharedFileSystem {
     Arc::new(StdFileSystem)
@@ -251,11 +270,17 @@ pub fn std_filesystem() -> SharedFileSystem {
 /// Convenience type for virtual backends that need to construct entries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VirtualEntry {
+    /// File name shown in the list.
     pub name: String,
+    /// Full path of the entry.
     pub path: PathBuf,
+    /// `true` for directories.
     pub is_dir: bool,
+    /// Size in bytes; `None` for directories or when unknown.
     pub size: Option<u64>,
+    /// Number of direct children for directories, if known.
     pub item_count: Option<usize>,
+    /// Lower-case extension without the dot; empty when there is none.
     pub extension: String,
 }
 

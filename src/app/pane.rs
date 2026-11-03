@@ -8,6 +8,7 @@
 use super::*;
 
 impl App {
+    /// The pane with keyboard focus.
     #[must_use]
     pub fn active_pane(&self) -> &FileExplorer {
         &self.panes[self.active_idx]
