@@ -1,8 +1,8 @@
 //! Integration tests for shared `tui-nuances` theming.
-use ratatui::{backend::TestBackend, style::Color, Terminal};
+use ratatui::{Terminal, backend::TestBackend, style::Color};
 use tui_file_explorer::{
-    render_dual_pane_nuanced, render_dual_pane_themed, render_nuanced, render_themed, DualPane,
-    FileExplorer, NuancesTheme, Theme, ThemeBuilder, ThemeProvider, Themed,
+    DualPane, FileExplorer, NuancesTheme, Theme, ThemeBuilder, ThemeProvider, Themed,
+    render_dual_pane_nuanced, render_dual_pane_themed, render_nuanced, render_themed,
 };
 
 struct App;

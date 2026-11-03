@@ -2,10 +2,10 @@
 //! archive extraction, git column.
 
 use super::*;
-use crate::{filesystem::StdFileSystem, AppOptions};
+use crate::{AppOptions, filesystem::StdFileSystem};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use std::{fs, time::Duration};
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -247,10 +247,11 @@ fn undo_with_empty_history_just_notifies() {
     let tmp = tree();
     let mut app = app_in(tmp.path());
     press(&mut app, KeyCode::Char('u'));
-    assert!(app
-        .snackbar
-        .as_ref()
-        .is_some_and(|s| s.message.contains("Nothing to undo")));
+    assert!(
+        app.snackbar
+            .as_ref()
+            .is_some_and(|s| s.message.contains("Nothing to undo"))
+    );
 }
 
 #[test]
@@ -373,10 +374,11 @@ fn undoing_a_trash_delete_reports_when_the_platform_cannot_restore() {
     });
     app.undo();
     // StdFileSystem cannot restore from a trash.
-    assert!(app
-        .snackbar
-        .as_ref()
-        .is_some_and(|s| s.is_error && s.message.contains("restore")));
+    assert!(
+        app.snackbar
+            .as_ref()
+            .is_some_and(|s| s.is_error && s.message.contains("restore"))
+    );
 }
 
 #[test]
@@ -425,12 +427,14 @@ fn apply_undo_rename_checks_both_ends() {
 
 #[test]
 fn descriptions_name_the_action() {
-    assert!(UndoEntry::Rename {
-        from: "/a".into(),
-        to: "/b".into()
-    }
-    .describe()
-    .contains("a → b"));
+    assert!(
+        UndoEntry::Rename {
+            from: "/a".into(),
+            to: "/b".into()
+        }
+        .describe()
+        .contains("a → b")
+    );
     assert!(UndoEntry::Batch(vec![]).describe().contains("0 change"));
 }
 
@@ -736,10 +740,11 @@ fn redo_with_nothing_undone_just_notifies() {
     let tmp = tempdir().unwrap();
     let mut app = app_in(tmp.path());
     ctrl_r(&mut app);
-    assert!(app
-        .snackbar
-        .as_ref()
-        .is_some_and(|s| s.message.contains("Nothing to redo")));
+    assert!(
+        app.snackbar
+            .as_ref()
+            .is_some_and(|s| s.message.contains("Nothing to redo"))
+    );
 }
 
 #[test]

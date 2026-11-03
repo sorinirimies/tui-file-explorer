@@ -192,28 +192,94 @@ const SENTINEL: &str = "# tfe-shell-init";
 /// (the directory does not exist) and leave the shell in its current directory.
 pub const SOURCE_DIRECTIVE_PREFIX: &str = "source:";
 
+// Shell wrappers that `tfe --init <shell>` installs. They are Rust constants, so
+// the crate ships no shell script files. `{{SENTINEL}}` is replaced with the
+// marker comment.
+
+/// bash / zsh: loop over every output line. Lines beginning with
+/// `source:` are sourced in the current shell; any other non-empty line is
+/// treated as a `cd` target.
+const BASH: &str = r#"{{SENTINEL}}
+tfe() {
+    local line
+    while IFS= read -r line; do
+        case "$line" in
+            source:*) source "${line#source:}" ;;
+            ?*)       cd "$line" ;;
+        esac
+    done < <(command tfe "$@")
+}
+"#;
+
+/// fish: same protocol as bash.
+const FISH: &str = r#"{{SENTINEL}}
+function tfe
+    for line in (command tfe $argv | string split0 | string split "\n")
+        if string match -q 'source:*' -- $line
+            source (string replace 'source:' '' -- $line)
+        else if test -n "$line"
+            cd $line
+        end
+    end
+end
+"#;
+
+/// PowerShell: same protocol as bash.
+const PWSH: &str = r#"{{SENTINEL}}
+function tfe {
+    & (Get-Command tfe -CommandType Application).Source @args | ForEach-Object {
+        if ($_ -like 'source:*') { . ($_ -replace '^source:', '') }
+        elseif ($_)              { Set-Location $_ }
+    }
+}
+"#;
+
+/// Nushell: `def --env` is required so `cd` propagates to the caller;
+/// `--wrapped` forwards all flags unchanged. `source` is a parse-time keyword
+/// and cannot take a runtime string, so the `source:` protocol is
+/// intentionally not handled here.
+const NU: &str = r#"{{SENTINEL}}
+# tfe wrapper: cd to the directory printed by tfe on exit.
+# def --env is required so the cd takes effect in the caller's shell.
+def --env --wrapped tfe [...rest] {
+    let dir = (^tfe ...$rest | str trim)
+    if ($dir | is-not-empty) { cd $dir }
+}
+"#;
+
 pub fn snippet(shell: Shell) -> String {
-    // Templates live next to this file so they can be read, diffed and
-    // shellchecked as real scripts. `{{SENTINEL}}` is replaced with the
-    // marker comment; every template starts with a blank line so the snippet
-    // is cleanly separated from whatever precedes it in the rc file.
+    // A leading newline separates the snippet from whatever precedes it in
+    // the rc file.
     let template = match shell {
-        // bash / zsh: loop over every output line. Lines beginning with
-        // "source:" are sourced in the current shell; any other non-empty
-        // line is treated as a cd target.
-        Shell::Bash | Shell::Zsh => include_str!("shell_init/templates/tfe.bash"),
-        Shell::Fish => include_str!("shell_init/templates/tfe.fish"),
-        Shell::Pwsh => include_str!("shell_init/templates/tfe.ps1"),
-        // Nushell: `def --env` is required so `cd` propagates to the caller;
-        // `--wrapped` forwards all flags unchanged. `source` is a parse-time
-        // keyword and cannot take a runtime string, so the `source:` protocol
-        // is intentionally not handled here.
-        Shell::Nu => include_str!("shell_init/templates/tfe.nu"),
+        Shell::Bash | Shell::Zsh => BASH,
+        Shell::Fish => FISH,
+        Shell::Pwsh => PWSH,
+        Shell::Nu => NU,
     };
     format!("\n{}", template.replace("{{SENTINEL}}", SENTINEL))
 }
 
 // ── Rc-file path ──────────────────────────────────────────────────────────────
+
+/// PowerShell rc file: `$PROFILE` when PowerShell set it, otherwise the
+/// conventional profile path under `home`.
+fn pwsh_rc_path(profile: Option<&Path>, home: Option<&Path>) -> Option<PathBuf> {
+    if let Some(profile) = profile {
+        return Some(profile.to_path_buf());
+    }
+    home.map(|h| {
+        if cfg!(windows) {
+            h.join("Documents")
+                .join("PowerShell")
+                .join("Microsoft.PowerShell_profile.ps1")
+        } else {
+            // PowerShell on Linux/macOS uses ~/.config/powershell
+            h.join(".config")
+                .join("powershell")
+                .join("Microsoft.PowerShell_profile.ps1")
+        }
+    })
+}
 
 /// Return the default rc-file path for `shell`.
 ///
@@ -243,10 +309,10 @@ pub fn rc_path_with(
         // bash: prefer ~/.bash_profile when it already exists (common on macOS),
         // because bash reads it for interactive login shells and skips .bashrc.
         Shell::Bash => {
-            if let Some(bp) = bash_profile {
-                if bp.exists() {
-                    return Some(bp.to_path_buf());
-                }
+            if let Some(bp) = bash_profile
+                && bp.exists()
+            {
+                return Some(bp.to_path_buf());
             }
             home.map(|h| h.join(".bashrc"))
         }
@@ -268,10 +334,10 @@ pub fn rc_path_with(
                 if zshrc.exists() {
                     return Some(zshrc);
                 }
-                if let Some(env) = zshenv {
-                    if env.exists() {
-                        return Some(env.to_path_buf());
-                    }
+                if let Some(env) = zshenv
+                    && env.exists()
+                {
+                    return Some(env.to_path_buf());
                 }
                 // Neither exists — create .zshrc fresh.
                 return Some(zshrc);
@@ -284,25 +350,7 @@ pub fn rc_path_with(
                 .or_else(|| home.map(|h| h.join(".config")))?;
             Some(config.join("fish/functions/tfe.fish"))
         }
-        Shell::Pwsh => {
-            // Use $PROFILE when available (set by PowerShell itself).
-            // Fall back to the conventional Documents\PowerShell path under $HOME.
-            if let Some(profile) = std::env::var_os("PROFILE") {
-                return Some(PathBuf::from(profile));
-            }
-            home.map(|h| {
-                if cfg!(windows) {
-                    h.join("Documents")
-                        .join("PowerShell")
-                        .join("Microsoft.PowerShell_profile.ps1")
-                } else {
-                    // PowerShell on Linux/macOS uses ~/.config/powershell
-                    h.join(".config")
-                        .join("powershell")
-                        .join("Microsoft.PowerShell_profile.ps1")
-                }
-            })
-        }
+        Shell::Pwsh => pwsh_rc_path(std::env::var_os("PROFILE").as_deref().map(Path::new), home),
         // Nushell: <config-dir>/nushell/config.nu
         // The config dir is platform-dependent (see nu_config_dir_default).
         // An explicit `nu_config_dir` override takes priority so tests stay
@@ -394,10 +442,10 @@ pub fn is_installed(path: &Path) -> bool {
 /// Returns an [`io::Error`] if the parent directory cannot be created or the
 /// file cannot be opened for appending.
 pub fn install(shell: Shell, rc: &Path) -> io::Result<()> {
-    if let Some(parent) = rc.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = rc.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)?;
     }
     let mut file = fs::OpenOptions::new().create(true).append(true).open(rc)?;
     file.write_all(snippet(shell).as_bytes())?;
@@ -511,10 +559,11 @@ pub(crate) fn auto_install_with(
             if let Some(profile) = std::env::var_os("PROFILE") {
                 vec![PathBuf::from(profile)]
             } else if let Some(h) = home {
-                vec![h
-                    .join(".config")
-                    .join("powershell")
-                    .join("Microsoft.PowerShell_profile.ps1")]
+                vec![
+                    h.join(".config")
+                        .join("powershell")
+                        .join("Microsoft.PowerShell_profile.ps1"),
+                ]
             } else {
                 vec![]
             }
@@ -612,17 +661,17 @@ pub(crate) fn install_or_print_to(
     // On Windows, only PowerShell and Nushell are supported for --init.
     // CMD has no equivalent of shell functions.  WSL users should run the
     // Linux tfe binary inside WSL and use tfe --init bash/zsh/fish there.
-    if cfg!(windows) {
-        if let Some(s) = shell {
-            if s != Shell::Pwsh && s != Shell::Nu {
-                eprintln!(
-                    "tfe: on Windows only PowerShell and Nushell are supported.\n\
+    if cfg!(windows)
+        && let Some(s) = shell
+        && s != Shell::Pwsh
+        && s != Shell::Nu
+    {
+        eprintln!(
+            "tfe: on Windows only PowerShell and Nushell are supported.\n\
                      Use: tfe --init powershell   or   tfe --init nushell\n\
                      For WSL (bash/zsh/fish) run tfe --init <shell> inside WSL."
-                );
-                return InitOutcome::UnknownShell;
-            }
-        }
+        );
+        return InitOutcome::UnknownShell;
     }
 
     // Step 1 — resolve shell.

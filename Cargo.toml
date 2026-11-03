@@ -1,24 +1,27 @@
 [package]
 name         = "tui-file-explorer"
 version      = "4.0.0"
-edition      = "2021"
+edition      = "2024"
 rust-version = "1.90"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
 license      = "MIT"
 repository   = "https://github.com/sorinirimies/tui-file-explorer"
+homepage     = "https://github.com/sorinirimies/tui-file-explorer"
+documentation = "https://docs.rs/tui-file-explorer"
 description  = "Embeddable keyboard-driven multi-pane file explorer for Ratatui"
 categories   = ["command-line-utilities", "filesystem"]
 keywords     = ["tui", "ratatui", "file-explorer", "widget", "terminal"]
 readme       = "README.md"
-exclude      = [
-    "target/",
-    ".gitignore",
-    "justfile",
-    "cliff.toml",
-    "scripts/",
-    ".gitea/",
-    "fuzz/",
-    "examples/vhs/generated/",
+# Ship only what builds and documents the crate: no workflows, scripts,
+# VHS tapes or demo media.
+include      = [
+    "/src/**/*.rs",
+    "/examples/*.rs",
+    "/tests/*.rs",
+    "/Cargo.toml",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE",
 ]
 
 # ── Features ──────────────────────────────────────────────────────────────────
@@ -111,3 +114,16 @@ required-features = ["full-app"]
 name = "embed"
 path = "examples/embed.rs"
 required-features = ["full-app"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unwrap_used = "warn"

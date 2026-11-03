@@ -692,7 +692,7 @@ fn app_without_trash_support_never_enables_it() {
 // ── side panels (render smoke tests) ──────────────────────────────────────
 
 fn render_panel(f: impl Fn(&mut ratatui::Frame, ratatui::layout::Rect, &crate::App)) -> String {
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     let app = crate::App::new(crate::AppOptions::default());
     let mut term = Terminal::new(TestBackend::new(60, 40)).unwrap();
     term.draw(|frame| f(frame, frame.area(), &app)).unwrap();
@@ -721,7 +721,7 @@ fn options_panel_renders_without_panic() {
 
 #[test]
 fn panels_survive_tiny_areas() {
-    use ratatui::{backend::TestBackend, layout::Rect, Terminal};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
     let app = crate::App::new(crate::AppOptions::default());
     let mut term = Terminal::new(TestBackend::new(10, 3)).unwrap();
     term.draw(|f| {

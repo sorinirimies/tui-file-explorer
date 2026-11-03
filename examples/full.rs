@@ -26,10 +26,10 @@ use std::{
 use crossterm::{
     event::{self, DisableMouseCapture, Event},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
-use tui_file_explorer::{draw, App, AppOptions, Editor};
+use ratatui::{Terminal, backend::CrosstermBackend};
+use tui_file_explorer::{App, AppOptions, Editor, draw};
 
 fn main() {
     match run() {
@@ -135,7 +135,6 @@ fn open_in_editor(
 
     #[cfg(unix)]
     {
-        use std::os::unix::io::{FromRawFd, IntoRawFd};
         let tty = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -143,12 +142,9 @@ fn open_in_editor(
         let mut cmd = std::process::Command::new(binary);
         cmd.arg(path);
         if let Ok(tty_file) = tty {
-            let tty_fd = tty_file.into_raw_fd();
-            unsafe {
-                let stdin_tty = std::fs::File::from_raw_fd(libc::dup(tty_fd));
-                let stdout_tty = std::fs::File::from_raw_fd(libc::dup(tty_fd));
-                let stderr_tty = std::fs::File::from_raw_fd(tty_fd);
-                cmd.stdin(stdin_tty).stdout(stdout_tty).stderr(stderr_tty);
+            // `try_clone` dup()s the descriptor, so no `unsafe` is needed.
+            if let (Ok(stdin_tty), Ok(stdout_tty)) = (tty_file.try_clone(), tty_file.try_clone()) {
+                cmd.stdin(stdin_tty).stdout(stdout_tty).stderr(tty_file);
             }
         }
         let _ = cmd.status();

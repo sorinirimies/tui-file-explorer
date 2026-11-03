@@ -15,11 +15,11 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
 
 use crate::palette::Theme;
@@ -62,6 +62,7 @@ fn is_likely_binary(data: &[u8]) -> bool {
 // ── Preview content types ─────────────────────────────────────────────────────
 
 /// The payload of a preview pane.
+#[derive(Debug)]
 pub enum PreviewContent {
     /// UTF-8 text with line data.
     Text(TextPreview),
@@ -87,6 +88,7 @@ pub enum PreviewContent {
 }
 
 /// Text file preview data.
+#[derive(Debug)]
 pub struct TextPreview {
     /// Individual lines (no trailing newline).
     pub lines: Vec<String>,
@@ -103,7 +105,15 @@ pub struct ImagePreview {
     pub protocol: std::cell::RefCell<ratatui_image::protocol::StatefulProtocol>,
 }
 
+// `StatefulProtocol` has no `Debug`; show the type without the protocol state.
+impl std::fmt::Debug for ImagePreview {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImagePreview").finish_non_exhaustive()
+    }
+}
+
 /// Binary hex-dump preview data.
+#[derive(Debug)]
 pub struct BinaryPreview {
     /// Pre-formatted hex lines (offset + hex + ASCII).
     pub hex_lines: Vec<String>,
@@ -112,6 +122,7 @@ pub struct BinaryPreview {
 }
 
 /// Directory statistics.
+#[derive(Debug)]
 pub struct DirPreview {
     /// Number of direct children.
     pub entry_count: usize,
@@ -158,6 +169,7 @@ impl Loaded {
 
 /// Owns the cached preview content, the path it was generated for, and the
 /// current scroll offset.
+#[derive(Debug)]
 pub struct PreviewState {
     /// Path for which the current content was loaded, or `None`.
     pub cached_path: Option<PathBuf>,
@@ -330,10 +342,10 @@ fn load_preview(path: &Path) -> Loaded {
     }
 
     // Check for image extension.
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        if is_image_extension(ext) {
-            return load_image_preview(path);
-        }
+    if let Some(ext) = path.extension().and_then(|e| e.to_str())
+        && is_image_extension(ext)
+    {
+        return load_image_preview(path);
     }
 
     // Archives are listed, not dumped as text/hex.

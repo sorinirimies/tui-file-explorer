@@ -79,10 +79,11 @@ fn lists_zip_contents() {
     assert_eq!(l.total_entries, 3);
     assert_eq!(l.total_size, 10);
     assert!(l.entries.iter().any(|e| e.name == "docs/" && e.is_dir));
-    assert!(l
-        .entries
-        .iter()
-        .any(|e| e.name == "docs/readme.txt" && e.size == 9));
+    assert!(
+        l.entries
+            .iter()
+            .any(|e| e.name == "docs/readme.txt" && e.size == 9)
+    );
 }
 
 #[test]

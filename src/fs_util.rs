@@ -89,6 +89,7 @@ pub fn resolve_output_path(path: PathBuf, print_dir: bool) -> PathBuf {
 /// [`crate::FsEntry::item_count`] (directories).
 #[cfg(unix)]
 #[must_use]
+#[allow(unsafe_code)] // FFI; see the SAFETY comment below
 pub fn disk_usage(path: &Path) -> Option<DiskUsage> {
     use std::os::unix::ffi::OsStrExt;
 
@@ -116,6 +117,7 @@ pub fn disk_usage(path: &Path) -> Option<DiskUsage> {
 
 /// Windows implementation using `GetDiskFreeSpaceExW`.
 #[cfg(windows)]
+#[allow(unsafe_code)] // FFI; see the SAFETY comment below
 pub fn disk_usage(path: &Path) -> Option<DiskUsage> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;

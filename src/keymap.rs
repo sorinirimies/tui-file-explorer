@@ -131,7 +131,7 @@ impl KeyChord {
                     return Err(KeymapError::new(
                         text,
                         format!("unknown modifier '{other}'"),
-                    ))
+                    ));
                 }
             };
         }
@@ -140,12 +140,11 @@ impl KeyChord {
         let mut code = parse_key_name(key_part)
             .ok_or_else(|| KeymapError::new(text, format!("unknown key '{key_part}'")))?;
         // shift+g and G are the same chord.
-        if mods.contains(KeyModifiers::SHIFT) {
-            if let KeyCode::Char(c) = code {
-                if c.is_alphabetic() {
-                    code = KeyCode::Char(c.to_ascii_uppercase());
-                }
-            }
+        if mods.contains(KeyModifiers::SHIFT)
+            && let KeyCode::Char(c) = code
+            && c.is_alphabetic()
+        {
+            code = KeyCode::Char(c.to_ascii_uppercase());
         }
         if mods.is_empty() {
             Ok(Self::plain(code))
@@ -389,7 +388,7 @@ impl Keymap {
 mod config;
 #[cfg(feature = "full-app")]
 pub use config::{
-    default_keymap_toml, keymap_path, load_keymap_config, parse_keymap_config, KeymapConfig,
+    KeymapConfig, default_keymap_toml, keymap_path, load_keymap_config, parse_keymap_config,
 };
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 //! Unit tests for [`super`].
 
 use super::*;
-use ratatui::{backend::TestBackend, Terminal};
+use ratatui::{Terminal, backend::TestBackend};
 
 // ── Helpers ───────────────────────────────────────────────────────────
 

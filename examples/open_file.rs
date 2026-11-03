@@ -47,17 +47,17 @@ use std::{
 use crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
-    Frame, Terminal,
 };
-use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, Theme};
+use tui_file_explorer::{ExplorerOutcome, FileExplorer, Theme, render_themed};
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
@@ -87,22 +87,22 @@ impl App {
 /// Priority: CLI arg → $VISUAL → $EDITOR → "vi".
 fn resolve_editor() -> String {
     // 1. Explicit CLI argument.
-    if let Some(arg) = std::env::args().nth(1) {
-        if !arg.is_empty() {
-            return arg;
-        }
+    if let Some(arg) = std::env::args().nth(1)
+        && !arg.is_empty()
+    {
+        return arg;
     }
     // 2. $VISUAL
-    if let Ok(v) = std::env::var("VISUAL") {
-        if !v.is_empty() {
-            return v;
-        }
+    if let Ok(v) = std::env::var("VISUAL")
+        && !v.is_empty()
+    {
+        return v;
     }
     // 3. $EDITOR
-    if let Ok(e) = std::env::var("EDITOR") {
-        if !e.is_empty() {
-            return e;
-        }
+    if let Ok(e) = std::env::var("EDITOR")
+        && !e.is_empty()
+    {
+        return e;
     }
     // 4. Fallback
     "vi".to_string()
@@ -202,13 +202,11 @@ fn event_loop(
                         cmd.arg(&path);
 
                         if let Ok(tty_file) = tty {
-                            use std::os::unix::io::{FromRawFd, IntoRawFd};
-                            let tty_fd = tty_file.into_raw_fd();
-                            unsafe {
-                                let stdin_tty = std::fs::File::from_raw_fd(libc::dup(tty_fd));
-                                let stdout_tty = std::fs::File::from_raw_fd(libc::dup(tty_fd));
-                                let stderr_tty = std::fs::File::from_raw_fd(tty_fd);
-                                cmd.stdin(stdin_tty).stdout(stdout_tty).stderr(stderr_tty);
+                            // `try_clone` dup()s the descriptor, so no `unsafe` is needed.
+                            if let (Ok(stdin_tty), Ok(stdout_tty)) =
+                                (tty_file.try_clone(), tty_file.try_clone())
+                            {
+                                cmd.stdin(stdin_tty).stdout(stdout_tty).stderr(tty_file);
                             }
                         }
                         cmd.status()

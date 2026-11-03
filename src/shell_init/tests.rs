@@ -335,21 +335,18 @@ fn rc_path_zsh_prefers_zshrc_over_zshenv_when_both_exist() {
 #[test]
 #[cfg(not(windows))]
 fn rc_path_powershell_falls_back_to_home_config_on_unix() {
-    std::env::remove_var("PROFILE");
-    let p = rc_path_with(
-        Shell::Pwsh,
-        Some(Path::new("/test/home")),
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let p = pwsh_rc_path(None, Some(Path::new("/test/home"))).unwrap();
     assert_eq!(
         p,
         PathBuf::from("/test/home/.config/powershell/Microsoft.PowerShell_profile.ps1")
     );
+}
+
+#[test]
+fn rc_path_powershell_prefers_profile_when_set() {
+    let profile = Path::new("/custom/profile.ps1");
+    let p = pwsh_rc_path(Some(profile), Some(Path::new("/test/home"))).unwrap();
+    assert_eq!(p, profile);
 }
 
 #[test]
@@ -387,11 +384,10 @@ fn rc_path_fish_falls_back_to_home_config() {
 
 #[test]
 fn rc_path_returns_none_when_home_unset() {
-    std::env::remove_var("PROFILE");
     assert!(rc_path_with(Shell::Bash, None, None, None, None, None, None).is_none());
     assert!(rc_path_with(Shell::Zsh, None, None, None, None, None, None).is_none());
     assert!(rc_path_with(Shell::Fish, None, None, None, None, None, None).is_none());
-    assert!(rc_path_with(Shell::Pwsh, None, None, None, None, None, None).is_none());
+    assert!(pwsh_rc_path(None, None).is_none());
     assert!(rc_path_with(Shell::Nu, None, None, None, None, None, None).is_none());
 }
 
@@ -758,6 +754,7 @@ fn install_or_print_returns_printed_when_rc_not_writable() {
         // cannot be made to work reliably in CI containers that run as
         // root.  Skip rather than produce a spurious failure.
         // SAFETY: getuid() is always safe to call.
+        #[allow(unsafe_code)]
         let uid = unsafe { libc::getuid() };
         if uid == 0 {
             return;

@@ -30,17 +30,17 @@ use std::{
 use crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
-    Frame, Terminal,
 };
-use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, Theme};
+use tui_file_explorer::{ExplorerOutcome, FileExplorer, Theme, render_themed};
 
 // ── App state ─────────────────────────────────────────────────────────────────
 

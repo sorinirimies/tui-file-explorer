@@ -263,15 +263,15 @@ impl App {
             }
             // Open inline editor for the current file
             KeyCode::Char('i') if key.modifiers.is_empty() => {
-                if let Some(entry) = self.active_pane().current_entry() {
-                    if !entry.is_dir {
-                        match InlineEditor::open(&entry.path) {
-                            Ok(ed) => {
-                                self.inline_editor = Some(ed);
-                            }
-                            Err(e) => {
-                                self.notify_error(format!("Cannot edit: {e}"));
-                            }
+                if let Some(entry) = self.active_pane().current_entry()
+                    && !entry.is_dir
+                {
+                    match InlineEditor::open(&entry.path) {
+                        Ok(ed) => {
+                            self.inline_editor = Some(ed);
+                        }
+                        Err(e) => {
+                            self.notify_error(format!("Cannot edit: {e}"));
                         }
                     }
                 }
@@ -360,12 +360,12 @@ impl App {
             // Open the highlighted file in the configured editor.
             KeyCode::Char('e') if key.modifiers.is_empty() => {
                 if self.editor != Editor::None {
-                    if let Some(entry) = self.active_pane().current_entry() {
-                        if !entry.is_dir {
-                            self.open_with_editor = Some(entry.path.clone());
-                        }
-                        // Silently ignore dirs — no status message per spec.
+                    if let Some(entry) = self.active_pane().current_entry()
+                        && !entry.is_dir
+                    {
+                        self.open_with_editor = Some(entry.path.clone());
                     }
+                    // Silently ignore dirs — no status message per spec.
                 } else {
                     // No editor configured — tell the user how to set one.
                     self.notify_error("No editor set — open Editor picker (Shift + E) to pick one");

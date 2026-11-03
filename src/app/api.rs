@@ -233,12 +233,11 @@ impl KeyBindings {
             // Uppercase letters arrive with or without SHIFT depending on the
             // terminal; accept both.
             let mut mods = vec![event.modifiers];
-            if matches!(chord.mods, crate::ChordMods::Plain | crate::ChordMods::Any) {
-                if let KeyCode::Char(c) = event.code {
-                    if c.is_uppercase() {
-                        mods.push(KeyModifiers::NONE);
-                    }
-                }
+            if matches!(chord.mods, crate::ChordMods::Plain | crate::ChordMods::Any)
+                && let KeyCode::Char(c) = event.code
+                && c.is_uppercase()
+            {
+                mods.push(KeyModifiers::NONE);
             }
             for m in mods {
                 self = self.bind(event.code, m, command);
@@ -694,13 +693,13 @@ impl App {
                 .clone()
                 .map_or(AppOutcome::Dismissed, AppOutcome::Selected));
         }
-        if self.open_with_editor != previous_editor_request {
-            if let Some(path) = self.open_with_editor.clone() {
-                return Ok(AppOutcome::OpenEditor {
-                    path,
-                    editor: self.editor.clone(),
-                });
-            }
+        if self.open_with_editor != previous_editor_request
+            && let Some(path) = self.open_with_editor.clone()
+        {
+            return Ok(AppOutcome::OpenEditor {
+                path,
+                editor: self.editor.clone(),
+            });
         }
         if events.is_empty() {
             Ok(AppOutcome::Continue)

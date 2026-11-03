@@ -335,22 +335,22 @@ pub mod ui;
 
 pub use dual_pane::{DualPane, DualPaneActive, DualPaneBuilder, DualPaneCommand, DualPaneOutcome};
 pub use explorer::{
-    entry_icon, fmt_size, ExplorerError, FileExplorer, FileExplorerBuilder, PAGE_SIZE,
+    ExplorerError, FileExplorer, FileExplorerBuilder, PAGE_SIZE, entry_icon, fmt_size,
 };
 #[cfg(feature = "trash")]
 pub use filesystem::TrashFileSystem;
 pub use filesystem::{
-    local_filesystem, std_filesystem, FileSystem, SharedFileSystem, StdFileSystem, VirtualEntry,
-    TRASH_SUPPORTED,
+    FileSystem, SharedFileSystem, StdFileSystem, TRASH_SUPPORTED, VirtualEntry, local_filesystem,
+    std_filesystem,
 };
 pub use nuances::{
-    render_dual_pane_nuanced, render_nuanced, NuancesSwitcher, NuancesTheme, ThemeBuilder,
-    ThemeProvider, Themed,
+    NuancesSwitcher, NuancesTheme, ThemeBuilder, ThemeProvider, Themed, render_dual_pane_nuanced,
+    render_nuanced,
 };
 pub use palette::Theme;
 pub use render::{
-    render, render_dual_pane, render_dual_pane_themed, render_themed, FOOTER_HEIGHT, HEADER_HEIGHT,
-    MARK_INDICATOR, SCROLLBAR_CHAR,
+    FOOTER_HEIGHT, HEADER_HEIGHT, MARK_INDICATOR, SCROLLBAR_CHAR, render, render_dual_pane,
+    render_dual_pane_themed, render_themed,
 };
 pub use tui_nuances;
 pub use types::{
@@ -362,31 +362,31 @@ pub use types::{
 
 #[cfg(feature = "full-app")]
 pub use app::{
-    execute_operation, execute_operation_with, execute_operation_with_progress, App, AppBuildError,
-    AppBuilder, AppCommand, AppEvent, AppOptions, AppOutcome, ClipOp, ClipboardItem, CopyProgress,
-    Editor, FileOperation, KeyBinding, KeyBindings, Modal, OperationApplyError, OperationFailure,
-    OperationId, OperationMode, OperationProgress, OperationRequest, OperationResult, PaneOptions,
-    Snackbar,
+    App, AppBuildError, AppBuilder, AppCommand, AppEvent, AppOptions, AppOutcome, ClipOp,
+    ClipboardItem, CopyProgress, Editor, FileOperation, KeyBinding, KeyBindings, Modal,
+    OperationApplyError, OperationFailure, OperationId, OperationMode, OperationProgress,
+    OperationRequest, OperationResult, PaneOptions, Snackbar, execute_operation,
+    execute_operation_with, execute_operation_with_progress,
 };
 pub use fs_util::{copy_dir_all, resolve_output_path};
 pub use git::{GitMark, GitStatus};
-pub use inline_editor::{render_inline_editor, EditorAction, InlineEditor};
+pub use inline_editor::{EditorAction, InlineEditor, render_inline_editor};
+pub use keymap::{ChordMods, KeyChord, Keymap, KeymapError};
 #[cfg(feature = "full-app")]
 pub use keymap::{
-    default_keymap_toml, keymap_path, load_keymap_config, parse_keymap_config, KeymapConfig,
+    KeymapConfig, default_keymap_toml, keymap_path, load_keymap_config, parse_keymap_config,
 };
-pub use keymap::{ChordMods, KeyChord, Keymap, KeymapError};
 #[cfg(feature = "persistence")]
 pub use persistence::{
-    load_state, load_state_from, resolve_theme_idx, save_state, save_state_to, try_load_state_from,
-    try_save_state, AppState,
+    AppState, load_state, load_state_from, resolve_theme_idx, save_state, save_state_to,
+    try_load_state_from, try_save_state,
 };
-pub use picker::{fuzzy_match, render_picker, Picker, PickerAction, PickerItem, PickerKind};
+pub use picker::{Picker, PickerAction, PickerItem, PickerKind, fuzzy_match, render_picker};
 #[cfg(feature = "preview")]
-pub use preview::{render_preview, PreviewContent, PreviewState};
+pub use preview::{PreviewContent, PreviewState, render_preview};
 #[cfg(feature = "full-app")]
 pub use ui::{
-    draw, draw_in, draw_in_with_options, render_action_bar, render_copy_progress,
-    render_editor_panel, render_modal, render_modal_for, render_nav_hints, render_options_panel,
-    render_snackbar, render_theme_panel, AppViewOptions, HintLayout,
+    AppViewOptions, HintLayout, draw, draw_in, draw_in_with_options, render_action_bar,
+    render_copy_progress, render_editor_panel, render_modal, render_modal_for, render_nav_hints,
+    render_options_panel, render_snackbar, render_theme_panel,
 };

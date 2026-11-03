@@ -5,17 +5,17 @@ use std::io;
 use crossterm::{
     event::{self, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     widgets::{Block, Borders, Paragraph},
-    Terminal,
 };
 use tui_file_explorer::{
-    draw_in_with_options, execute_operation, App, AppCommand, AppOutcome, AppViewOptions,
-    KeyBindings, OperationMode, PaneOptions,
+    App, AppCommand, AppOutcome, AppViewOptions, KeyBindings, OperationMode, PaneOptions,
+    draw_in_with_options, execute_operation,
 };
 
 fn main() -> io::Result<()> {

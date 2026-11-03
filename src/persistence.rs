@@ -218,20 +218,20 @@ pub fn try_load_state_from(path: &Path) -> io::Result<AppState> {
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
     // Validate that directory paths still exist on disk.
-    if let Some(ref p) = state.last_dir {
-        if !p.is_dir() {
-            state.last_dir = None;
-        }
+    if let Some(ref p) = state.last_dir
+        && !p.is_dir()
+    {
+        state.last_dir = None;
     }
-    if let Some(ref p) = state.last_dir_right {
-        if !p.is_dir() {
-            state.last_dir_right = None;
-        }
+    if let Some(ref p) = state.last_dir_right
+        && !p.is_dir()
+    {
+        state.last_dir_right = None;
     }
-    if let Some(ref dirs) = state.pane_dirs {
-        if dirs.is_empty() || dirs.iter().any(|d| !d.is_dir()) {
-            state.pane_dirs = None;
-        }
+    if let Some(ref dirs) = state.pane_dirs
+        && (dirs.is_empty() || dirs.iter().any(|d| !d.is_dir()))
+    {
+        state.pane_dirs = None;
     }
 
     Ok(state)

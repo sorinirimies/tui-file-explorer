@@ -33,12 +33,12 @@ use crossterm::event::KeyCode;
 use crossterm::{
     event::{self, DisableMouseCapture, Event},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
+use tui_file_explorer::{ExplorerOutcome, FileExplorer, Theme, render_themed};
 #[cfg(feature = "theme")]
-use tui_file_explorer::{render_nuanced, NuancesSwitcher};
-use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, Theme};
+use tui_file_explorer::{NuancesSwitcher, render_nuanced};
 
 fn main() {
     // Collect optional extension-filter args (e.g. `-- rs toml`).

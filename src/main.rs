@@ -52,20 +52,20 @@ mod shell_init;
 mod term;
 
 use std::{
-    io::{self, stdout, Write},
+    io::{self, Write, stdout},
     path::PathBuf,
     process,
 };
 
 use clap::Parser;
 use tui_file_explorer::{
-    app::Editor, draw, load_state, resolve_output_path, resolve_theme_idx, try_save_state, App,
-    AppOptions, AppState, PreviewState, Theme,
+    App, AppOptions, AppState, PreviewState, Theme, app::Editor, draw, load_state,
+    resolve_output_path, resolve_theme_idx, try_save_state,
 };
 
 use cli::Cli;
-use launch::{open_file_directly, spawn_editor, split_command, Stdio};
-use logger::{vlog, Logger};
+use launch::{Stdio, open_file_directly, spawn_editor, split_command};
+use logger::{Logger, vlog};
 use term::TerminalGuard;
 
 // ── Entry point ───────────────────────────────────────────────────────────────

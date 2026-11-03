@@ -11,19 +11,19 @@
 //! * [`render_action_bar`]  — the bottom status / key-hint bar.
 //! * [`render_modal`]       — the blocking confirmation dialog overlay.
 
-use crate::{render_themed, Theme};
+use crate::{Theme, render_themed};
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
-    Frame,
 };
 
 use crate::app::{App, CopyProgress, Modal, Snackbar};
 use crate::inline_editor::render_inline_editor;
 use crate::preview::render_preview;
-use tui_slider::{style::SliderStyle, Slider, SliderOrientation, SliderState};
+use tui_slider::{Slider, SliderOrientation, SliderState, style::SliderStyle};
 
 // ── Styled-span helpers ───────────────────────────────────────────────────────
 

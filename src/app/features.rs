@@ -305,7 +305,7 @@ fn apply_redo(fs: &dyn FileSystem, entry: &UndoEntry) -> Result<Redone, String> 
                 match apply_redo(fs, e)? {
                     Redone::Items(k) => n += k,
                     Redone::Extract { .. } => {
-                        return Err("cannot redo an extraction inside a batch".into())
+                        return Err("cannot redo an extraction inside a batch".into());
                     }
                 }
             }
@@ -328,6 +328,7 @@ pub struct BulkRenameSession {
 
 /// A running archive extraction.
 #[cfg(feature = "archive")]
+#[derive(Debug)]
 pub(crate) struct ExtractJob {
     archive: PathBuf,
     dest: PathBuf,

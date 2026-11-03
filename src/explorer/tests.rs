@@ -3,7 +3,7 @@
 use super::*;
 use crossterm::event::{KeyEvent, KeyModifiers};
 use std::fs;
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -26,10 +26,12 @@ fn key(code: KeyCode) -> KeyEvent {
 fn new_loads_entries() {
     let tmp = temp_dir_with_files();
     let explorer = FileExplorer::new(tmp.path().to_path_buf(), vec!["iso".into(), "img".into()]);
-    assert!(explorer
-        .entries
-        .iter()
-        .any(|e| e.name == "subdir" && e.is_dir));
+    assert!(
+        explorer
+            .entries
+            .iter()
+            .any(|e| e.name == "subdir" && e.is_dir)
+    );
     assert!(explorer.entries.iter().any(|e| e.name == "ubuntu.iso"));
     assert!(explorer.entries.iter().any(|e| e.name == "debian.img"));
     // .txt excluded by filter
@@ -2408,7 +2410,7 @@ fn try_reload_supersedes_a_pending_background_read() {
 
 #[test]
 fn title_says_loading_while_a_read_is_pending() {
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     let tmp = temp_dir_with_files();
     let (mut explorer, fs) = slow_explorer(tmp.path());
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();

@@ -492,9 +492,10 @@ Use `command tfe` when diagnostics or pipelines must bypass installed shell wrap
 Requires Rust 1.90 or newer. Optional tooling: [`just`](https://github.com/casey/just), [`git-cliff`](https://github.com/orhun/git-cliff), and [`vhs`](https://github.com/charmbracelet/vhs).
 
 ```bash
-just check-all   # format check, clippy with denied warnings, tests
-just test-all    # all features and targets
-just doc         # build and open API docs
+just check-all   # the CI gate: format, clippy with denied warnings, tests, docs, Nu tests
+just test        # Rust tests, all features
+just doc         # API docs, warnings are errors
+just run --help  # run the tfe binary
 just --list      # all project tasks
 ```
 

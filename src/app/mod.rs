@@ -501,6 +501,7 @@ pub enum Modal {
 // ── Snackbar ──────────────────────────────────────────────────────────────────
 
 /// A short-lived notification that floats over the UI and auto-expires.
+#[derive(Debug)]
 pub struct Snackbar {
     /// The message to display.
     pub message: String,
@@ -577,6 +578,7 @@ impl CopyProgress {
     }
 }
 
+#[derive(Debug)]
 pub struct App {
     /// All explorer panes, in left-to-right display order. Always has at
     /// least one entry.
@@ -851,9 +853,9 @@ pub use api::{
 };
 pub use features::{BulkRenameSession, UndoEntry};
 pub use operation::{
-    execute_operation, execute_operation_with, execute_operation_with_progress, FileOperation,
-    OperationApplyError, OperationFailure, OperationId, OperationMode, OperationProgress,
-    OperationRequest, OperationResult,
+    FileOperation, OperationApplyError, OperationFailure, OperationId, OperationMode,
+    OperationProgress, OperationRequest, OperationResult, execute_operation,
+    execute_operation_with, execute_operation_with_progress,
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

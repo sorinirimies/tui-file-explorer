@@ -44,17 +44,17 @@ use std::{
 use crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
-    Frame, Terminal,
 };
-use tui_file_explorer::{render_themed, ExplorerOutcome, FileExplorer, Theme};
+use tui_file_explorer::{ExplorerOutcome, FileExplorer, Theme, render_themed};
 
 // ── Editor catalogue ──────────────────────────────────────────────────────────
 
@@ -318,19 +318,19 @@ fn event_loop(
         // e — open current file in the configured editor.
         if key.code == KeyCode::Char('e') && key.modifiers.is_empty() {
             if let Some(binary) = app.editor.binary() {
-                if let Some(entry) = app.explorer.current_entry() {
-                    if !entry.path.is_dir() {
-                        let path = entry.path.clone();
-                        open_in_editor(terminal, binary, &path)?;
-                        app.explorer.reload();
-                        let name = path
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned();
-                        app.status = format!("Returned from {} -- {name}", app.editor.label());
-                        continue;
-                    }
+                if let Some(entry) = app.explorer.current_entry()
+                    && !entry.path.is_dir()
+                {
+                    let path = entry.path.clone();
+                    open_in_editor(terminal, binary, &path)?;
+                    app.explorer.reload();
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    app.status = format!("Returned from {} -- {name}", app.editor.label());
+                    continue;
                 }
             } else {
                 app.status = "No editor set -- press Shift+E to open the editor picker".to_string();

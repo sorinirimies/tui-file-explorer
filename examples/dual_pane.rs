@@ -47,20 +47,20 @@ use std::{
 use crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
-    Frame, Terminal,
 };
 #[cfg(feature = "theme")]
 use tui_file_explorer::NuancesSwitcher;
 use tui_file_explorer::{
-    render_dual_pane_themed, DualPane, DualPaneActive, DualPaneOutcome, Theme,
+    DualPane, DualPaneActive, DualPaneOutcome, Theme, render_dual_pane_themed,
 };
 
 // ── Entry point ───────────────────────────────────────────────────────────────

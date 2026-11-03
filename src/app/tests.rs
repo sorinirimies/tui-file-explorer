@@ -512,10 +512,10 @@ fn e_key_with_editor_does_not_set_snackbar() {
 
     // When editor != None the handler sets open_with_editor, not a snackbar.
     if app.editor != Editor::None {
-        if let Some(entry) = app.active_pane().current_entry() {
-            if !entry.path.is_dir() {
-                app.open_with_editor = Some(entry.path.clone());
-            }
+        if let Some(entry) = app.active_pane().current_entry()
+            && !entry.path.is_dir()
+        {
+            app.open_with_editor = Some(entry.path.clone());
         }
     } else {
         app.notify_error("No editor set — open Options (Shift + O) and press e to pick one");
@@ -2752,10 +2752,10 @@ fn i_key_opens_inline_editor_on_file() {
     let mut app = make_app(dir.path().to_path_buf());
     // Navigate to the file (skip directories, find the file)
     for _ in 0..app.panes[0].entries.len() {
-        if let Some(e) = app.panes[0].current_entry() {
-            if !e.is_dir {
-                break;
-            }
+        if let Some(e) = app.panes[0].current_entry()
+            && !e.is_dir
+        {
+            break;
         }
         app.panes[0].handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     }
@@ -2773,10 +2773,10 @@ fn i_key_on_dir_does_not_open_editor() {
     let mut app = make_app(dir.path().to_path_buf());
     // Navigate to the directory
     for _ in 0..app.panes[0].entries.len() {
-        if let Some(e) = app.panes[0].current_entry() {
-            if e.is_dir {
-                break;
-            }
+        if let Some(e) = app.panes[0].current_entry()
+            && e.is_dir
+        {
+            break;
         }
         app.panes[0].handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     }
@@ -2792,10 +2792,10 @@ fn inline_editor_esc_closes_editor() {
     std::fs::write(dir.path().join("test.txt"), "content").unwrap();
     let mut app = make_app(dir.path().to_path_buf());
     for _ in 0..app.panes[0].entries.len() {
-        if let Some(e) = app.panes[0].current_entry() {
-            if !e.is_dir {
-                break;
-            }
+        if let Some(e) = app.panes[0].current_entry()
+            && !e.is_dir
+        {
+            break;
         }
         app.panes[0].handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     }
@@ -2814,10 +2814,10 @@ fn inline_editor_intercepts_all_keys() {
     std::fs::write(dir.path().join("test.txt"), "content").unwrap();
     let mut app = make_app(dir.path().to_path_buf());
     for _ in 0..app.panes[0].entries.len() {
-        if let Some(e) = app.panes[0].current_entry() {
-            if !e.is_dir {
-                break;
-            }
+        if let Some(e) = app.panes[0].current_entry()
+            && !e.is_dir
+        {
+            break;
         }
         app.panes[0].handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     }
@@ -3298,10 +3298,11 @@ fn e_without_editor_shows_error_and_with_editor_opens_file() {
     let mut app = make_app(tmp.path().to_path_buf());
     app.editor = Editor::None;
     press(&mut app, KeyCode::Char('e'));
-    assert!(app
-        .snackbar
-        .as_ref()
-        .is_some_and(|s| s.is_error && s.message.contains("No editor set")));
+    assert!(
+        app.snackbar
+            .as_ref()
+            .is_some_and(|s| s.is_error && s.message.contains("No editor set"))
+    );
     assert!(app.open_with_editor.is_none());
 
     app.editor = App::all_editors()

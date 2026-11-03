@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::{types::DiskUsage, FsEntry};
+use crate::{FsEntry, types::DiskUsage};
 
 /// Filesystem backend used by explorer widgets.
 ///
@@ -282,15 +282,17 @@ mod tests {
 
     impl FileSystem for MemoryFileSystem {
         fn read_dir(&self, path: &Path) -> io::Result<Vec<FsEntry>> {
-            Ok(vec![VirtualEntry {
-                name: "virtual.txt".into(),
-                path: path.join("virtual.txt"),
-                is_dir: false,
-                size: Some(7),
-                item_count: None,
-                extension: "txt".into(),
-            }
-            .into()])
+            Ok(vec![
+                VirtualEntry {
+                    name: "virtual.txt".into(),
+                    path: path.join("virtual.txt"),
+                    is_dir: false,
+                    size: Some(7),
+                    item_count: None,
+                    extension: "txt".into(),
+                }
+                .into(),
+            ])
         }
 
         fn create_dir_all(&self, _: &Path) -> io::Result<()> {

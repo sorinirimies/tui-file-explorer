@@ -25,11 +25,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
-use ratatui::Frame;
 
 use crate::palette::Theme;
 
@@ -60,6 +60,7 @@ pub enum EditorAction {
 // ── InlineEditor ──────────────────────────────────────────────────────────────
 
 /// A simple, single-file text editor that lives inside the TUI.
+#[derive(Debug)]
 pub struct InlineEditor {
     /// Lines of the file being edited.
     lines: Vec<String>,

@@ -59,18 +59,18 @@ use std::{
 use crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
-    Frame, Terminal,
 };
 use tui_file_explorer::{
-    render_dual_pane_themed, DualPane, DualPaneActive, DualPaneOutcome, SortMode, Theme,
+    DualPane, DualPaneActive, DualPaneOutcome, SortMode, Theme, render_dual_pane_themed,
 };
 
 // ── Editor ────────────────────────────────────────────────────────────────────
@@ -288,20 +288,20 @@ fn event_loop(
                     DualPaneActive::Left => &app.dual.left,
                     DualPaneActive::Right => &app.dual.right,
                 };
-                if let Some(entry) = active.current_entry() {
-                    if !entry.path.is_dir() {
-                        let path = entry.path.clone();
-                        open_in_editor(terminal, binary, &path)?;
-                        app.dual.left.reload();
-                        app.dual.right.reload();
-                        let fname = path
-                            .file_name()
-                            .unwrap_or_default()
-                            .to_string_lossy()
-                            .into_owned();
-                        app.status = format!("returned from {} — {fname}", app.editor.label());
-                        continue;
-                    }
+                if let Some(entry) = active.current_entry()
+                    && !entry.path.is_dir()
+                {
+                    let path = entry.path.clone();
+                    open_in_editor(terminal, binary, &path)?;
+                    app.dual.left.reload();
+                    app.dual.right.reload();
+                    let fname = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .into_owned();
+                    app.status = format!("returned from {} — {fname}", app.editor.label());
+                    continue;
                 }
             }
             // No editor configured — tell the user how to set one.
@@ -370,7 +370,7 @@ fn open_in_editor(
 ) -> io::Result<()> {
     use crossterm::execute;
     use crossterm::terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
     };
 
     let _ = disable_raw_mode();
@@ -390,13 +390,11 @@ fn open_in_editor(
             let mut cmd = std::process::Command::new(binary);
             cmd.arg(path);
             if let Ok(tty_file) = tty {
-                use std::os::unix::io::{FromRawFd, IntoRawFd};
-                let tty_fd = tty_file.into_raw_fd();
-                unsafe {
-                    let stdin_tty = std::fs::File::from_raw_fd(libc::dup(tty_fd));
-                    let stdout_tty = std::fs::File::from_raw_fd(libc::dup(tty_fd));
-                    let stderr_tty = std::fs::File::from_raw_fd(tty_fd);
-                    cmd.stdin(stdin_tty).stdout(stdout_tty).stderr(stderr_tty);
+                // `try_clone` dup()s the descriptor, so no `unsafe` is needed.
+                if let (Ok(stdin_tty), Ok(stdout_tty)) =
+                    (tty_file.try_clone(), tty_file.try_clone())
+                {
+                    cmd.stdin(stdin_tty).stdout(stdout_tty).stderr(tty_file);
                 }
             }
             cmd.status()

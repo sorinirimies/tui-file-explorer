@@ -1,16 +1,30 @@
-# Git LFS tracking for large binary files
+# Line endings: LF everywhere, also on Windows checkouts (nu, just and YAML care).
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+
+# Demo recordings (VHS GIFs, screen captures) are big: keep them in Git LFS.
+# Enable with `git lfs install` before the first one is committed.
+*.gif filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.webm filter=lfs diff=lfs merge=lfs -text
+
+# Generated: collapse in diffs and the GitHub language stats.
+Cargo.lock linguist-generated=true
+fuzz/Cargo.lock linguist-generated=true
+CHANGELOG.md linguist-generated=true
+
+# This repo: demo media in Git LFS.
 *.gif filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
 *.webm filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
-# Ensure consistent line endings
-*.rs   text eol=lf
-*.toml text eol=lf
-*.md   text eol=lf
-*.yml  text eol=lf
-*.yaml text eol=lf
-*.sh   text eol=lf
-# Justfile
-justfile text eol=lf
-# Lock files should be treated as binary
-Cargo.lock binary
+*.tape text eol=lf

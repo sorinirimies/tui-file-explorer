@@ -18,6 +18,7 @@ use super::*;
 ///     .sort_mode(SortMode::SizeDesc)
 ///     .build();
 /// ```
+#[derive(Debug)]
 pub struct FileExplorerBuilder {
     initial_dir: PathBuf,
     filesystem: crate::SharedFileSystem,

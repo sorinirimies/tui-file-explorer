@@ -54,14 +54,18 @@ fn shift_letter_equals_uppercase() {
 #[test]
 fn parse_errors_are_descriptive() {
     assert!(KeyChord::parse("").is_err());
-    assert!(KeyChord::parse("hyper+x")
-        .unwrap_err()
-        .reason
-        .contains("hyper"));
-    assert!(KeyChord::parse("nonsense")
-        .unwrap_err()
-        .reason
-        .contains("nonsense"));
+    assert!(
+        KeyChord::parse("hyper+x")
+            .unwrap_err()
+            .reason
+            .contains("hyper")
+    );
+    assert!(
+        KeyChord::parse("nonsense")
+            .unwrap_err()
+            .reason
+            .contains("nonsense")
+    );
     assert!(KeyChord::parse("f99").is_err());
 }
 

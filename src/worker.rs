@@ -9,14 +9,15 @@
 use std::{
     fmt,
     sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError},
         Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel},
     },
     thread,
 };
 
 /// Sending half handed to the worker closure.
+#[derive(Debug)]
 pub struct Emit<T> {
     tx: Sender<T>,
     cancel: Arc<AtomicBool>,

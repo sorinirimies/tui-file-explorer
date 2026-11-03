@@ -21,18 +21,18 @@
 //! each pane area.
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, ListState, Padding, Paragraph},
-    Frame,
 };
 
 use crate::{
+    FileExplorer, PromptKind,
     dual_pane::DualPane,
     explorer::{entry_icon, fmt_size},
     palette::Theme,
-    FileExplorer, PromptKind,
 };
 
 // ── Render constants ──────────────────────────────────────────────────────────
@@ -85,10 +85,11 @@ pub(crate) fn paint_scrollbar(
     let buf = frame.buffer_mut();
 
     for y in 0..area.height {
-        if y >= thumb_start && y < thumb_end {
-            if let Some(cell) = buf.cell_mut(Position::new(x, area.y + y)) {
-                cell.set_char(SCROLLBAR_CHAR).set_fg(color);
-            }
+        if y >= thumb_start
+            && y < thumb_end
+            && let Some(cell) = buf.cell_mut(Position::new(x, area.y + y))
+        {
+            cell.set_char(SCROLLBAR_CHAR).set_fg(color);
         }
     }
 }
@@ -680,7 +681,7 @@ fn disk_usage_label(explorer: &FileExplorer) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     fn make_terminal() -> Terminal<TestBackend> {
         Terminal::new(TestBackend::new(80, 24)).unwrap()

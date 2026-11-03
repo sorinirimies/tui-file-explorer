@@ -148,7 +148,7 @@ fn ctrl_u_clears_query() {
 
 #[test]
 fn renders_without_panicking_in_small_and_large_areas() {
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     let p = Picker::new(
         PickerKind::Fuzzy,
         "Find",
@@ -163,7 +163,7 @@ fn renders_without_panicking_in_small_and_large_areas() {
 
 #[test]
 fn render_shows_query_and_rows() {
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     let mut p = Picker::new(
         PickerKind::Fuzzy,
         "Find",

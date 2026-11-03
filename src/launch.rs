@@ -59,17 +59,16 @@ pub fn spawn_editor(
     cmd.args(extra_args).arg(path);
 
     #[cfg(not(windows))]
-    if stdio == Stdio::ControllingTty {
-        if let Ok(tty) = std::fs::OpenOptions::new()
+    if stdio == Stdio::ControllingTty
+        && let Ok(tty) = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open("/dev/tty")
-        {
-            // `try_clone` dup()s the descriptor — no `unsafe` required.
-            cmd.stdin(tty.try_clone()?)
-                .stdout(tty.try_clone()?)
-                .stderr(tty);
-        }
+    {
+        // `try_clone` dup()s the descriptor — no `unsafe` required.
+        cmd.stdin(tty.try_clone()?)
+            .stdout(tty.try_clone()?)
+            .stderr(tty);
     }
 
     cmd.status()
@@ -154,12 +153,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn spawn_editor_missing_binary_is_error() {
-        assert!(spawn_editor(
-            "definitely-not-an-editor-xyz",
-            &[],
-            Path::new("x"),
-            Stdio::Inherit
-        )
-        .is_err());
+        assert!(
+            spawn_editor(
+                "definitely-not-an-editor-xyz",
+                &[],
+                Path::new("x"),
+                Stdio::Inherit
+            )
+            .is_err()
+        );
     }
 }

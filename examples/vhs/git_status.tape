@@ -1,7 +1,7 @@
 # VHS tape: git change markers
 # v shows M / A / ? next to changed entries; folders show what is inside.
 #
-# Uses the throw-away tree from fixture.sh and an empty $HOME, so it never
+# Uses the throw-away tree from fixture.nu and an empty $HOME, so it never
 # touches your real files or settings.
 
 Output examples/vhs/generated/git_status.gif
@@ -14,7 +14,7 @@ Set PlaybackSpeed 1.0
 Set Theme "Catppuccin Mocha"
 
 Hide
-Type "cargo build --bin tfe 2>/dev/null && bash examples/vhs/fixture.sh"
+Type "cargo build --bin tfe 2>/dev/null && nu examples/vhs/fixture.nu"
 Enter
 Sleep 12s
 Type "clear"

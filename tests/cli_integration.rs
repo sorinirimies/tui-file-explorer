@@ -1,3 +1,4 @@
+//! Integration tests: the tfe CLI.
 use std::process::Command;
 
 fn tfe_bin() -> Command {

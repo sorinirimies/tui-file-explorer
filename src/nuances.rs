@@ -169,7 +169,7 @@ pub fn render_dual_pane_nuanced(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
 
     #[test]
     fn mapping() {
