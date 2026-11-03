@@ -149,7 +149,7 @@ pub(crate) fn nu_config_dir_default() -> Option<PathBuf> {
         if let Some(appdata) = std::env::var_os("APPDATA") {
             return Some(PathBuf::from(appdata).join("nushell"));
         }
-        return None;
+        None
     }
 
     #[cfg(not(any(target_os = "macos", windows)))]

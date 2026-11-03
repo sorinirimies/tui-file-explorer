@@ -636,6 +636,7 @@ fn install_does_not_duplicate_when_called_twice() {
 
 // ── install_or_print ─────────────────────────────────────────────────────
 
+#[cfg(unix)]
 #[test]
 fn install_or_print_installs_when_rc_writable() {
     let dir = tempdir().unwrap();
@@ -653,6 +654,7 @@ fn install_or_print_installs_when_rc_writable() {
     assert!(is_installed(&rc));
 }
 
+#[cfg(unix)]
 #[test]
 fn install_or_print_returns_already_installed_when_sentinel_present() {
     let dir = tempdir().unwrap();
@@ -671,6 +673,7 @@ fn install_or_print_returns_already_installed_when_sentinel_present() {
     assert_eq!(outcome, InitOutcome::AlreadyInstalled(rc));
 }
 
+#[cfg(unix)]
 #[test]
 fn install_or_print_zsh_uses_zdotdir() {
     let dir = tempdir().unwrap();
@@ -694,6 +697,7 @@ fn install_or_print_zsh_uses_zdotdir() {
     assert!(is_installed(&rc));
 }
 
+#[cfg(unix)]
 #[test]
 fn install_or_print_zsh_falls_back_to_zshenv_when_zshrc_absent() {
     let dir = tempdir().unwrap();
@@ -718,6 +722,7 @@ fn install_or_print_zsh_falls_back_to_zshenv_when_zshrc_absent() {
     assert!(is_installed(&zshenv));
 }
 
+#[cfg(unix)]
 #[test]
 fn install_or_print_bash_uses_bash_profile_when_present() {
     let dir = tempdir().unwrap();
@@ -787,6 +792,7 @@ fn install_or_print_returns_printed_when_rc_not_writable() {
 
 // ── auto_install_with ─────────────────────────────────────────────────────
 
+#[cfg(unix)]
 #[test]
 fn auto_install_writes_wrapper_on_first_run() {
     let dir = tempdir().unwrap();
@@ -889,6 +895,7 @@ fn auto_install_detects_wrapper_in_zprofile_and_skips_install() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn auto_install_uses_zdotdir_when_set() {
     let dir = tempdir().unwrap();
@@ -916,6 +923,7 @@ fn auto_install_uses_zdotdir_when_set() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn auto_install_falls_back_to_zshenv_when_zshrc_absent() {
     let dir = tempdir().unwrap();
@@ -1029,6 +1037,21 @@ fn auto_install_does_nothing_when_shell_unrecognised() {
 
 // ── auto_install_with return value ────────────────────────────────────────
 
+#[cfg(windows)]
+#[test]
+fn auto_install_refuses_posix_shells_on_windows() {
+    let dir = tempdir().unwrap();
+    for shell in [Shell::Bash, Shell::Zsh, Shell::Fish] {
+        let outcome =
+            auto_install_with(Some(shell), Some(dir.path()), None, None, None, None, None);
+        assert!(
+            matches!(outcome, InitOutcome::UnknownShell),
+            "expected UnknownShell for {shell:?}, got {outcome:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
 #[test]
 fn auto_install_returns_installed_on_first_run() {
     let dir = tempdir().unwrap();
@@ -1047,6 +1070,7 @@ fn auto_install_returns_installed_on_first_run() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn auto_install_installed_outcome_carries_rc_path() {
     let dir = tempdir().unwrap();
@@ -1069,6 +1093,7 @@ fn auto_install_installed_outcome_carries_rc_path() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn auto_install_returns_already_installed_on_second_run() {
     let dir = tempdir().unwrap();
@@ -1139,6 +1164,7 @@ fn auto_install_returns_unknown_shell_when_shell_is_none_and_home_is_none() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn auto_install_bash_returns_installed_on_first_run() {
     let dir = tempdir().unwrap();
@@ -1159,6 +1185,7 @@ fn auto_install_bash_returns_installed_on_first_run() {
     assert!(is_installed(&rc), ".bashrc should contain the wrapper");
 }
 
+#[cfg(unix)]
 #[test]
 fn auto_install_fish_returns_installed_on_first_run() {
     let dir = tempdir().unwrap();
