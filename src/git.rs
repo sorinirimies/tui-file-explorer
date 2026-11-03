@@ -138,11 +138,13 @@ pub fn status_for(dir: &Path) -> Option<GitStatus> {
         .ok()
         .filter(|o| o.status.success())?;
     let root = PathBuf::from(String::from_utf8_lossy(&top.stdout).trim_end());
-    // `rev-parse` may resolve symlinks; match the user's view of `dir`.
+    // `rev-parse` may resolve symlinks (and on Windows prints `C:/…` long
+    // names); compare canonical forms, then keep the user's view of `dir`.
+    let canon_root = root.canonicalize().unwrap_or_else(|_| root.clone());
     let root = match dir.canonicalize() {
-        Ok(canon_dir) if canon_dir.starts_with(&root) => {
+        Ok(canon_dir) if canon_dir.starts_with(&canon_root) => {
             let rel_depth = canon_dir
-                .strip_prefix(&root)
+                .strip_prefix(&canon_root)
                 .map_or(0, |p| p.components().count());
             let mut r = dir.to_path_buf();
             for _ in 0..rel_depth {

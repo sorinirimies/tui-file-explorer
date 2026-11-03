@@ -719,6 +719,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
         terminal
             .backend()
