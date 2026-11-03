@@ -30,7 +30,7 @@ include      = [
 # binary. Library users who only want the widget can opt out:
 #
 #   [dependencies]
-#   tui-file-explorer = { version = "3", default-features = false }
+#   tui-file-explorer = { version = "4", default-features = false }
 #
 [features]
 default = ["cli", "theme"]

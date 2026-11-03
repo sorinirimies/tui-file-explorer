@@ -123,10 +123,10 @@ Choose only the layers your application needs:
 ```toml
 [dependencies]
 # Lightweight FileExplorer + DualPane widgets
-tui-file-explorer = { version = "3", default-features = false }
+tui-file-explorer = { version = "4", default-features = false }
 
 # Full embeddable App, without the tfe binary or Clap
-tui-file-explorer = { version = "3", default-features = false, features = ["full-app"] }
+tui-file-explorer = { version = "4", default-features = false, features = ["full-app"] }
 ```
 
 | Feature | Adds |
@@ -263,7 +263,7 @@ until it is published). This is **optional** and requires the `theme` feature
 (not enabled by default, so no extra dependency otherwise):
 
 ```toml
-tui-file-explorer = { version = "3", features = ["theme"] }
+tui-file-explorer = { version = "4", features = ["theme"] }
 ```
 
 The explorer keeps its own nine-colour `Theme` as the
