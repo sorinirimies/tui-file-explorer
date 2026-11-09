@@ -1,9 +1,8 @@
 name: Release
 
 # Push a vX.Y.Z tag (`just release X.Y.Z`): validate tag == Cargo.toml → gate →
-# tfe binaries for every platform → GitHub release with git-cliff notes and the
-# binaries attached → crates.io (only if the CRATES_IO_TOKEN secret is set;
-# idempotent).
+# GitHub release with git-cliff notes → crates.io (only if the CRATES_IO_TOKEN
+# secret is set; idempotent).
 
 on:
   push:
@@ -62,84 +61,9 @@ jobs:
       - run: nu scripts/ci/quality_gate.nu
 
 
-  # ── Binaries: one `tfe` per target, packaged with checksums ─────────────────
-  # Linux gnu builds on ubuntu-22.04 so the binary runs on any glibc >= 2.35
-  # distro. The musl build is fully static (runs on Alpine, NixOS, containers).
-  build:
-    name: Build — ${{ matrix.name }}
-    needs: [validate, gate]
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux x86_64
-            runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            suffix: ""
-          - name: Linux aarch64
-            runner: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            suffix: ""
-          - name: Linux x86_64 (static musl)
-            runner: ubuntu-22.04
-            target: x86_64-unknown-linux-musl
-            suffix: ""
-          - name: Windows x86_64
-            runner: windows-latest
-            target: x86_64-pc-windows-msvc
-            suffix: ".exe"
-          - name: macOS x86_64
-            runner: macos-latest
-            target: x86_64-apple-darwin
-            suffix: ""
-          - name: macOS aarch64
-            runner: macos-latest
-            target: aarch64-apple-darwin
-            suffix: ""
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.validate.outputs.tag }}
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
-      - name: Install cross tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu' || matrix.target == 'x86_64-unknown-linux-musl'
-        run: |
-          sudo apt-get -o Acquire::Retries=5 update -qq
-          sudo apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-            gcc-aarch64-linux-gnu libc6-dev-arm64-cross musl-tools
-
-      - uses: hustcer/setup-nu@v3
-        with:
-          version: "0.116.1"
-
-      - name: Build tfe
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: cargo build --release --bin tfe --target ${{ matrix.target }}
-
-      - name: Package
-        run: nu scripts/ci/package_binaries.nu "${{ needs.validate.outputs.version }}" "${{ matrix.target }}" "${{ matrix.suffix }}"
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: artifacts-${{ matrix.target }}
-          path: dist/tfe-*
-          if-no-files-found: error
-          retention-days: 1
-
   publish:
     name: GitHub release
-    needs: [validate, gate, build]
+    needs: [validate, gate]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -154,20 +78,12 @@ jobs:
           tool: git-cliff
       - name: Release notes
         run: nu scripts/ci/release_notes.nu ${{ needs.validate.outputs.tag }}
-      - name: Download binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: artifacts-*
-          path: artifacts/
-          merge-multiple: true
-
       - name: GitHub release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.validate.outputs.tag }}
           name: tui-file-explorer ${{ needs.validate.outputs.version }}
           body_path: RELEASE_NOTES.md
-          files: artifacts/*
 
   crates-io:
     name: crates.io
