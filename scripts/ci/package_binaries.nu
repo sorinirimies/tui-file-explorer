@@ -2,31 +2,33 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # tui-file-explorer — Package the `tfe` binary for one target
 # ──────────────────────────────────────────────────────────────────────────────
-# Packs target/<target>/release/tfe[.exe] into
-#   dist/tfe-<target>.tar.gz   (tfe-<target>.zip on Windows)
-# with the binary at the archive root — what download scripts and installers
-# expect, same layout as GitKraft — plus a .sha256 next to it. Build first:
-# cargo build --release --bin tfe --target <target>.
+# Reads target/<target>/release/tfe[.exe] and writes into dist/:
 #
-# Usage:
-#   nu scripts/ci/package_binaries.nu <target> [--out dist]
+#   tfe-<target>[.exe]                      the bare binary (for curl / direct download)
+#   tfe-<version>-<target>.tar.gz           portable archive (Linux, macOS)
+#   tfe-<version>-<target>.zip              portable archive (Windows, suffix ".exe")
+#   <each of the above>.sha256              sha256sum-compatible checksum
+#
+# Archives hold the binary plus README.md and LICENSE in one top-level folder.
+#
+# Usage: nu scripts/ci/package_binaries.nu <version> <target> [suffix]
 # ──────────────────────────────────────────────────────────────────────────────
 
+const DIST = "dist"
 const BIN = "tfe"
 
-export def is_windows [target: string]: nothing -> bool {
-    $target | str contains "windows"
+# Name of the bare binary for a target, e.g. tfe-x86_64-unknown-linux-gnu.
+export def raw_name [target: string, suffix: string]: nothing -> string {
+    $"($BIN)-($target)($suffix)"
 }
 
-# Archive file name for a target: tfe-<target>.tar.gz, or .zip on Windows.
-export def asset_name [target: string]: nothing -> string {
-    let ext = if (is_windows $target) { "zip" } else { "tar.gz" }
-    $"($BIN)-($target).($ext)"
-}
-
-# Binary file name for a target: tfe, or tfe.exe on Windows.
-export def binary_name [target: string]: nothing -> string {
-    if (is_windows $target) { $"($BIN).exe" } else { $BIN }
+# Name of the portable archive: .zip for Windows (suffix set), .tar.gz otherwise.
+export def archive_name [version: string, target: string, suffix: string]: nothing -> string {
+    if $suffix == "" {
+        $"($BIN)-($version)-($target).tar.gz"
+    } else {
+        $"($BIN)-($version)-($target).zip"
+    }
 }
 
 # A sha256sum-style line, newline-terminated: "<hex>  <file>\n".
@@ -34,30 +36,41 @@ export def checksum_line [hash: string, file: string]: nothing -> string {
     $"($hash)  ($file)\n"
 }
 
-def main [target: string, --out: string = "dist"] {
-    let file = (binary_name $target)
-    let src = $"target/($target)/release/($file)"
+def sha256 [path: string]: nothing -> string {
+    open --raw $path | hash sha256
+}
+
+def main [version: string, target: string, suffix: string = ""] {
+    let src = $"target/($target)/release/($BIN)($suffix)"
     if not ($src | path exists) {
-        print --stderr $"(ansi red)❌ ($src) not found — build it first(ansi reset)"
+        print --stderr $"(ansi red)❌ missing ($src)(ansi reset)"
         exit 1
     }
-    mkdir $out
-    let stage = (mktemp -d)
-    cp $src $stage
-    let asset = (asset_name $target)
-    let dest = ($out | path join $asset | path expand)
-    if (is_windows $target) {
-        if (which 7z | is-not-empty) {
-            do { cd $stage; ^7z a -tzip $dest $file } | ignore
-        } else if (which zip | is-not-empty) {
-            do { cd $stage; ^zip -q $dest $file }
-        } else {
-            ^pwsh -NoProfile -Command $"Compress-Archive -Path '($stage | path join $file)' -DestinationPath '($dest)' -Force"
-        }
+
+    mkdir $DIST
+
+    let raw = (raw_name $target $suffix)
+    cp $src $"($DIST)/($raw)"
+    (checksum_line (sha256 $"($DIST)/($raw)") $raw) | save --force $"($DIST)/($raw).sha256"
+
+    # Stage a folder named like the archive so unpacking never litters the cwd.
+    let stem = $"($BIN)-($version)-($target)"
+    let stage = $"($DIST)/($stem)"
+    rm -rf $stage
+    mkdir $stage
+    cp $src $"($stage)/($BIN)($suffix)"
+    cp README.md LICENSE $stage
+
+    let archive = (archive_name $version $target $suffix)
+    if $suffix == "" {
+        ^tar -C $DIST -czf $"($DIST)/($archive)" $stem
     } else {
-        ^tar -C $stage -czf $dest $file
+        # bsdtar (Windows 10+, macOS) writes zip with -a; no zip/7z dependency.
+        ^tar -C $DIST -a -cf $"($DIST)/($archive)" $stem
     }
     rm -rf $stage
-    checksum_line (open --raw $dest | hash sha256) $asset | save --force $"($dest).sha256"
-    print $"(ansi green)✅ ($dest)(ansi reset)"
+
+    (checksum_line (sha256 $"($DIST)/($archive)") $archive) | save --force $"($DIST)/($archive).sha256"
+
+    print $"(ansi green)✅ ($DIST)/($archive) + ($raw)(ansi reset)"
 }
