@@ -1,8 +1,10 @@
 name: Release
 
 # Push a vX.Y.Z tag (`just release X.Y.Z`): validate tag == Cargo.toml → gate →
-# GitHub release with git-cliff notes → crates.io (only if the CRATES_IO_TOKEN
-# secret is set; idempotent).
+# build the binaries in scripts/project.nu for macOS (arm64, x86-64), Linux
+# (static musl arm64, x86-64) and Windows → GitHub release with the archives +
+# sha256 and git-cliff notes → crates.io, every crate in scripts/project.nu (only
+# if the CRATES_IO_TOKEN secret is set; idempotent).
 
 on:
   push:
@@ -30,6 +32,7 @@ jobs:
     outputs:
       tag: ${{ steps.v.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
+      matrix: ${{ steps.m.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -42,6 +45,9 @@ jobs:
         run: nu scripts/ci/validate_tag.nu "${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
       - name: Versions match the tag
         run: nu scripts/ci/check_versions.nu "${{ steps.v.outputs.tag }}"
+      - name: Build matrix
+        id: m
+        run: nu scripts/project.nu matrix >> "$GITHUB_OUTPUT"
 
   gate:
     name: Quality gate
@@ -58,12 +64,152 @@ jobs:
       - uses: hustcer/setup-nu@v3
         with:
           version: "0.116.1"
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
       - run: nu scripts/ci/quality_gate.nu
 
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [validate, gate]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      # release_matrix in scripts/project.nu: the targets for its LINUX flavour.
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
+      # Static Linux binaries for both architectures from one runner: zig is the
+      # C cross-compiler for any bundled C code (sqlite, zstd, …).
+      - name: Install zig
+        if: matrix.zig
+        uses: mlugg/setup-zig@v2
+      - name: Install cargo-zigbuild
+        if: matrix.zig
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - name: Build (zig)
+        if: matrix.zig
+        run: nu scripts/ci/build_release.nu ${{ matrix.target }} --zig
+      - name: Build
+        if: ${{ !matrix.zig }}
+        run: nu scripts/ci/build_release.nu ${{ matrix.target }}
+      - name: Package
+        run: nu scripts/ci/package.nu ${{ matrix.target }} --out dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  # .deb, .rpm and AppImages, built on the OLDEST hosted runners: a binary needs
+  # at least the glibc it was linked against (22.04 = 2.35).
+  linux-packages:
+    name: Linux packages ${{ matrix.target }}
+    needs: [validate, gate]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: desktop-${{ matrix.target }}
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
+      - name: Install packaging tools
+        run: nu scripts/ci/package_desktop.nu tools linux
+      - name: Build
+        run: nu scripts/ci/build_release.nu ${{ matrix.target }}
+      - name: .deb, .rpm and AppImage
+        run: nu scripts/ci/package_desktop.nu linux ${{ needs.validate.outputs.version }} ${{ matrix.target }} --appimage
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.target }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+          if-no-files-found: error
+
+  macos-dmg:
+    name: macOS universal DMG
+    needs: [validate, gate]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Build arm64
+        run: nu scripts/ci/build_release.nu aarch64-apple-darwin
+      - name: Build x86_64
+        run: nu scripts/ci/build_release.nu x86_64-apple-darwin
+      - name: DMG
+        run: nu scripts/ci/package_desktop.nu macos ${{ needs.validate.outputs.version }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  windows-installer:
+    name: Windows installer
+    needs: [validate, gate]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: Install NSIS
+        run: nu scripts/ci/package_desktop.nu tools windows
+      - name: Build
+        run: nu scripts/ci/build_release.nu x86_64-pc-windows-msvc
+      - name: Installer
+        run: nu scripts/ci/package_desktop.nu windows ${{ needs.validate.outputs.version }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-windows
+          path: dist/*-setup.exe
+          if-no-files-found: error
 
   publish:
     name: GitHub release
-    needs: [validate, gate]
+    needs: [validate, build, linux-packages, macos-dmg, windows-installer]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -78,12 +224,20 @@ jobs:
           tool: git-cliff
       - name: Release notes
         run: nu scripts/ci/release_notes.nu ${{ needs.validate.outputs.tag }}
-      - name: GitHub release
-        uses: softprops/action-gh-release@v3
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.validate.outputs.tag }}
           name: tui-file-explorer ${{ needs.validate.outputs.version }}
           body_path: RELEASE_NOTES.md
+          files: dist/*
+      - name: Keep binaries only on the newest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: nu scripts/ci/prune_releases.nu ${{ needs.validate.outputs.tag }}
 
   crates-io:
     name: crates.io
@@ -97,8 +251,36 @@ jobs:
       - uses: hustcer/setup-nu@v3
         with:
           version: "0.116.1"
-      # Multi-crate workspace: one line per crate, dependencies first.
-      - name: Publish tui-file-explorer (idempotent)
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
+      # Every crate in scripts/project.nu, dependencies first.
+      - name: Publish crates (idempotent)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
-        run: nu scripts/ci/publish_crate.nu tui-file-explorer
+        run: nu scripts/ci/publish_crate.nu
+
+  # Needs the AUR_USERNAME, AUR_EMAIL and AUR_SSH_PRIVATE_KEY secrets; without
+  # them the deploy fails without failing the release.
+  aur:
+    name: AUR
+    needs: [validate, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+      - uses: hustcer/setup-nu@v3
+        with:
+          version: "0.116.1"
+      - name: PKGBUILD for this version
+        run: nu scripts/ci/package_desktop.nu aur ${{ needs.validate.outputs.version }}
+      - name: Deploy to the AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        continue-on-error: true
+        with:
+          pkgname: tui-file-explorer
+          pkgbuild: dist/aur/PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to v${{ needs.validate.outputs.version }}

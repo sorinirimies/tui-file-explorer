@@ -1,7 +1,8 @@
 name: Release
 
-# Runs the gate at the tag and publishes a Gitea release with the notes; crates.io
-# gets the crate from the GitHub release workflow.
+# Gitea runners are Linux only: this builds the Linux binaries (gitea_targets in
+# scripts/project.nu) and publishes a Gitea release with them. The full set (macOS, Windows) comes from
+# the GitHub release.
 
 on:
   push:
@@ -35,13 +36,17 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           . "$HOME/.cargo/env"
           rustup component add rustfmt clippy
+          rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
-      - name: Install Nushell, git-cliff
+      - name: Install Nushell, zig, cargo-zigbuild, git-cliff
         run: |
           V=0.116.1
-          curl -fsSL --retry 5 --retry-all-errors -o /tmp/dl.tgz https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz && tar -xzf /tmp/dl.tgz -C /tmp
+          curl -fsSL --retry 5 --retry-all-errors -o /tmp/nu.tgz https://github.com/nushell/nushell/releases/download/$V/nu-$V-x86_64-unknown-linux-gnu.tar.gz && tar -xzf /tmp/nu.tgz -C /tmp
           sudo install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu /usr/local/bin/nu || install -m 0755 /tmp/nu-$V-x86_64-unknown-linux-gnu/nu $HOME/.cargo/bin/nu
-          cargo install git-cliff --locked
+          python3 -m pip install --user --break-system-packages ziglang || python3 -m pip install --user ziglang
+          cargo install cargo-zigbuild git-cliff --locked
+      - name: Install system packages
+        run: nu scripts/ci/apt.nu
       - name: Validate tag
         id: v
         run: nu scripts/ci/validate_tag.nu "${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
@@ -49,9 +54,21 @@ jobs:
         run: nu scripts/ci/check_versions.nu "${{ steps.v.outputs.tag }}"
       - name: Quality gate
         run: nu scripts/ci/quality_gate.nu
+      - name: Build and package
+        run: nu scripts/ci/build_release.nu gitea --out dist
+      - name: Install packaging tools
+        run: nu scripts/ci/package_desktop.nu tools linux
+      - name: Build glibc binaries
+        run: nu scripts/ci/build_release.nu x86_64-unknown-linux-gnu
+      - name: .deb, .rpm and AppImage
+        run: nu scripts/ci/package_desktop.nu linux ${{ steps.v.outputs.version }} x86_64-unknown-linux-gnu --appimage
       - name: Release notes
         run: nu scripts/ci/release_notes.nu ${{ steps.v.outputs.tag }}
       - name: Create Gitea release
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: nu scripts/ci/gitea_release.nu ${{ steps.v.outputs.tag }} --api "${{ github.server_url }}/api/v1/repos/${{ github.repository }}" --dir dist
+      - name: Keep binaries only on the newest release
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: nu scripts/ci/prune_releases.nu ${{ steps.v.outputs.tag }} --gitea-api "${{ github.server_url }}/api/v1/repos/${{ github.repository }}"
