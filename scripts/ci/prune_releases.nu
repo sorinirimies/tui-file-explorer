@@ -81,11 +81,11 @@ def main [keep: string, --gitea-api: string, --dry-run] {
         }
         return
     }
-    let releases = from_gh (^gh release list --limit 200 --json tagName | from json
+    let releases = from_gh (^gh release list --limit 200 --json tagName | from json | uniq-by tagName
         | each {|r| ^gh release view $r.tagName --json tagName,assets | from json })
     if (skip-older $releases $keep) { return }
     for a in (doomed $releases $keep) {
         print -e $"delete ($a.tag)/($a.name)"
-        if not $dry_run { ^gh release delete-asset $a.tag $a.name --yes }
+        if not $dry_run { do --ignore-errors { ^gh release delete-asset $a.tag $a.name --yes } }
     }
 }
