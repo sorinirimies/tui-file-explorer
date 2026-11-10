@@ -4,6 +4,12 @@ All notable changes to this project are documented here. It is generated from
 [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org) — do not edit it by hand.
 
+## [4.0.6](https://github.com/sorinirimies/tui-file-explorer/compare/v4.0.5...v4.0.6) — 2026-11-10
+
+### 📦 Build
+
+- **changelog:** Silence git-cliff warnings ([`5acf96e`](https://github.com/sorinirimies/tui-file-explorer/commit/5acf96e223a6395465f24207493be0195fb63633))
+
 ## [4.0.5](https://github.com/sorinirimies/tui-file-explorer/compare/v4.0.4...v4.0.5) — 2026-11-10
 
 ### 🐛 Bug fixes
@@ -272,6 +278,12 @@ All notable changes to this project are documented here. It is generated from
 
 - **vhs:** Restore lost demo GIF LFS objects and regenerate picture_preview ([`33b0f58`](https://github.com/sorinirimies/tui-file-explorer/commit/33b0f58e7e5ee5bb096d3155fdd72c3622241c01))
 - **mac:** Skip from_query_stdio on Apple Terminal and non-tty stdout ([`79b96b1`](https://github.com/sorinirimies/tui-file-explorer/commit/79b96b14efadb984c71384976f114369e68473ad))
+
+## [1.0.4](https://github.com/sorinirimies/tui-file-explorer/compare/v1.0.2...v1.0.4) — 2026-04-21
+
+### 🐛 Bug fixes
+
+- Fix formating, improve perf. cleanup ([`c9a1a33`](https://github.com/sorinirimies/tui-file-explorer/commit/c9a1a337d8076775c6ef3354ce8ffa705b4ffa42))
 
 ## [1.0.2](https://github.com/sorinirimies/tui-file-explorer/compare/v1.0.1...v1.0.2) — 2026-04-17
 

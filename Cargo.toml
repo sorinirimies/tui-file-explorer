@@ -1,6 +1,6 @@
 [package]
 name         = "tui-file-explorer"
-version      = "4.0.5"
+version      = "4.0.6"
 edition      = "2024"
 rust-version = "1.90"
 authors      = ["Sorin Irimies <sorinirimies@gmail.com>"]
