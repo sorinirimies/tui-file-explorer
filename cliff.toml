@@ -55,8 +55,8 @@ trim = true
 [git]
 # Parse commits as Conventional Commits…
 conventional_commits = true
-# …and drop the ones that aren't, or that match no parser below (keeps the log clean).
-filter_unconventional = true
+# …keep the ones that aren't as raw messages; the last parser skips whatever matches no group (keeps the log clean).
+filter_unconventional = false
 filter_commits = true
 # Newest first inside each group.
 sort_commits = "newest"
@@ -96,4 +96,6 @@ commit_parsers = [
     { message = "^(ci|release)",                    group = "<!-- 10 -->🔄 CI and release" },
     { message = "^style",                           group = "<!-- 11 -->💄 Style" },
     { message = "^chore",                           group = "<!-- 12 -->🔧 Chores" },
+    # Anything else (old free-form commits) is dropped quietly.
+    { message = ".*", skip = true },
 ]
