@@ -4,6 +4,12 @@ All notable changes to this project are documented here. It is generated from
 [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org) — do not edit it by hand.
 
+## [4.0.5](https://github.com/sorinirimies/tui-file-explorer/compare/v4.0.4...v4.0.5) — 2026-11-10
+
+### 🐛 Bug fixes
+
+- **ci:** Dedupe releases and tolerate missing assets when pruning ([`21844cc`](https://github.com/sorinirimies/tui-file-explorer/commit/21844cc25d0f41fd579dd089b0aa1420cc7517f4))
+
 ## [4.0.4](https://github.com/sorinirimies/tui-file-explorer/compare/v4.0.3...v4.0.4) — 2026-11-10
 
 ### 📦 Dependencies
