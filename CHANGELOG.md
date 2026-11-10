@@ -4,6 +4,13 @@ All notable changes to this project are documented here. It is generated from
 [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org) — do not edit it by hand.
 
+## [4.0.7](https://github.com/sorinirimies/tui-file-explorer/compare/v4.0.6...v4.0.7) — 2026-11-10
+
+### 📦 Dependencies
+
+- Bump tui-nuances to 0.1.11 ([`5ef228d`](https://github.com/sorinirimies/tui-file-explorer/commit/5ef228df5dd7ff202eff15241eff26cf762d09a5))
+- Nightly cargo update 2026-11-10 ([`3127f2c`](https://github.com/sorinirimies/tui-file-explorer/commit/3127f2c82f139597d78dee0bdbf72326f45046b7))
+
 ## [4.0.6](https://github.com/sorinirimies/tui-file-explorer/compare/v4.0.5...v4.0.6) — 2026-11-10
 
 ### 📦 Build
