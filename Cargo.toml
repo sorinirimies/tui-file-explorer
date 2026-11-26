@@ -53,7 +53,7 @@ theme = []
 [dependencies]
 ratatui    = "0.30"
 # Shared theme crate: source of every built-in preset.
-tui-nuances = "0.1.11"
+tui-nuances = "0.1.12"
 crossterm  = "0.29"
 clap       = { version = "4", features = ["derive", "color", "wrap_help"], optional = true }
 tui-slider = { version = "0.3.4", optional = true }
@@ -62,7 +62,7 @@ serde_json = { version = "1", optional = true }
 image         = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"], optional = true }
 ratatui-image = { version = "11.1", default-features = false, features = ["crossterm", "image-defaults"], optional = true }
 trash         = { version = "5.4.0", optional = true }
-toml          = { version = "1.2.2", default-features = false, features = ["parse", "serde"], optional = true }
+toml          = { version = "1.2.3", default-features = false, features = ["parse", "serde"], optional = true }
 zip           = { version = "9", default-features = false, features = ["deflate"], optional = true }
 tar           = { version = "0.4.46", default-features = false, optional = true }
 flate2        = { version = "1.1.11", optional = true }
